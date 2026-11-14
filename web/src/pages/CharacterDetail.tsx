@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  accentFor, charImg, charThumb, EXPR_LABEL, loadCharHd, loadCharImages, loadCharMi,
+  accentFor, charArt, charThumb, EXPR_LABEL, loadCharImages, loadCharMi,
   loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
   type CharImages, type Character,
 } from '../data'
@@ -51,7 +51,6 @@ export default function CharacterDetail() {
   const { id } = useParams()
   const [list, setList] = useState<Character[] | null>(null)
   const [imgs, setImgs] = useState<CharImages>({})
-  const [hd, setHd] = useState<Set<string>>(new Set())
   const [mi, setMi] = useState<Set<string>>(new Set())
   const [spine, setSpine] = useState<Set<string>>(new Set())
   const [pick, setPick] = useState<string | null>(null)
@@ -64,7 +63,6 @@ export default function CharacterDetail() {
   useEffect(() => {
     loadCharacters().then(setList).catch(() => setList([]))
     loadCharImages().then(setImgs).catch(() => {})
-    loadCharHd().then(setHd).catch(() => {})
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
   }, [])
@@ -86,7 +84,7 @@ export default function CharacterDetail() {
   const c = list?.find((x) => String(x.id) === id) || null
   const vars = c ? variantsOf(imgs, c.id) : []
   const current = pick || (c ? mainBase(imgs, c.id) : null) || ''
-  const staticSrc = current ? charImg(current, hd, 'full') : ''
+  const staticSrc = current ? charArt(current) : ''
   const hasModel = !!current && spine.has(current) && !modelError
   // 口型（talk_*）是配合台词的 0 时长姿态；bg_* 只驱动背景（有的模型里这两类
   // 动画根本没有可见部件，选中会只剩空舞台），都不列出来
@@ -133,16 +131,8 @@ export default function CharacterDetail() {
     <div className="detail-page">
       <div className="detail">
         <div className="detail-visual" style={{ ['--tint' as string]: palette }}>
-          <div className={`stage char-stage ${hasModel ? 'is-live' : ''}`}>
-            {/* 模型加载期间先铺静态立绘，避免大片空白；就绪后淡出 */}
-            {hasModel && staticSrc && (
-              <img
-                className={`char-still ${modelReady ? 'gone' : ''}`}
-                src={staticSrc}
-                alt=""
-                draggable={false}
-              />
-            )}
+          {/* 模型就绪前不铺旧静态图：那帧的姿势/取景和实时模型对不上，看着像渲染错误 */}
+          <div className={`stage char-stage ${hasModel ? 'is-live' : ''} ${modelReady ? 'is-ready' : ''}`}>
             {hasModel ? (
               <SpinePlayer
                 name={current}
@@ -172,6 +162,9 @@ export default function CharacterDetail() {
             ) : (
               <div className="char-empty-mark">{c.name.slice(0, 1)}</div>
             )}
+            {hasModel && !modelReady && (
+              <div className="char-loading"><span className="cv-spin" />加载实时模型…</div>
+            )}
             {hasModel && (
               <div className={`char-live ${modelReady ? 'on' : ''}`}>
                 <i />{modelReady ? '实时模型' : '模型加载中'}
@@ -183,6 +176,7 @@ export default function CharacterDetail() {
           {hasModel && (
             <div className="char-bar">
               <div className="char-anims">
+                {chips.length === 0 && <span className="char-anims-hint">表情动画载入中…</span>}
                 {chips.map((c2) => (
                   <button
                     key={c2.anim}
@@ -206,7 +200,7 @@ export default function CharacterDetail() {
                 )}
               </div>
               <div className="char-bar-row">
-                <button className="cb-play" onClick={toggle} title="播放 / 暂停（空格）">
+                <button className="cb-play" onClick={toggle} disabled={!modelReady} title="播放 / 暂停（空格）">
                   {status.playing ? '⏸' : '▶'}
                 </button>
                 <label className="cb-speed">
@@ -236,7 +230,7 @@ export default function CharacterDetail() {
                   onClick={() => setPick(v)}
                   title={spine.has(v) ? `${v} · 可动` : v}
                 >
-                  <img src={charThumb(v, mi, hd)} alt={v} loading="lazy" />
+                  <img src={charThumb(v, mi)} alt={v} loading="lazy" />
                   {spine.has(v) && <i className="vt-live" />}
                 </button>
               ))}
@@ -294,7 +288,7 @@ export default function CharacterDetail() {
               <span>动态立绘</span>
               <em>
                 {hasModel
-                  ? `${anims.length} 段表情动画`
+                  ? (modelReady ? `${anims.length} 段表情动画` : '读取模型中…')
                   : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
               </em>
             </div>

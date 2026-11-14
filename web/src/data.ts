@@ -82,28 +82,12 @@ export function mainImage(imgs: CharImages, id: number): string | null {
   return base ? `/char/${base}.webp` : null
 }
 
-/* 高清立绘（Spine 站姿渲染，2048 裁边后长边 1600）+ 头部方图 */
-
-let cacheHd: Set<string> | null = null
-
-export async function loadCharHd(): Promise<Set<string>> {
-  if (cacheHd) return cacheHd
-  try {
-    const d = await getJSON<{ items: string[] }>('/data/char_hd.json')
-    cacheHd = new Set(d.items)
-  } catch {
-    cacheHd = new Set()
-  }
-  return cacheHd
-}
-
-export function hasHd(hd: Set<string>, base: string | null): boolean {
-  return !!base && hd.has(base)
-}
-
-/** kind=full 全身立绘；kind=head 头部方图（没有高清图时退回原来的卡片立绘） */
-export function charImg(base: string, hd: Set<string>, kind: 'full' | 'head' = 'full'): string {
-  if (hd.has(base)) return `/charhd/${base}${kind === 'head' ? '_head' : ''}.webp`
+/**
+ * 官方全身立绘（icons-char-full(hd)，1024²）。
+ * 注意不要用 public/charhd：那是旧管线把 Spine 模型渲染成单帧的合成图，
+ * 姿势、表情、上色都和官方立绘对不上（点「打开静态立绘原图」看到的就是它）。
+ */
+export function charArt(base: string): string {
   return `/char/${base}.webp`
 }
 
@@ -126,16 +110,16 @@ export async function loadCharMi(): Promise<Set<string>> {
  * 角色卡预览图。优先用官方 mi 头像：框图天生正确，不需要按 alpha 猜头部位置；
  * 没有头像的角色退回站姿渲染图，再没有就用 1024 图标。
  */
-export function charPortrait(base: string | null, mi: Set<string>, hd: Set<string>): string | null {
+export function charPortrait(base: string | null, mi: Set<string>): string | null {
   if (!base) return null
   if (mi.has(base)) return `/charmi/${base}.webp`
-  return charImg(base, hd, 'full')
+  return charArt(base)
 }
 
-/** 详情页变体切换用的小方图：有 mi 就裁头部，否则全身图 */
-export function charThumb(base: string, mi: Set<string>, hd: Set<string>): string {
+/** 详情页皮肤切换用的小方图：有 mi 就裁头部，否则官方全身图 */
+export function charThumb(base: string, mi: Set<string>): string {
   if (mi.has(base)) return `/charmi/${base}.webp`
-  return charImg(base, hd, 'head')
+  return charArt(base)
 }
 
 /* 角色 Spine 站姿模型（可实时播放 idle / 表情动画） */

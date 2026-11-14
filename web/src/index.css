@@ -436,7 +436,8 @@ img { display: block; }
   display: grid; place-items: center; font-size: 12px;
   background: var(--red); border: 1px solid var(--red); color: #fff;
 }
-.cb-play:hover { filter: brightness(1.12); }
+.cb-play:hover:not(:disabled) { filter: brightness(1.12); }
+.cb-play:disabled { opacity: .4; cursor: default; }
 .cb-speed select {
   height: 32px; padding: 0 6px; cursor: pointer;
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
@@ -455,15 +456,23 @@ img { display: block; }
   width: 100%; height: 100%; display: grid; place-items: center;
   font-size: 96px; font-weight: 900; color: var(--dim-2);
 }
-.char-stage .spine-player { position: absolute; inset: 0; }
-.detail-visual .char-still {
-  position: absolute; inset: 0; z-index: 1;
-  width: 100%; height: 100%; object-fit: contain; object-position: bottom center;
-  filter: drop-shadow(var(--img-shadow));
-  transition: opacity .35s ease;
+.char-stage .spine-player {
+  position: absolute; inset: 0;
+  opacity: 0; transition: opacity .28s ease;
+}
+.char-stage.is-ready .spine-player { opacity: 1; }
+.char-loading {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 2; display: flex; align-items: center; gap: 9px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .12em; color: var(--dim);
   pointer-events: none;
 }
-.detail-visual .char-still.gone { opacity: 0; }
+.char-anims-hint {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .06em; color: var(--dim-2);
+  padding: 5px 2px;
+}
 .char-live {
   position: absolute; left: 16px; top: 14px; z-index: 3;
   display: inline-flex; align-items: center; gap: 7px; pointer-events: none;

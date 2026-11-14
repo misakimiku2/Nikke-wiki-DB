@@ -62,7 +62,7 @@ python build/build_db.py                  # → data/nikke.db
 # 2. 角色数据
 python build/build_characters.py          # → data/nikke.db 的角色表
 python build/export_sd.py                 # → public/char        立绘
-python build/build_char_hd.py             # → public/charhd      高清立绘
+python build/build_char_hd.py             # → public/charhd      旧版合成立绘（页面已不再引用）
 python build/export_char_mi.py            # → public/charmi      官方头像（列表预览用）
 python build/export_char_images.py        # → public/data/char_images.json
 python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
@@ -91,8 +91,10 @@ cd web && npm run build                   # → dist/
   遇到举枪、宽帽檐、长发就会裁到枪管或胸口，已弃用。
 - **详情页**：`public/spine_char/<名>/` 的站姿模型实时播放，`idle / delight / angry / sad /
   surprise / shy / think / action` 等表情动画可在页面里一键切换（多的一套有 16 段，其余收在
-  「更多表情」下拉里），和 CG 查看器共用同一个 `SpinePlayer`；没有站姿模型的皮肤退回静态高清立绘
-  （`public/charhd`）。
+  「更多表情」下拉里），和 CG 查看器共用同一个 `SpinePlayer`；没有站姿模型的皮肤退回官方全身立绘
+  （`public/char`，即 `icons-char-full(hd)`）。
+- **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
+  姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
 - 站姿模型的图集是 `pma:true`，转换规则与 CG 一致：只把 alpha=0 的像素 RGB 清零，
   lossless WebP + `exact=True`，不要二次预乘。
 
