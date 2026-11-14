@@ -166,13 +166,13 @@ export default function CounselChat({
               </div>
             )
           }
-          // 连续角色发言只在最后一条带头像（聊天软件惯例）
+          // 头像只在角色连续发言的第一句显示
           const idx = rendered.findIndex((x) => x.t === 'line' && x.n === n)
-          const next = rendered[idx + 1]
-          const nextIsChar = !!next && next.t === 'line' && kinds[next.n - 1] === 'char'
+          const prev = idx > 0 ? rendered[idx - 1] : null
+          const prevIsChar = !!prev && prev.t === 'line' && kinds[prev.n - 1] === 'char'
           return (
             <div className="cc-msg" key={`m${n}`}>
-              {avatar && !nextIsChar && <img className="cc-ava" src={avatar} alt="" loading="lazy" />}
+              {avatar && !prevIsChar && <img className="cc-ava" src={avatar} alt="" loading="lazy" />}
               <div className="cc-bubble">
                 <span className="cc-name" style={{ color: accent }}>{sp || charName}</span>
                 <p>{txt}</p>
