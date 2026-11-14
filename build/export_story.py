@@ -12,6 +12,7 @@ CG 以「第几行切到哪张图」的事件形式输出，阅读器据此按�
 """
 import json
 import os
+import re
 import sqlite3
 import sys
 from collections import defaultdict
@@ -56,6 +57,40 @@ def main():
         if name in spine_models:
             item["d"] = name      # 有实时 Spine 模型，阅读器背景直接播模型
         return item
+
+    # 好感剧情/咨询的友好标题：char_stories.json（export_char_stories.py 产出）
+    # 里有 unit → 角色条目映射；没有它就退回原始 bucket（不影响其他分类）。
+    title_fix = {}
+    cs_path = os.path.join(ROOT, "public", "data", "char_stories.json")
+    ch_path = os.path.join(ROOT, "public", "data", "characters.json")
+    if os.path.exists(cs_path) and os.path.exists(ch_path):
+        with open(cs_path, encoding="utf-8") as f:
+            cs = json.load(f).get("items", {})
+        with open(ch_path, encoding="utf-8") as f:
+            zh_of = {c["id"]: c["name"] for c in json.load(f).get("items", [])}
+        for cid_s, entry in cs.items():
+            zh = zh_of.get(int(cid_s))
+            if not zh:
+                continue
+            for r in entry.get("stories", []) + entry.get("counsel", []):
+                title_fix[r["id"]] = f"{zh}·{r['t']}"
+
+    # 好感剧情/咨询的友好标题：char_stories.json（export_char_stories.py 产出）
+    # 里有 unit → 角色条目映射；没有它就退回原始 bucket（不影响其他分类）。
+    title_fix = {}
+    cs_path = os.path.join(ROOT, "public", "data", "char_stories.json")
+    ch_path = os.path.join(ROOT, "public", "data", "characters.json")
+    if os.path.exists(cs_path) and os.path.exists(ch_path):
+        with open(cs_path, encoding="utf-8") as f:
+            cs = json.load(f).get("items", {})
+        with open(ch_path, encoding="utf-8") as f:
+            zh_of = {c["id"]: c["name"] for c in json.load(f).get("items", [])}
+        for cid_s, entry in cs.items():
+            zh = zh_of.get(int(cid_s))
+            if not zh:
+                continue
+            for r in entry.get("stories", []) + entry.get("counsel", []):
+                title_fix[r["id"]] = f"{zh}·{r['t']}"
 
     # (segment_id, line_id) -> [cg_name, ...]，同一行同时出主帧与 _bg 时两件都在
     cg_by_line = defaultdict(list)
@@ -105,6 +140,13 @@ def main():
 
         if not payload_segs:
             continue
+
+        # 个人剧情/咨询单元的 title 在库里就是 bucket 原文，换成友好标题
+        if title == bucket or not title:
+            if uid in title_fix:
+                title = title_fix[uid]
+            elif cat == "counseling" and payload_segs and payload_segs[0]["t"]:
+                title = re.sub(r"：\d+$", "", payload_segs[0]["t"])
 
         payload = {
             "id": uid,

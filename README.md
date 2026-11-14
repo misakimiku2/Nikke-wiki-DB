@@ -75,7 +75,8 @@ python build/export_cg.py                 # → public/data/cg_index.json
 python build/build_spine_models.py        # → public/spine       实时 Spine 模型
 
 # 4. 剧情与搜索
-python build/export_story.py              # → public/data/story/ 分章 JSON
+python build/export_char_stories.py       # → public/data/char_stories.json 好感剧情映射
+python build/export_story.py              # → public/data/story/ 分章 JSON（读上面的映射改标题）
 python build/export_search.py             # → public/data/search-index.json
 python build/export_web.py                # → public/data        其余聚合 JSON
 
@@ -97,6 +98,15 @@ cd web && npm run build                   # → dist/
   （`public/char`，即 `icons-char-full(hd)`）。
 - **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
   姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
+- **好感剧情（个人剧情 + 咨询）**：详情页底部 `storybox` 区块，两个 tab。
+  映射来自 `public/data/char_stories.json`（`export_char_stories.py`）：bucket 后缀与角色
+  英文名匹配（皮肤变体本来就是独立角色 id，如 17=阿妮斯：超级巨星），皮肤中文名从咨询
+  会话标题解析。个人剧情卡点进 `/story/:id` 阅读器（标题已换成「角色名·个人剧情」）；
+  咨询在页内以对话流呈现——`components/CounselChat.tsx` 把每段台词分类成
+  角色气泡 / 指挥官发言（`speaker_id=Self`）/ 选项组（`Choice` 标记，或格式 A 里
+  连续 ≥2 行的空 speaker） / 旁白（末行），选项可点击标记。注意源数据把两个分支的
+  后续文本顺序连排，无法可靠切分，转写并存展示。`export_story.py` 依赖本映射改
+  阅读器标题，须先于它运行。
 - **技能说明**：`public/data/char_skills.json`（`export_char_skills.py`）。
   技能 ID（Locale_Skill 的 5 位数字键）= 类型前缀(1=伤害系 / 2=增益系) + 角色号(3 位) + 槽位，
   名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的

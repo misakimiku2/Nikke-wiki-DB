@@ -154,6 +154,34 @@ export async function loadCharSkills(): Promise<CharSkillsData> {
   return cacheSkills
 }
 
+/* 角色好感剧情 / 咨询 映射（行数据本体按需走 loadStoryUnit） */
+
+export type CharStoryRec = {
+  id: number
+  t: string
+  lines: number
+  /** 个人剧情段数 / 咨询会话数 */
+  segs?: number
+  sessions?: number
+  /** 皮肤名（皮肤专属剧情/咨询） */
+  skin?: string
+}
+
+export type CharStoriesData = Record<string, { stories: CharStoryRec[]; counsel: CharStoryRec[] }>
+
+let cacheStories: CharStoriesData | null = null
+
+export async function loadCharStories(): Promise<CharStoriesData> {
+  if (cacheStories) return cacheStories
+  try {
+    const d = await getJSON<{ items: CharStoriesData }>('/data/char_stories.json')
+    cacheStories = d.items || {}
+  } catch {
+    cacheStories = {}
+  }
+  return cacheStories
+}
+
 /* 角色 Spine 站姿模型（可实时播放 idle / 表情动画） */
 
 let cacheCharSpine: Set<string> | null = null
@@ -304,8 +332,15 @@ export async function loadStoryIndex(): Promise<StoryUnit[]> {
   return cacheUnits
 }
 
+const unitCache = new Map<string, StoryDetail>()
+
 export async function loadStoryUnit(id: string | number): Promise<StoryDetail> {
-  return getJSON<StoryDetail>(`/data/story/${id}.json`)
+  const key = String(id)
+  const hit = unitCache.get(key)
+  if (hit) return hit
+  const d = await getJSON<StoryDetail>(`/data/story/${key}.json`)
+  unitCache.set(key, d)
+  return d
 }
 
 export const CAT_ORDER = [

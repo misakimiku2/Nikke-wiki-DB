@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, charArt, charThumb, EXPR_LABEL, loadCharImages, loadCharMi,
-  loadCharSkills, loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
-  type CharImages, type Character, type CharSkill, type CharSkillsData,
+  loadCharSkills, loadCharStories, loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
+  type CharImages, type Character, type CharSkill, type CharSkillsData, type CharStoriesData,
 } from '../data'
+import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 
@@ -119,6 +120,8 @@ export default function CharacterDetail() {
   const [modelError, setModelError] = useState(false)
   const [skillData, setSkillData] = useState<CharSkillsData>({ items: {}, terms: {} })
   const [skillLv, setSkillLv] = useState(10)
+  const [storiesMap, setStoriesMap] = useState<CharStoriesData>({})
+  const [relTab, setRelTab] = useState<'stories' | 'counsel'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
 
@@ -128,6 +131,7 @@ export default function CharacterDetail() {
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
     loadCharSkills().then(setSkillData).catch(() => {})
+    loadCharStories().then(setStoriesMap).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -150,6 +154,13 @@ export default function CharacterDetail() {
   const staticSrc = current ? charArt(current) : ''
   const hasModel = !!current && spine.has(current) && !modelError
   const skills = id ? skillData.items[String(id)] : null
+  const rel = id ? storiesMap[String(id)] : null
+  const relStories = rel?.stories ?? []
+  const relCounsel = rel?.counsel ?? []
+  /** 切角色时把 tab 复位到有内容的那一边 */
+  useEffect(() => {
+    setRelTab((t) => (t === 'counsel' && !relCounsel.length ? 'stories' : t))
+  }, [id])
   // 口型（talk_*）是配合台词的 0 时长姿态；bg_* 只驱动背景（有的模型里这两类
   // 动画根本没有可见部件，选中会只剩空舞台），都不列出来
   const anims = useMemo(
@@ -391,11 +402,72 @@ export default function CharacterDetail() {
                   : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
               </em>
             </div>
-            <div className="slot">
-              <span>好感剧情</span>
-              <em>待接入</em>
-            </div>
+            {(relStories.length > 0 || relCounsel.length > 0) && (
+              <button
+                className="slot slot-btn"
+                onClick={() => {
+                  document.getElementById('storybox')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                title="跳到好感剧情"
+              >
+                <span>好感剧情</span>
+                <em>
+                  {[
+                    relStories.length ? `${relStories.length} 卷剧情` : '',
+                    relCounsel.length ? `${relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)} 次咨询` : '',
+                  ].filter(Boolean).join(' · ') || '暂无收录'}
+                </em>
+              </button>
+            )}
           </div>
+
+          {(relStories.length > 0 || relCounsel.length > 0) && (
+            <section className="storybox" id="storybox" style={{ ['--acc' as string]: accentFor(c.id) }}>
+              <div className="storybox-head">
+                <span className="storybox-title">好感剧情 <i>STORIES</i></span>
+                <div className="story-tabs">
+                  {relStories.length > 0 && (
+                    <button className={relTab === 'stories' ? 'on' : ''} onClick={() => setRelTab('stories')}>
+                      个人剧情 <b>{relStories.length}</b>
+                    </button>
+                  )}
+                  {relCounsel.length > 0 && (
+                    <button className={relTab === 'counsel' ? 'on' : ''} onClick={() => setRelTab('counsel')}>
+                      咨询 <b>{relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)}</b>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {relTab === 'stories' ? (
+                <div className="story-cards">
+                  {relStories.map((r, i) => (
+                    <Link key={r.id} to={`/story/${r.id}`} className="story-card">
+                      <span className="story-no">{String(i + 1).padStart(2, '0')}</span>
+                      <span className="story-main">
+                        <b>{r.t}</b>
+                        <em>
+                          {r.skin && <i className="story-skin">{r.skin}</i>}
+                          {r.segs} 段 · {nf(r.lines)} 句
+                        </em>
+                      </span>
+                      <span className="story-go" style={{ color: accentFor(c.id) }}>阅读 →</span>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <CounselChat
+                  units={relCounsel}
+                  accent={accentFor(c.id)}
+                  avatar={(() => {
+                    const base = mainBase(imgs, c.id)
+                    return base && mi.has(base) ? `/charmi/${base}.webp` : null
+                  })()}
+                  charName={c.name}
+                />
+              )}
+            </section>
+          )}
 
           <Link to="/characters" className="backlink">← 返回角色列表</Link>
         </div>

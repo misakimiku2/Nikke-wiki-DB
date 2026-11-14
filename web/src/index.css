@@ -633,6 +633,188 @@ img { display: block; }
 }
 .word-close:hover { background: var(--red); border-color: var(--red); color: #fff; }
 
+/* ================= 角色好感剧情（个人剧情 + 咨询） ================= */
+.storybox {
+  margin-top: 40px; border: 1px solid var(--line);
+  transition: border-color .35s;
+}
+.storybox-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  transition: background .35s, border-color .35s;
+}
+.storybox-title {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; font-weight: 700; letter-spacing: .16em; color: var(--text);
+}
+.storybox-title i {
+  font-style: normal; font-size: 9px; letter-spacing: .22em;
+  color: var(--dim-2); margin-left: 8px;
+}
+.story-tabs { display: flex; gap: 8px; }
+.story-tabs button {
+  padding: 6px 12px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .06em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+  transition: color .15s, background .15s, border-color .15s;
+}
+.story-tabs button b { margin-left: 5px; font-weight: 700; }
+.story-tabs button:hover { color: var(--text); border-color: var(--line-2); }
+.story-tabs button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+/* --- 个人剧情卡片（信息栏只有 ~470px 宽，单列排布） --- */
+.story-cards { display: flex; flex-direction: column; }
+.story-card {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px; border-bottom: 1px dashed var(--line);
+  color: inherit; text-decoration: none;
+  transition: background .15s;
+}
+.story-cards .story-card:last-child { border-bottom: none; }
+.story-card:hover { background: var(--bg-2); }
+.story-no {
+  flex: 0 0 auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 19px; font-weight: 700; color: var(--dim-2); letter-spacing: .02em;
+}
+.story-card:hover .story-no { color: var(--acc); }
+.story-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.story-main b { font-size: 14px; font-weight: 800; letter-spacing: -.01em; }
+.story-main em {
+  font-style: normal;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .04em; color: var(--dim-2);
+}
+.story-skin {
+  font-style: normal; margin-right: 8px; padding: 2px 6px;
+  color: var(--acc); border: 1px solid var(--acc);
+}
+.story-go {
+  flex: 0 0 auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .06em;
+}
+.story-card:hover .story-go { text-decoration: underline; }
+
+/* --- 咨询查看器 --- */
+.cc-units { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
+.cc-units button {
+  padding: 6px 12px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .06em;
+  background: transparent; color: var(--dim); border: 1px dashed var(--line-2);
+}
+.cc-units button:hover { color: var(--text); }
+.cc-units button.on {
+  background: var(--text); color: var(--bg); border: 1px solid var(--text);
+}
+.cc-pills {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 0;
+}
+.cc-pills button {
+  min-width: 38px; padding: 6px 0; cursor: pointer; text-align: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .04em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+  transition: color .12s, background .12s, border-color .12s;
+}
+.cc-pills button:hover { color: var(--text); border-color: var(--line-2); }
+.cc-pills button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.cc-feed {
+  margin: 14px 16px 16px; padding: 18px 20px 15px;
+  max-height: 58vh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg-2); border: 1px solid var(--line);
+  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent;
+  transition: background .35s, border-color .35s;
+}
+.cc-seg-title {
+  text-align: center; margin-bottom: 4px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .14em; color: var(--dim);
+}
+.cc-msg { display: flex; gap: 11px; margin-top: 15px; max-width: 86%; }
+.cc-msg.me { margin-left: auto; flex-direction: row-reverse; }
+.cc-ava {
+  flex: 0 0 auto; width: 34px; height: 46px; object-fit: cover; object-position: top;
+  border: 1px solid var(--line-2); align-self: flex-end;
+}
+.cc-bubble {
+  min-width: 0; padding: 9px 13px 10px;
+  background: var(--surface); border: 1px solid var(--line);
+  transition: background .35s, border-color .35s;
+}
+.cc-msg.me .cc-bubble { border-right: 2px solid var(--acc); }
+.cc-name {
+  display: block; margin-bottom: 5px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .12em; color: var(--dim);
+}
+.cc-bubble p {
+  font-size: 12.5px; line-height: 1.85; color: var(--text-2);
+  white-space: pre-line; overflow-wrap: anywhere;
+}
+.cc-msg.me .cc-bubble p { color: var(--text); }
+.cc-choice {
+  margin: 20px auto 0; max-width: 76%; padding: 12px 14px 13px;
+  border: 1px dashed var(--line-2);
+}
+.cc-choice-label {
+  display: block; text-align: center; margin-bottom: 10px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .22em; color: var(--dim-2);
+}
+.cc-choice button {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  margin-top: 7px; padding: 9px 12px; cursor: pointer; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); color: var(--text-2);
+  font-size: 12.5px; line-height: 1.7;
+  transition: border-color .15s, color .15s;
+}
+.cc-choice button:first-of-type { margin-top: 0; }
+.cc-choice button i {
+  flex: 0 0 auto; width: 7px; height: 7px; margin-top: 7px;
+  border-radius: 50%; border: 1px solid var(--dim-2);
+  transition: background .15s, border-color .15s;
+}
+.cc-choice button:hover { border-color: var(--line-2); color: var(--text); }
+.cc-choice button.on { border-color: var(--acc); color: var(--acc); font-weight: 700; }
+.cc-choice button.on i { background: var(--acc); border-color: var(--acc); }
+.cc-narr {
+  margin-top: 18px; text-align: center;
+  font-size: 11.5px; letter-spacing: .06em; color: var(--dim-2);
+}
+.cc-narr::before { content: "—— "; }
+.cc-narr::after { content: " ——"; }
+.cc-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px 14px;
+}
+.cc-nav {
+  padding: 6px 12px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .06em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+}
+.cc-nav:hover:not(:disabled) { color: var(--text); border-color: var(--line-2); }
+.cc-nav:disabled { opacity: .35; cursor: default; }
+.cc-pos {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .12em; color: var(--dim-2);
+}
+.cc-loading {
+  padding: 34px 0; text-align: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .1em; color: var(--dim-2);
+}
+.slot-btn { cursor: pointer; text-align: left; font: inherit; color: inherit; background: transparent; }
+.slot-btn:hover { border-color: var(--line-2); border-style: solid; }
+@media (max-width: 760px) {
+  .cc-msg { max-width: 94%; }
+  .cc-choice { max-width: 94%; }
+}
+
 /* ================= 其他 ================= */
 .loading, .empty {
   padding: 120px 20px; text-align: center;
