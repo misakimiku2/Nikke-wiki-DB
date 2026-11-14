@@ -182,6 +182,24 @@ export async function loadCharStories(): Promise<CharStoriesData> {
   return cacheStories
 }
 
+/* 咨询分支流（export_counsel_flow.py，来自引擎脚本表）：
+   next = 显式跳转（缺省 next(x)=x+1），choices = 选项组（1-based 行号） */
+
+export type CounselFlow = { next: Record<number, number>; choices: number[][] }
+
+let cacheFlow: Record<string, CounselFlow> | null = null
+
+export async function loadCounselFlow(): Promise<Record<string, CounselFlow>> {
+  if (cacheFlow) return cacheFlow
+  try {
+    const d = await getJSON<{ items: Record<string, CounselFlow> }>('/data/counsel_flow.json')
+    cacheFlow = d.items || {}
+  } catch {
+    cacheFlow = {}
+  }
+  return cacheFlow
+}
+
 /* 角色 Spine 站姿模型（可实时播放 idle / 表情动画） */
 
 let cacheCharSpine: Set<string> | null = null

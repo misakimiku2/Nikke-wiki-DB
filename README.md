@@ -76,6 +76,7 @@ python build/build_spine_models.py        # → public/spine       实时 Spine 
 
 # 4. 剧情与搜索
 python build/export_char_stories.py       # → public/data/char_stories.json 好感剧情映射
+python build/export_counsel_flow.py       # → public/data/counsel_flow.json 咨询分支流
 python build/export_story.py              # → public/data/story/ 分章 JSON（读上面的映射改标题）
 python build/export_search.py             # → public/data/search-index.json
 python build/export_web.py                # → public/data        其余聚合 JSON
@@ -102,11 +103,16 @@ cd web && npm run build                   # → dist/
   映射来自 `public/data/char_stories.json`（`export_char_stories.py`）：bucket 后缀与角色
   英文名匹配（皮肤变体本来就是独立角色 id，如 17=阿妮斯：超级巨星），皮肤中文名从咨询
   会话标题解析。个人剧情卡点进 `/story/:id` 阅读器（标题已换成「角色名·个人剧情」）；
-  咨询在页内以对话流呈现——`components/CounselChat.tsx` 把每段台词分类成
-  角色气泡 / 指挥官发言（`speaker_id=Self`）/ 选项组（`Choice` 标记，或格式 A 里
-  连续 ≥2 行的空 speaker） / 旁白（末行），选项可点击标记。注意源数据把两个分支的
-  后续文本顺序连排，无法可靠切分，转写并存展示。`export_story.py` 依赖本映射改
-  阅读器标题，须先于它运行。
+  咨询在页内以对话流呈现，**按选项裁剪分支**：`export_counsel_flow.py` 解析引擎
+  脚本表 `staticdata/AttractiveCounselDialogTable.<会话>.mpk` 的 next 指针
+  （记录尾部的跳转串，仅非顺序跳转时存在），还原「选项→分支内容→汇合」的走向；
+  选项组由文本分类给候选、指针确认（组首行必须有跳过下一行的指针，
+  开头旁白/铺垫误并的组逐级去首重试），最后要求所有选项组合的路径并集
+  覆盖全部行才导出（99.4% 会话通过）。前端 `CounselChat.tsx` 沿指针游走渲染：
+  未选选项时只显示到选项卡为止（必须选择才能往下，同游戏），选了哪支就只显示
+  哪支的后续。个别源数据把选项后续做成玩家连续台词（ade_agentbunny_06
+  「不是。」→「两个都喜欢。」），指针本身表达了这个彩蛋。
+  `export_story.py` 依赖本映射改阅读器标题，须先于它运行。
 - **技能说明**：`public/data/char_skills.json`（`export_char_skills.py`）。
   技能 ID（Locale_Skill 的 5 位数字键）= 类型前缀(1=伤害系 / 2=增益系) + 角色号(3 位) + 槽位，
   名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的

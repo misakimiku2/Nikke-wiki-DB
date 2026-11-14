@@ -1,77 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { loadStoryUnit, type CharStoryRec, type StoryDetail } from '../data'
+import {
+  loadCounselFlow, loadStoryUnit,
+  type CharStoryRec, type CounselFlow, type StoryDetail,
+} from '../data'
 
-type Line = [string, string, string]
-
-type ChatItem =
-  | { k: 'char'; who: string; text: string }
-  | { k: 'player'; text: string }
-  | { k: 'choice'; opts: string[]; key: string }
-  | { k: 'narr'; text: string }
+type LineKind = 'char' | 'player' | 'narr'
 
 /**
- * 咨询台词分类。源数据有两种格式：
- *  A（大多数角色）：角色行带 speaker；指挥官的行是空 speaker——
- *     连续 ≥2 行 = 选项组，单独 1 行 = 指挥官的动作/台词，末行 = 旁白总结。
- *  B（女仆系）：角色行也是空 speaker；指挥官所有行都带 Choice / Self 标记，
- *     空行除末行外全是角色台词。
- */
-function classify(lines: Line[]): ChatItem[] {
-  const n = lines.length
-  const hasMarks = lines.some((x) => x[1] === 'Choice' || x[1] === 'Self')
-  const out: ChatItem[] = []
-  let i = 0
-  let ck = 0
-  while (i < n) {
-    const [sp, spid, txt] = lines[i]
-    if (spid === 'Choice') {
-      const opts: string[] = []
-      const key = `c${ck++}`
-      while (i < n && lines[i][1] === 'Choice') {
-        opts.push(lines[i][2] || '')
-        i++
-      }
-      out.push({ k: 'choice', opts, key })
-      continue
-    }
-    if (spid === 'Self') {
-      out.push({ k: 'player', text: txt || '' })
-      i++
-      continue
-    }
-    if (!sp) {
-      if (i === n - 1) {
-        out.push({ k: 'narr', text: txt || '' })
-        i++
-        continue
-      }
-      if (hasMarks) {
-        out.push({ k: 'char', who: '', text: txt || '' })
-        i++
-        continue
-      }
-      // 格式 A：量一下空行游程（末行旁白不计入）
-      let j = i
-      while (j < n && !lines[j][0] && lines[j][1] !== 'Choice' && lines[j][1] !== 'Self') j++
-      const runEnd = j >= n - 1 ? n - 1 : j
-      if (runEnd - i >= 2) {
-        out.push({ k: 'choice', opts: lines.slice(i, runEnd).map((x) => x[2] || ''), key: `c${ck++}` })
-        i = runEnd
-        continue
-      }
-      out.push({ k: 'player', text: txt || '' })
-      i++
-      continue
-    }
-    out.push({ k: 'char', who: sp, text: txt || '' })
-    i++
-  }
-  return out
-}
-
-/**
- * 咨询查看器：会话选择 + 对话流。选项可点击标记（转写并存展示所有分支的后续文本，
- * 不做真分支裁剪——源数据里两个分支的后续是顺序连排的）。
+ * 咨询查看器：对话流 + 选项分支。
+ *
+ * 行数据来自 /data/story 分片；分支结构来自 counsel_flow.json（引擎脚本表
+ * AttractiveCounselDialogTable 的 next 指针）。渲染时从第 1 行沿指针游走：
+ * 走到选项组就弹选项 UI——没选就不继续（和游戏一样必须做选择才能往下），
+ * 选了哪支就只显示哪支的后续，汇合点两条路共用。
+ * 没有分支数据的会话按顺序平铺全部行。
  */
 export default function CounselChat({
   units,
@@ -87,6 +29,7 @@ export default function CounselChat({
   const [ui, setUi] = useState(0)
   const [si, setSi] = useState(0)
   const [detail, setDetail] = useState<StoryDetail | null>(null)
+  const [flowMap, setFlowMap] = useState<Record<string, CounselFlow>>({})
   const [picks, setPicks] = useState<Record<string, number>>({})
   const feedRef = useRef<HTMLDivElement>(null)
 
@@ -103,14 +46,58 @@ export default function CounselChat({
     return () => { alive = false }
   }, [unit.id])
 
+  useEffect(() => {
+    loadCounselFlow().then(setFlowMap).catch(() => {})
+  }, [])
+
   /** 会话 = 有标题的段；sort≥9000 的杂段（皮肤误挂）不显示 */
   const sessions = useMemo(
     () => (detail ? detail.segments.filter((s) => s.t && s.l.length) : []),
     [detail],
   )
   const seg = sessions[Math.min(si, Math.max(0, sessions.length - 1))]
+  const K = seg?.l.length ?? 0
+  const flow = seg ? flowMap[seg.g] : undefined
 
-  const items = useMemo(() => (seg ? classify(seg.l) : []), [seg])
+  /** 当前会话内逐行的呈现类型 */
+  const kinds = useMemo<LineKind[]>(() => {
+    if (!seg) return []
+    const hasMarks = seg.l.some((x) => x[1] === 'Choice' || x[1] === 'Self')
+    return seg.l.map((ln, i) => {
+      const [sp, spid] = ln
+      if (i === K - 1 && !sp) return 'narr'
+      if (spid === 'Self' || spid === 'Choice') return 'player'
+      if (sp) return 'char'
+      if (hasMarks) return 'char'
+      return 'player'
+    })
+  }, [seg, K])
+
+  const pickKeyOf = (startLine: number) => `${unit.id}:${si}:${startLine}`
+
+  /** 沿分支流游走，得到要渲染的行/选项序列 */
+  const rendered = useMemo(() => {
+    if (!seg) return [] as Array<{ t: 'line'; n: number } | { t: 'choice'; grp: number[] }>
+    const nextMap = flow?.next || {}
+    const startMap = new Map((flow?.choices || []).map((c) => [c[0], c]))
+    const step = (x: number): number | null => nextMap[x] ?? (x < K ? x + 1 : null)
+    const out: Array<{ t: 'line'; n: number } | { t: 'choice'; grp: number[] }> = []
+    let cur: number | null = 1
+    let guard = 0
+    while (cur && cur <= K && guard++ < 800) {
+      const grp = startMap.get(cur)
+      if (grp) {
+        out.push({ t: 'choice', grp })
+        const pk = picks[`${unit.id}:${si}:${cur}`]
+        if (pk == null) break
+        cur = step(grp[pk])
+        continue
+      }
+      out.push({ t: 'line', n: cur })
+      cur = step(cur)
+    }
+    return out
+  }, [seg, flow, picks, unit.id, si, K])
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: 0 })
@@ -144,60 +131,56 @@ export default function CounselChat({
 
       <div className="cc-feed" ref={feedRef}>
         {!detail && <div className="cc-loading">载入对话中…</div>}
-        {detail && seg && (
-          <>
-            <div className="cc-seg-title">{seg.t}</div>
-            {items.map((it, i) => {
-              if (it.k === 'char') {
-                // 连续角色发言只在最后一条带头像（聊天软件惯例），其余留空位对齐
-                const nextIsChar = items[i + 1]?.k === 'char'
-                return (
-                  <div className="cc-msg" key={i}>
-                    {avatar && !nextIsChar && <img className="cc-ava" src={avatar} alt="" loading="lazy" />}
-                    <div className="cc-bubble">
-                      <span className="cc-name" style={{ color: accent }}>
-                        {it.who || charName}
-                      </span>
-                      <p>{it.text}</p>
-                    </div>
-                  </div>
-                )
-              }
-              if (it.k === 'player') {
-                return (
-                  <div className="cc-msg me" key={i}>
-                    <div className="cc-bubble">
-                      <span className="cc-name">指挥官</span>
-                      <p>{it.text}</p>
-                    </div>
-                  </div>
-                )
-              }
-              if (it.k === 'choice') {
-                const pickKey = `${unit.id}:${si}:${it.key}`
-                const sel = picks[pickKey]
-                return (
-                  <div className="cc-choice" key={i}>
-                    <span className="cc-choice-label">你的回答</span>
-                    {it.opts.map((o, oi) => (
-                      <button
-                        key={oi}
-                        className={sel === oi ? 'on' : ''}
-                        style={sel === oi ? { borderColor: accent, color: accent } : undefined}
-                        onClick={() => setPicks((p) => ({ ...p, [pickKey]: oi }))}
-                      >
-                        <i />
-                        <span>{o}</span>
-                      </button>
-                    ))}
-                  </div>
-                )
-              }
-              return <div className="cc-narr" key={i}>{it.text}</div>
-            })}
-          </>
-        )}
-        {detail && (!seg || sessions.length === 0) && (
+        {detail && seg && rendered.map((it) => {
+          if (it.t === 'choice') {
+            const key = pickKeyOf(it.grp[0])
+            const sel = picks[key]
+            return (
+              <div className="cc-choice" key={`c${it.grp[0]}`}>
+                <span className="cc-choice-label">你的回答</span>
+                {it.grp.map((ln, oi) => (
+                  <button
+                    key={ln}
+                    className={sel === oi ? 'on' : ''}
+                    style={sel === oi ? { borderColor: accent, color: accent } : undefined}
+                    onClick={() => setPicks((p) => ({ ...p, [key]: oi }))}
+                  >
+                    <i />
+                    <span>{seg.l[ln - 1][2]}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          }
+          const n = it.n
+          const [sp, , txt] = seg.l[n - 1]
+          const kind = kinds[n - 1]
+          if (kind === 'narr') return <div className="cc-narr" key={`n${n}`}>{txt}</div>
+          if (kind === 'player') {
+            return (
+              <div className="cc-msg me" key={`p${n}`}>
+                <div className="cc-bubble">
+                  <span className="cc-name">指挥官</span>
+                  <p>{txt}</p>
+                </div>
+              </div>
+            )
+          }
+          // 连续角色发言只在最后一条带头像（聊天软件惯例）
+          const idx = rendered.findIndex((x) => x.t === 'line' && x.n === n)
+          const next = rendered[idx + 1]
+          const nextIsChar = !!next && next.t === 'line' && kinds[next.n - 1] === 'char'
+          return (
+            <div className="cc-msg" key={`m${n}`}>
+              {avatar && !nextIsChar && <img className="cc-ava" src={avatar} alt="" loading="lazy" />}
+              <div className="cc-bubble">
+                <span className="cc-name" style={{ color: accent }}>{sp || charName}</span>
+                <p>{txt}</p>
+              </div>
+            </div>
+          )
+        })}
+        {detail && seg && rendered.length === 0 && (
           <div className="cc-loading">这个会话没有可显示的文本。</div>
         )}
       </div>
