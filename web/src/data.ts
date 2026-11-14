@@ -134,15 +134,22 @@ export type CharSkill = {
   icon: string
 }
 
-let cacheSkills: Record<string, CharSkill[]> | null = null
+export type CharSkillsData = {
+  items: Record<string, CharSkill[]>
+  /** 词组 ID → 解释行（描述里 <word_group=ID>词条</word_group> 的弹窗文本） */
+  terms: Record<number, string[]>
+}
 
-export async function loadCharSkills(): Promise<Record<string, CharSkill[]>> {
+let cacheSkills: CharSkillsData | null = null
+
+export async function loadCharSkills(): Promise<CharSkillsData> {
   if (cacheSkills) return cacheSkills
   try {
-    const d = await getJSON<{ total: number; items: Record<string, CharSkill[]> }>('/data/char_skills.json')
-    cacheSkills = d.items || {}
+    cacheSkills = await getJSON<CharSkillsData>('/data/char_skills.json')
+    cacheSkills.items = cacheSkills.items || {}
+    cacheSkills.terms = cacheSkills.terms || {}
   } catch {
-    cacheSkills = {}
+    cacheSkills = { items: {}, terms: {} }
   }
   return cacheSkills
 }

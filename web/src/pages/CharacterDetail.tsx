@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, charArt, charThumb, EXPR_LABEL, loadCharImages, loadCharMi,
   loadCharSkills, loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
-  type CharImages, type Character, type CharSkill,
+  type CharImages, type Character, type CharSkill, type CharSkillsData,
 } from '../data'
 import ImageViewer from '../components/ImageViewer'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
@@ -39,10 +39,39 @@ function animLabel(a: string): string {
 }
 
 /** 技能描述：把 {description_value_NN} 按当前等级的数值表填充，数值用主题色标出 */
-function SkillRow({ skill, lv, accent }: { skill: CharSkill; lv: number; accent: string }) {
+/** 描述分词：{description_value_NN} 按等级填充；<word_group=NN>词条</word_group> 渲染成可点击名词 */
+function SkillRow({ skill, lv, accent, onWord }: {
+  skill: CharSkill; lv: number; accent: string
+  onWord: (gid: number, term: string) => void
+}) {
   const idx = Math.min(Math.max(lv, 1), Math.max(1, skill.levels)) - 1
   const vals = skill.values[idx] || []
-  const parts = skill.desc.split(/\{description_value_(\d+)\}/)
+  const nodes: ReactNode[] = []
+  const re = /\{description_value_(\d+)\}|<word_group=(\d+)>([\s\S]*?)<\/word_group>/g
+  let last = 0
+  let key = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(skill.desc))) {
+    if (m.index > last) nodes.push(<span key={key++}>{skill.desc.slice(last, m.index)}</span>)
+    if (m[1]) {
+      nodes.push(
+        <b key={key++} className="skill-val" style={{ color: accent }}>
+          {vals[Number(m[1]) - 1] ?? '—'}
+        </b>,
+      )
+    } else {
+      const gid = Number(m[2])
+      const term = m[3] || ''
+      nodes.push(
+        <button key={key++} className="word-ref" style={{ color: accent }}
+          onClick={() => onWord(gid, term)} title="查看技能资讯">
+          {term}
+        </button>,
+      )
+    }
+    last = m.index + m[0].length
+  }
+  if (last < skill.desc.length) nodes.push(<span key={key++}>{skill.desc.slice(last)}</span>)
   return (
     <div className="skill">
       {skill.icon ? (
@@ -62,15 +91,7 @@ function SkillRow({ skill, lv, accent }: { skill: CharSkill; lv: number; accent:
           <b>{skill.name}</b>
           <span className="skill-lv">Lv.{Math.min(Math.max(lv, 1), Math.max(1, skill.levels))}</span>
         </div>
-        {skill.desc && (
-          <div className="skill-desc">
-            {parts.map((p, i) => i % 2 === 0
-              ? <span key={i}>{p}</span>
-              : <b key={i} className="skill-val" style={{ color: accent }}>
-                  {vals[Number(p) - 1] ?? '—'}
-                </b>)}
-          </div>
-        )}
+        {skill.desc && <div className="skill-desc">{nodes}</div>}
       </div>
     </div>
   )
@@ -96,8 +117,9 @@ export default function CharacterDetail() {
   const [modelReady, setModelReady] = useState(false)
   /** 站姿模型解析失败（源数据缺图集区域的皮肤）时退回静态立绘，不留一个红字报错框 */
   const [modelError, setModelError] = useState(false)
-  const [skillMap, setSkillMap] = useState<Record<string, CharSkill[]>>({})
+  const [skillData, setSkillData] = useState<CharSkillsData>({ items: {}, terms: {} })
   const [skillLv, setSkillLv] = useState(10)
+  const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
 
   useEffect(() => {
@@ -105,7 +127,7 @@ export default function CharacterDetail() {
     loadCharImages().then(setImgs).catch(() => {})
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
-    loadCharSkills().then(setSkillMap).catch(() => {})
+    loadCharSkills().then(setSkillData).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -127,7 +149,7 @@ export default function CharacterDetail() {
   const current = pick || (c ? mainBase(imgs, c.id) : null) || ''
   const staticSrc = current ? charArt(current) : ''
   const hasModel = !!current && spine.has(current) && !modelError
-  const skills = id ? skillMap[String(id)] : null
+  const skills = id ? skillData.items[String(id)] : null
   // 口型（talk_*）是配合台词的 0 时长姿态；bg_* 只驱动背景（有的模型里这两类
   // 动画根本没有可见部件，选中会只剩空舞台），都不列出来
   const anims = useMemo(
@@ -171,6 +193,20 @@ export default function CharacterDetail() {
 
   return (
     <div className="detail-page">
+      {termPopup && (
+        <div className="word-modal" onClick={() => setTermPopup(null)}>
+          <div className="word-card" onClick={(e) => e.stopPropagation()}>
+            <button className="word-close" onClick={() => setTermPopup(null)} aria-label="关闭">×</button>
+            <div className="word-title">关于【{termPopup.term}】</div>
+            {(skillData.terms[termPopup.gid] || []).map((line, i) => (
+              <div className="word-line" key={i}><i>◇</i><span>{line}</span></div>
+            ))}
+            {(skillData.terms[termPopup.gid] || []).length === 0 && (
+              <div className="word-line"><i>◇</i><span>暂无这个词组的解释文本。</span></div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="detail">
         <div className="detail-visual" style={{ ['--tint' as string]: palette }}>
           {/* 模型就绪前不铺旧静态图：那帧的姿势/取景和实时模型对不上，看着像渲染错误 */}
@@ -339,7 +375,10 @@ export default function CharacterDetail() {
                   </select>
                 </label>
               </div>
-              {skills.map((sk) => <SkillRow key={sk.sid} skill={sk} lv={skillLv} accent={accentFor(c.id)} />)}
+              {skills.map((sk) => (
+                <SkillRow key={sk.sid} skill={sk} lv={skillLv} accent={accentFor(c.id)}
+                  onWord={(gid, term) => setTermPopup({ gid, term })} />
+              ))}
             </section>
           )}
 

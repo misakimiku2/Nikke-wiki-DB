@@ -575,6 +575,10 @@ img { display: block; }
   border: 1px solid var(--line-2); background: var(--bg-2);
   transition: border-color .2s, filter .3s;
 }
+/* 图标是白色美术，浅色主题下垫深色底才看得清（游戏内也是深蓝底） */
+[data-theme="light"] .skill-icon {
+  background: #1b1b24; border-color: #1b1b24;
+}
 .skill-icon-ph { display: block; width: 44px; height: 44px; border: 1px dashed var(--line); }
 .skill-name { display: flex; align-items: center; gap: 10px; }
 .skill-kind {
@@ -591,6 +595,43 @@ img { display: block; }
   overflow-wrap: anywhere;
 }
 .skill-val { font-weight: 800; font-variant-numeric: tabular-nums; }
+.word-ref {
+  background: none; border: none; padding: 0 1px; cursor: pointer;
+  font: inherit; color: inherit;
+  border-bottom: 1px dashed currentColor;
+  transition: filter .15s, background .15s;
+}
+.word-ref:hover { filter: brightness(1.25); background: rgba(255, 255, 255, .06); }
+[data-theme="light"] .word-ref:hover { background: rgba(0, 0, 0, .05); }
+.word-modal {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(4, 4, 8, .55); backdrop-filter: blur(3px);
+  display: grid; place-items: center;
+  animation: wordIn .18s ease;
+}
+@keyframes wordIn { from { opacity: 0 } to { opacity: 1 } }
+.word-card {
+  position: relative; width: min(500px, 92vw); max-height: 72vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line-2);
+  padding: 22px 26px 24px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+}
+.word-title {
+  text-align: center; font-size: 16px; font-weight: 800; letter-spacing: -.01em;
+  color: var(--text); margin-bottom: 16px;
+}
+.word-line {
+  display: flex; gap: 9px; margin-top: 9px;
+  font-size: 12.5px; line-height: 1.8; color: var(--text-2);
+}
+.word-line i { flex: 0 0 auto; font-style: normal; color: var(--dim-2); }
+.word-close {
+  position: absolute; top: 10px; right: 12px;
+  width: 30px; height: 30px; cursor: pointer;
+  background: transparent; border: 1px solid var(--line); color: var(--dim);
+  font-size: 16px; line-height: 1;
+}
+.word-close:hover { background: var(--red); border-color: var(--red); color: #fff; }
 
 /* ================= 其他 ================= */
 .loading, .empty {

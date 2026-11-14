@@ -61,13 +61,12 @@ def snorkel(b, lo=0, hi=None):
 
 
 def clean(text):
-    """去掉 color / word_group 标签，保留内容与换行"""
+    """去掉 color 标签；<word_group=NN>词条</word_group> 保留原样，
+    前端把它渲染成可点击的专有名词（解释文本在词组表里）"""
     if not text:
         return ""
     text = re.sub(r"<color=[^>]*>", "", text)
     text = text.replace("</color>", "")
-    text = re.sub(r"<word_group=\d+>", "", text)
-    text = text.replace("</word_group>", "")
     return text.strip()
 
 
@@ -159,6 +158,14 @@ def main():
         r = db.execute("select zh from skill_strings where key=?", (key,)).fetchone()
         return r[0] if r else None
 
+    # 词组表：<词组ID>_<行号>_add_des → 专有名词解释（游戏内「技能资讯」弹窗）
+    terms = {}
+    for (k, zh) in db.execute("select key, zh from skill_strings where key like '%_add_des'"):
+        m = re.match(r"^(\d+)_(\d+)_add_des$", k)
+        if m and zh:
+            terms.setdefault(int(m.group(1)), []).append((int(m.group(2)), clean(zh)))
+    terms = {gid: [t for _n, t in sorted(lines)] for gid, lines in terms.items()}
+
     items = {}
     no_level = 0
     for ch in chars:
@@ -198,7 +205,7 @@ def main():
             print(json.dumps({uid: items.get(uid)}, ensure_ascii=False, indent=1)[:2000])
 
     with open(OUT, "w", encoding="utf-8") as f:
-        json.dump({"total": len(items), "items": items}, f,
+        json.dump({"total": len(items), "items": items, "terms": terms}, f,
                   ensure_ascii=False, separators=(",", ":"))
 
     n_skills = sum(len(v) for v in items.values())

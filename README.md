@@ -102,6 +102,8 @@ cd web && npm run build                   # → dist/
   名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的
   count + [0x01][tag][len][bytes] 值序列，按 {description_value_NN} 的索引对应）。
   前端按等级填充占位符，默认 Lv.10，可切换。覆盖 211 个可玩角色；剧情 NPC 没有战斗技能。
+  描述里的 <word_group=ID>词条</word_group> 保留原样，词组解释（游戏「技能资讯」弹窗）
+  存在同文件 terms 字段（Locale_Skill 的 `<ID>_<行号>_add_des`，111 组），前端点击词条弹出。
   技能图标取自 icons-skill(hd) 池（502 张 128² 独立贴图，名字即 SkillInfoTable 的 icon
   引用，icn_skill_*），导出到 `public/skillicon/<引用名>.webp`，前端按 icon 字段取用。
 - 站姿模型的图集是 `pma:true`，转换规则与 CG 一致：只把 alpha=0 的像素 RGB 清零，
