@@ -295,7 +295,7 @@ img { display: block; }
   box-shadow: var(--card-shadow);
 }
 .char-card .visual {
-  position: relative; aspect-ratio: 1/1; overflow: hidden;
+  position: relative; aspect-ratio: 4/5; overflow: hidden;
   display: flex; align-items: flex-end; justify-content: center;
   background: var(--visual-bg);
   transition: background .35s;
@@ -315,13 +315,13 @@ img { display: block; }
   filter: drop-shadow(var(--img-shadow));
 }
 .char-card:hover .visual img { transform: translateY(-6px) scale(1.23); }
-/* 高清立绘直接给的头部方图：铺满卡片，不再拉伸放大全身 */
-.char-card .visual.is-head img {
+/* 官方 mi 头像（256×512）：按顶部对齐铺满，头部永远在框内，不再靠 alpha 猜位置 */
+.char-card .visual.is-face img {
   object-fit: cover; object-position: center top;
   transform: none;
   filter: none;
 }
-.char-card:hover .visual.is-head img { transform: scale(1.05); }
+.char-card:hover .visual.is-face img { transform: scale(1.04); }
 .char-card .visual .fallback {
   position: relative; z-index: 1; margin-bottom: 26px;
   font-size: 46px; font-weight: 900; color: var(--dim-2);
@@ -364,7 +364,7 @@ img { display: block; }
   transition: background .35s, border-color .35s;
 }
 .detail-visual .stage {
-  position: relative; aspect-ratio: 1/1; display: flex; align-items: flex-end; justify-content: center;
+  position: relative; aspect-ratio: 3/4; display: flex; align-items: flex-end; justify-content: center;
   background: var(--visual-bg);
   transition: background .35s;
 }
@@ -384,13 +384,100 @@ img { display: block; }
   flex-wrap: wrap;
 }
 .detail-visual .variants button {
+  position: relative;
   width: 46px; height: 46px; padding: 0; cursor: pointer;
   background: var(--bg-2); border: 1px solid var(--line); overflow: hidden;
   transition: border-color .15s;
 }
 .detail-visual .variants button:hover { border-color: var(--line-2); }
 .detail-visual .variants button.on { border-color: var(--red); }
-.detail-visual .variants img { width: 100%; height: 100%; object-fit: contain; }
+.detail-visual .variants img {
+  width: 100%; height: 100%; object-fit: cover; object-position: center top;
+}
+.detail-visual .variants .vt-live {
+  position: absolute; right: 3px; bottom: 3px;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--red); box-shadow: 0 0 0 1px rgba(0,0,0,.35);
+}
+
+/* 角色详情：实时 Spine 模型控制条 */
+.char-bar {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  transition: background .35s, border-color .35s;
+}
+.char-anims {
+  display: flex; align-items: center; gap: 5px; padding: 10px 12px 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.char-anims::-webkit-scrollbar { display: none; }
+.char-anims button {
+  flex: 0 0 auto; padding: 5px 7px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .02em;
+  background: transparent; border: 1px solid var(--line); color: var(--dim);
+  transition: color .15s, border-color .15s, background .15s;
+}
+.char-anims button:hover { color: var(--text); border-color: var(--line-2); }
+.char-anims button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.char-anims .char-more {
+  flex: 0 0 auto; height: 26px; padding: 0 4px 0 6px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .02em;
+  background: transparent; color: var(--dim); border: 1px dashed var(--line-2);
+}
+.char-anims .char-more:hover { color: var(--text); border-color: var(--dim); }
+.char-anims .char-more.on { background: var(--text); color: var(--bg); border: 1px solid var(--text); }
+.char-bar-row {
+  display: flex; align-items: center; gap: 6px; padding: 10px 12px 12px;
+}
+.cb-play {
+  width: 32px; height: 32px; padding: 0; cursor: pointer;
+  display: grid; place-items: center; font-size: 12px;
+  background: var(--red); border: 1px solid var(--red); color: #fff;
+}
+.cb-play:hover { filter: brightness(1.12); }
+.cb-speed select {
+  height: 32px; padding: 0 6px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line);
+}
+.cb-btn {
+  height: 32px; padding: 0 9px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
+  background: var(--bg-2); color: var(--dim); border: 1px solid var(--line);
+  transition: color .15s, border-color .15s;
+}
+.cb-btn:hover { color: var(--text); border-color: var(--line-2); }
+.cb-spacer { flex: 1; }
+.char-empty-mark {
+  width: 100%; height: 100%; display: grid; place-items: center;
+  font-size: 96px; font-weight: 900; color: var(--dim-2);
+}
+.char-stage .spine-player { position: absolute; inset: 0; }
+.detail-visual .char-still {
+  position: absolute; inset: 0; z-index: 1;
+  width: 100%; height: 100%; object-fit: contain; object-position: bottom center;
+  filter: drop-shadow(var(--img-shadow));
+  transition: opacity .35s ease;
+  pointer-events: none;
+}
+.detail-visual .char-still.gone { opacity: 0; }
+.char-live {
+  position: absolute; left: 16px; top: 14px; z-index: 3;
+  display: inline-flex; align-items: center; gap: 7px; pointer-events: none;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .12em;
+  color: var(--dim); background: var(--tag-bg); border: 1px solid var(--line);
+  padding: 5px 9px;
+}
+.char-live i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--dim-2);
+  transition: background .2s, box-shadow .2s;
+}
+.char-live.on { color: var(--text); }
+.char-live.on i { background: var(--red); box-shadow: 0 0 0 3px rgba(255,45,85,.16); }
 
 .detail-code {
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;

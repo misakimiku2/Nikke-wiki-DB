@@ -7,6 +7,8 @@
 /web/node_modules/
 /web/dist/
 /dist/
+/dist_new/
+/dist_old/
 
 # 图片 / Spine 模型产物（由 build/ 脚本从 NIKKE_SRC 生成）
 /public/

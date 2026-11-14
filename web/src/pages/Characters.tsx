@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  accentFor, charImg, hasHd, loadCharHd, loadCharImages, loadCharacters, mainBase, nf, tintFor,
+  accentFor, charPortrait, loadCharHd, loadCharImages, loadCharMi,
+  loadCharacters, mainBase, nf, tintFor,
   type CharImages, type Character,
 } from '../data'
 
@@ -11,6 +12,7 @@ export default function Characters() {
   const [list, setList] = useState<Character[] | null>(null)
   const [imgs, setImgs] = useState<CharImages>({})
   const [hd, setHd] = useState<Set<string>>(new Set())
+  const [mi, setMi] = useState<Set<string>>(new Set())
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
 
@@ -18,6 +20,7 @@ export default function Characters() {
     loadCharacters().then(setList).catch(() => setList([]))
     loadCharImages().then(setImgs).catch(() => {})
     loadCharHd().then(setHd).catch(() => {})
+    loadCharMi().then(setMi).catch(() => {})
   }, [])
 
   const shown = useMemo(() => {
@@ -78,8 +81,8 @@ export default function Characters() {
         <div className="char-grid">
           {shown.map((c) => {
             const base = mainBase(imgs, c.id)
-            const hdPic = hasHd(hd, base)
-            const src = base ? charImg(base, hd, hdPic ? 'head' : 'full') : null
+            const face = !!base && mi.has(base)
+            const src = charPortrait(base, mi, hd)
             return (
               <Link
                 key={c.id}
@@ -87,7 +90,7 @@ export default function Characters() {
                 className="char-card"
                 style={{ ['--tint' as string]: tintFor(c.id) }}
               >
-                <div className={`visual ${hdPic ? 'is-head' : 'is-full'}`}>
+                <div className={`visual ${face ? 'is-face' : 'is-full'}`}>
                   {src ? (
                     <img src={src} alt={c.name} loading="lazy" />
                   ) : (

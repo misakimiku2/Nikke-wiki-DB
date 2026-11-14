@@ -107,6 +107,95 @@ export function charImg(base: string, hd: Set<string>, kind: 'full' | 'head' = '
   return `/char/${base}.webp`
 }
 
+/* 官方角色头像（icons-char-mi(hd)，256×512 透明底，头部到胸口） */
+
+let cacheMi: Set<string> | null = null
+
+export async function loadCharMi(): Promise<Set<string>> {
+  if (cacheMi) return cacheMi
+  try {
+    const d = await getJSON<{ items: string[] }>('/data/char_mi.json')
+    cacheMi = new Set(d.items)
+  } catch {
+    cacheMi = new Set()
+  }
+  return cacheMi
+}
+
+/**
+ * 角色卡预览图。优先用官方 mi 头像：框图天生正确，不需要按 alpha 猜头部位置；
+ * 没有头像的角色退回站姿渲染图，再没有就用 1024 图标。
+ */
+export function charPortrait(base: string | null, mi: Set<string>, hd: Set<string>): string | null {
+  if (!base) return null
+  if (mi.has(base)) return `/charmi/${base}.webp`
+  return charImg(base, hd, 'full')
+}
+
+/** 详情页变体切换用的小方图：有 mi 就裁头部，否则全身图 */
+export function charThumb(base: string, mi: Set<string>, hd: Set<string>): string {
+  if (mi.has(base)) return `/charmi/${base}.webp`
+  return charImg(base, hd, 'head')
+}
+
+/* 角色 Spine 站姿模型（可实时播放 idle / 表情动画） */
+
+let cacheCharSpine: Set<string> | null = null
+
+export async function loadCharSpine(): Promise<Set<string>> {
+  if (cacheCharSpine) return cacheCharSpine
+  try {
+    const d = await getJSON<{ items: string[] }>('/data/char_spine.json')
+    cacheCharSpine = new Set(d.items)
+  } catch {
+    cacheCharSpine = new Set()
+  }
+  return cacheCharSpine
+}
+
+/** 表情动画的中文名；未收录的原样显示（talk_* 是口型，放在下拉里） */
+export const EXPR_LABEL: Record<string, string> = {
+  idle: '待机',
+  delight: '开心',
+  angry: '生气',
+  sad: '悲伤',
+  sorrow: '难过',
+  surprise: '惊讶',
+  surp: '惊讶',
+  surpreise: '惊讶',
+  surprised: '惊讶',
+  shy: '害羞',
+  shy2: '害羞',
+  think: '思考',
+  worry: '担心',
+  worried: '担心',
+  no: '拒绝',
+  yes: '同意',
+  special: '特殊',
+  action: '动作',
+  battle: '战斗',
+  smile: '微笑',
+  happy: '高兴',
+  good: '得意',
+  pain: '痛苦',
+  rage: '暴怒',
+  mad: '恼怒',
+  cry: '哭泣',
+  tear: '流泪',
+  panic: '惊慌',
+  scared: '害怕',
+  sleep: '睡眠',
+  serious: '严肃',
+  void: '放空',
+  etc: '其他',
+  go: '前进',
+  bad: '失落',
+  close: '闭眼',
+  expression_0: '默认表情',
+  expression_1: '表情 1',
+  bg_idle: '背景待机',
+}
+
 /* Spine 模型（可在网页里直播的 CG） */
 
 let cacheSpine: Set<string> | null = null

@@ -15,7 +15,7 @@ React 18 + Vite + TypeScript 前端，数据层是预生成的 SQLite + JSON，�
 |---|---|
 | `web/` | 前端源码。`src/` 下有 8 个页面路由组件、`components/` 与 `theme.ts` |
 | `build/` | 数据构建脚本（Python），把上游解包结果压成站点可用的 DB 与 JSON |
-| `public/` | **不入库**。构建产物：CG 三档图、角色立绘、Spine 模型、`data/*.json` |
+| `public/` | **不入库**。构建产物：CG 三档图、角色立绘 / 头像、Spine 模型、`data/*.json` |
 | `data/nikke.db` | **不入库**。`build_db.py` 生成的 SQLite（约 138 MB） |
 | `dist/` | **不入库**。`npm run build` 输出，约 2.1 GB，直接用于静态托管 |
 
@@ -63,7 +63,9 @@ python build/build_db.py                  # → data/nikke.db
 python build/build_characters.py          # → data/nikke.db 的角色表
 python build/export_sd.py                 # → public/char        立绘
 python build/build_char_hd.py             # → public/charhd      高清立绘
+python build/export_char_mi.py            # → public/charmi      官方头像（列表预览用）
 python build/export_char_images.py        # → public/data/char_images.json
+python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
 
 # 3. CG
 python build/build_images.py              # → public/img         三档转码
@@ -82,13 +84,27 @@ cd web && npm run build                   # → dist/
 
 `build/rerender_spine.py` 用于单独重渲染某个 Spine 模型，不必全量重跑。
 
+## 角色页的渲染方式
+
+- **列表 / 皮肤缩略图**：`public/charmi/<名>.webp`，来自游戏自带的 `icons-char-mi(hd)`
+  （256×512 透明底，头部到胸口）。旧做法是把站姿渲染图按 alpha 包围盒顶部 10% 猜头部位置再裁切，
+  遇到举枪、宽帽檐、长发就会裁到枪管或胸口，已弃用。
+- **详情页**：`public/spine_char/<名>/` 的站姿模型实时播放，`idle / delight / angry / sad /
+  surprise / shy / think / action` 等表情动画可在页面里一键切换（多的一套有 16 段，其余收在
+  「更多表情」下拉里），和 CG 查看器共用同一个 `SpinePlayer`；没有站姿模型的皮肤退回静态高清立绘
+  （`public/charhd`）。
+- 站姿模型的图集是 `pma:true`，转换规则与 CG 一致：只把 alpha=0 的像素 RGB 清零，
+  lossless WebP + `exact=True`，不要二次预乘。
+
 ## 部署
 
 `dist/` 是纯静态产物，可整体上传到任意静态托管。注意两处体积限制：
 
 - `public/data/search-index.json` 约 **29 MB**，超过 Cloudflare Pages 单文件 25 MiB 上限，
   需要拆分或改走对象存储
-- `dist/` 约 **2.1 GB / 8455 个文件**，Cloudflare Pages 单项目上限 20000 文件，能放下但接近
+- `dist/` 约 **3.8 GB / 10700 个文件**，Cloudflare Pages 单项目上限 20000 文件，能放下但接近
+- 若 `npm run build` 因为无权限清空旧 `dist/` 失败（批量删除保护），可以构建到新目录再换名：
+  `cd web && npx vite build --outDir ../dist_new`，然后 `mv dist dist_old && mv dist_new dist`
 
 素材与产物都不进 git，所以 CI 里没有素材可构建——部署方式是**本地构建后上传产物**。
 

@@ -32,8 +32,10 @@ export type SpineController = {
 }
 
 export type SpinePlayerProps = {
-  /** 模型名，例如 EventScene_CherryBlossom_01 */
+  /** 模型名，例如 EventScene_CherryBlossom_01 / c010_00 */
   name: string
+  /** 模型所在目录（public 下的一级目录）：CG 是 spine，角色站姿是 spine_char */
+  dir?: 'spine' | 'spine_char'
   className?: string
   /** 是否渲染自带控制条；二级查看页传 false，改用页面底部统一控制条 */
   controls?: boolean
@@ -56,6 +58,13 @@ export type SpinePlayerProps = {
    * cover，三层才会按同一套比例缩放，不会出现「背景铺满、人物另算一套」。
    */
   fitMode?: 'contain' | 'cover'
+  /**
+   * 是否自动隐藏名字里带 shadow 的附件。CG 场景里的整屏阴影层在 Spine 数据里是
+   * Normal 混合，实时绘制会在脸上留一块灰影，需要摘掉；角色站姿模型的
+   * chest_shadow / hair_shadow 是正常的部位阴影（同样是 Normal），必须保留。
+   * 默认跟随 dir：CG 开、角色关。显式传值可覆盖。
+   */
+  hideShadows?: boolean
   /** 自带控制条右侧的额外内容 */
   extra?: ReactNode
 }
@@ -104,8 +113,8 @@ function drawContain(
  *  - 可通过 controllerRef 暴露播放 / 暂停 / 时间轴 seek / 变速 / 复位 / 保存当前帧
  */
 export default function SpinePlayer({
-  name, className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
-  backgroundSrc, fitMode = 'contain', extra,
+  name, dir = 'spine', className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
+  backgroundSrc, fitMode = 'contain', hideShadows, extra,
 }: SpinePlayerProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -179,7 +188,7 @@ export default function SpinePlayer({
 
     ;(async () => {
       try {
-        const folder = `/spine/${name}/`
+        const folder = `/${dir}/${name}/`
         const [atlasText, skelBuf, overrides] = await Promise.all([
           fetchOK(`${folder}${name}.atlas`).then((r) => r.text()),
           fetchOK(`${folder}${name}.skel`).then((r) => r.arrayBuffer()),
@@ -219,9 +228,11 @@ export default function SpinePlayer({
         if (data.defaultSkin) skeleton.setSkin(data.defaultSkin)
         skeleton.setSlotsToSetupPose()
 
-        // 阴影贴图（*_shadow）在原版里靠 multiply 着色器绘制，Spine 数据里是 Normal
+        // 阴影贴图（*_shadow）在 CG 里靠 multiply 着色器绘制，Spine 数据里是 Normal
         // 混合，直接画会在脸上留一块灰影。这里和「按模型覆盖配置」一起逐帧隐藏：
         // state.apply 每帧都会重设 slot.color，所以不能只在初始化时设一次。
+        // 角色站姿模型的同类命名的阴影是真实部位阴影，由 hideShadows 关掉这条规则。
+        const shadowRule = hideShadows ?? dir === 'spine'
         const hiddenExact = new Set<string>()
         const hiddenPatterns: RegExp[] = []
         for (const rule of overrides[name]?.hiddenSlots || []) {
@@ -236,7 +247,7 @@ export default function SpinePlayer({
             let att: any = null
             try { att = slot.getAttachment() } catch { att = null }
             const hide = isHiddenSlot(String(slot.data?.name || ''))
-              || (att && /shadow/i.test(String(att.name || '')))
+              || (shadowRule && att && /shadow/i.test(String(att.name || '')))
             // 必须真的摘掉附件，而不是只把 slot.color.a 置 0：
             // pma 混合下某些大画框/光板贴图仍会残留一层半透明浅色矩形；
             // setAttachment(null) 同时也让它们不参与 getBounds 取景，和离线渲染一致。
@@ -516,7 +527,7 @@ export default function SpinePlayer({
       if (controllerRef) controllerRef.current = null
       localCtrl.current = null
     }
-  }, [name, controllerRef, fitMode])
+  }, [name, dir, controllerRef, fitMode, hideShadows])
 
   if (error) {
     return <div className={`spine-player err ${className}`}>模型加载失败：{error}</div>
