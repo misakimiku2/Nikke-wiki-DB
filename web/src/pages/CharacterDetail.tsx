@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, charArt, charThumb, EXPR_LABEL, loadCharImages, loadCharMi,
-  loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
-  type CharImages, type Character,
+  loadCharSkills, loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
+  type CharImages, type Character, type CharSkill,
 } from '../data'
 import ImageViewer from '../components/ImageViewer'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
@@ -38,6 +38,31 @@ function animLabel(a: string): string {
   return a
 }
 
+/** 技能描述：把 {description_value_NN} 按当前等级的数值表填充，数值用主题色标出 */
+function SkillRow({ skill, lv, accent }: { skill: CharSkill; lv: number; accent: string }) {
+  const idx = Math.min(Math.max(lv, 1), Math.max(1, skill.levels)) - 1
+  const vals = skill.values[idx] || []
+  const parts = skill.desc.split(/\{description_value_(\d+)\}/)
+  return (
+    <div className="skill">
+      <div className="skill-name">
+        <em className="skill-kind">{skill.kind || '技能'}</em>
+        <b>{skill.name}</b>
+        <span className="skill-lv">Lv.{Math.min(Math.max(lv, 1), Math.max(1, skill.levels))}</span>
+      </div>
+      {skill.desc && (
+        <div className="skill-desc">
+          {parts.map((p, i) => i % 2 === 0
+            ? <span key={i}>{p}</span>
+            : <b key={i} className="skill-val" style={{ color: accent }}>
+                {vals[Number(p) - 1] ?? '—'}
+              </b>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function pickChips(anims: string[]): { label: string; anim: string }[] {
   const out: { label: string; anim: string }[] = []
   for (const d of CHIP_DEFS) {
@@ -58,6 +83,8 @@ export default function CharacterDetail() {
   const [modelReady, setModelReady] = useState(false)
   /** 站姿模型解析失败（源数据缺图集区域的皮肤）时退回静态立绘，不留一个红字报错框 */
   const [modelError, setModelError] = useState(false)
+  const [skillMap, setSkillMap] = useState<Record<string, CharSkill[]>>({})
+  const [skillLv, setSkillLv] = useState(10)
   const spineRef = useRef<SpineController | null>(null)
 
   useEffect(() => {
@@ -65,6 +92,7 @@ export default function CharacterDetail() {
     loadCharImages().then(setImgs).catch(() => {})
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
+    loadCharSkills().then(setSkillMap).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -86,6 +114,7 @@ export default function CharacterDetail() {
   const current = pick || (c ? mainBase(imgs, c.id) : null) || ''
   const staticSrc = current ? charArt(current) : ''
   const hasModel = !!current && spine.has(current) && !modelError
+  const skills = id ? skillMap[String(id)] : null
   // 口型（talk_*）是配合台词的 0 时长姿态；bg_* 只驱动背景（有的模型里这两类
   // 动画根本没有可见部件，选中会只剩空舞台），都不列出来
   const anims = useMemo(
@@ -283,6 +312,24 @@ export default function CharacterDetail() {
             </div>
           </div>
 
+          {skills && skills.length > 0 && (
+            <section className="skillbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
+              <div className="skillbox-head">
+                <span className="skillbox-title">技能说明 <i>SKILLS</i></span>
+                <label className="skill-lv">
+                  等级
+                  <select value={skillLv} onChange={(e) => setSkillLv(Number(e.target.value))}>
+                    {Array.from({ length: Math.max(...skills.map((s) => s.levels), 1) },
+                      (_, k) => k + 1).map((lv) => (
+                        <option key={lv} value={lv}>Lv.{lv}</option>
+                      ))}
+                  </select>
+                </label>
+              </div>
+              {skills.map((sk) => <SkillRow key={sk.sid} skill={sk} lv={skillLv} accent={accentFor(c.id)} />)}
+            </section>
+          )}
+
           <div className="detail-slots">
             <div className={`slot ${hasModel ? 'on' : ''}`}>
               <span>动态立绘</span>
@@ -291,10 +338,6 @@ export default function CharacterDetail() {
                   ? (modelReady ? `${anims.length} 段表情动画` : '读取模型中…')
                   : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
               </em>
-            </div>
-            <div className="slot">
-              <span>技能说明</span>
-              <em>待接入</em>
             </div>
             <div className="slot">
               <span>好感剧情</span>

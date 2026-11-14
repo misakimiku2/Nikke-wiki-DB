@@ -122,6 +122,30 @@ export function charThumb(base: string, mi: Set<string>): string {
   return charArt(base)
 }
 
+/* 角色技能说明（desc 模板里的 {description_value_NN} 由前端按等级填充） */
+
+export type CharSkill = {
+  sid: number
+  kind: string
+  name: string
+  desc: string
+  values: (string | null)[][]
+  levels: number
+}
+
+let cacheSkills: Record<string, CharSkill[]> | null = null
+
+export async function loadCharSkills(): Promise<Record<string, CharSkill[]>> {
+  if (cacheSkills) return cacheSkills
+  try {
+    const d = await getJSON<{ total: number; items: Record<string, CharSkill[]> }>('/data/char_skills.json')
+    cacheSkills = d.items || {}
+  } catch {
+    cacheSkills = {}
+  }
+  return cacheSkills
+}
+
 /* 角色 Spine 站姿模型（可实时播放 idle / 表情动画） */
 
 let cacheCharSpine: Set<string> | null = null

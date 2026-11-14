@@ -65,6 +65,7 @@ python build/export_sd.py                 # → public/char        立绘
 python build/build_char_hd.py             # → public/charhd      旧版合成立绘（页面已不再引用）
 python build/export_char_mi.py            # → public/charmi      官方头像（列表预览用）
 python build/export_char_images.py        # → public/data/char_images.json
+python build/export_char_skills.py        # → public/data/char_skills.json  技能说明
 python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
 
 # 3. CG
@@ -95,6 +96,11 @@ cd web && npm run build                   # → dist/
   （`public/char`，即 `icons-char-full(hd)`）。
 - **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
   姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
+- **技能说明**：`public/data/char_skills.json`（`export_char_skills.py`）。
+  技能 ID（Locale_Skill 的 5 位数字键）= 类型前缀(1=伤害系 / 2=增益系) + 角色号(3 位) + 槽位，
+  名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的
+  count + [0x01][tag][len][bytes] 值序列，按 {description_value_NN} 的索引对应）。
+  前端按等级填充占位符，默认 Lv.10，可切换。覆盖 211 个可玩角色；剧情 NPC 没有战斗技能。
 - 站姿模型的图集是 `pma:true`，转换规则与 CG 一致：只把 alpha=0 的像素 RGB 清零，
   lossless WebP + `exact=True`，不要二次预乘。
 
