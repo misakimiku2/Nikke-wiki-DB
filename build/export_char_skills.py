@@ -15,7 +15,8 @@
      1003=技能2）之后是数值区：[count][count × (0x01 + tag i32 + [len i32 + bytes])]，
      tag=0 表示空槽。数值串按描述里 {description_value_NN} 的顺序排列。
 
-输出：public/data/char_skills.json
+输出：public/data/char_skills.json（技能条目带 icon 字段，图标本体在 public/skillicon/，
+      由 export_skill_icons.py 从 icons-skill(hd) 池导出）
       {"total": n, "items": {"10": [ {sid, kind, name, desc, values[][], levels} ]}}
 描述保留 {description_value_NN} 占位符，由前端按等级填充。
 
@@ -128,7 +129,10 @@ def parse_skill_info():
                     kpos = pp + 4 + len(t)
                     break
             values, _ = read_values(b, kpos)
-        rec = out.setdefault(sid, {"kind": kind_ref, "desc_ref": desc_ref, "levels": {}})
+        # 图标引用 = name 引用紧邻的上一个字符串（icn_skill_*）
+        icon = strs[i - 1][1] if i > 0 and strs[i - 1][1].startswith("icn_") else ""
+        rec = out.setdefault(sid, {"kind": kind_ref, "desc_ref": desc_ref,
+                                   "icon": icon, "levels": {}})
         rec["levels"][level] = values if values is not None else []
     return out
 
@@ -171,7 +175,7 @@ def main():
                 if rec is None:
                     desc = text(sid_s + "_description") or ""
                     skills.append({"sid": sid, "kind": "", "name": nm, "desc": clean(desc),
-                                   "values": [], "levels": 0})
+                                   "values": [], "levels": 0, "icon": ""})
                     no_level += 1
                     continue
                 kind = kind_label.get((rec["kind"] or "").removeprefix("Locale_Skill:"), "")
@@ -182,7 +186,8 @@ def main():
                 max_lv = max(levels)
                 values = [levels.get(lv) or [] for lv in range(1, max_lv + 1)]
                 skills.append({"sid": sid, "kind": kind, "name": nm,
-                               "desc": clean(desc), "values": values, "levels": max_lv})
+                               "desc": clean(desc), "values": values, "levels": max_lv,
+                               "icon": rec.get("icon", "")})
         if skills:
             order = {"技能1": 0, "技能2": 1, "爆裂技能": 2}
             skills.sort(key=lambda s: (order.get(s["kind"], 3), s["sid"]))

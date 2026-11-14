@@ -45,20 +45,33 @@ function SkillRow({ skill, lv, accent }: { skill: CharSkill; lv: number; accent:
   const parts = skill.desc.split(/\{description_value_(\d+)\}/)
   return (
     <div className="skill">
-      <div className="skill-name">
-        <em className="skill-kind">{skill.kind || '技能'}</em>
-        <b>{skill.name}</b>
-        <span className="skill-lv">Lv.{Math.min(Math.max(lv, 1), Math.max(1, skill.levels))}</span>
-      </div>
-      {skill.desc && (
-        <div className="skill-desc">
-          {parts.map((p, i) => i % 2 === 0
-            ? <span key={i}>{p}</span>
-            : <b key={i} className="skill-val" style={{ color: accent }}>
-                {vals[Number(p) - 1] ?? '—'}
-              </b>)}
-        </div>
+      {skill.icon ? (
+        <img
+          className="skill-icon"
+          src={`/skillicon/${skill.icon}.webp`}
+          alt=""
+          loading="lazy"
+          draggable={false}
+        />
+      ) : (
+        <span className="skill-icon skill-icon-ph" aria-hidden />
       )}
+      <div className="skill-main">
+        <div className="skill-name">
+          <em className="skill-kind">{skill.kind || '技能'}</em>
+          <b>{skill.name}</b>
+          <span className="skill-lv">Lv.{Math.min(Math.max(lv, 1), Math.max(1, skill.levels))}</span>
+        </div>
+        {skill.desc && (
+          <div className="skill-desc">
+            {parts.map((p, i) => i % 2 === 0
+              ? <span key={i}>{p}</span>
+              : <b key={i} className="skill-val" style={{ color: accent }}>
+                  {vals[Number(p) - 1] ?? '—'}
+                </b>)}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

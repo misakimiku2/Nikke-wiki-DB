@@ -131,6 +131,7 @@ export type CharSkill = {
   desc: string
   values: (string | null)[][]
   levels: number
+  icon: string
 }
 
 let cacheSkills: Record<string, CharSkill[]> | null = null
