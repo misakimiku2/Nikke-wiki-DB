@@ -1,0 +1,11 @@
+# 数据构建依赖
+# 安装：pip install -r requirements.txt
+#
+# 注意：export_sd.py 还需要上游 nikke_extract 的 export_cg_v2 模块，
+# 两个仓库需 clone 到同一父目录（详见 README「数据来源」）。
+#
+# 本机验证通过的版本（2026-11）：Pillow 13.0.0 / UnityPy 1.25.4 / zstandard 0.25.0
+
+Pillow>=10.0
+UnityPy>=1.20
+zstandard>=0.22
