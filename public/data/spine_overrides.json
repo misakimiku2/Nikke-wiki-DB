@@ -1,0 +1,74 @@
+{
+  "_note": "按模型覆盖 Spine 渲染设置。hiddenSlots 里的 slot 会被逐帧隐藏，支持精确 slot 名或 /正则/ 字符串。background 填独立背景 CG 的名字（或 / 开头的图片 URL）：CG 查看器会把它铺在人物层下面，静态合成图与实时模型共用一个背景层；剧情阅读器原本就有自己的 bg 层，不受此字段影响。前端实时模型改完刷新即生效；静态合成图需重跑 render_static.mjs。",
+  "version": 1,
+  "models": {
+    "EventScene_Main_01_01": {
+      "hiddenSlots": [
+        "fx1",
+        "fx2",
+        "cape_l",
+        "cape_r"
+      ],
+      "background": "EventScene_Main_01_01_bg",
+      "comment": "隐藏原素材自带的 U 形暗角画框(fx1/fx2)与下方蓝色三角装饰(cape_l/cape_r)；只想去掉黑边的话把 cape_* 两项删掉即可。背景单独存为 EventScene_Main_01_01_bg.png（不在图集里），这里补回。"
+    },
+    "c601_00_skillcut": {
+      "hiddenSlots": [
+        "/^1s_bg/"
+      ],
+      "comment": "普莉卡大招过场：舞台桁架/灯柱背景层把人物挤得很小，渲染静帧时去掉，只留人物。"
+    },
+    "c590_00_skillcut": {
+      "hiddenSlots": [
+        "bg",
+        "1.big",
+        "2.small",
+        "/^char_light/"
+      ],
+      "comment": "莫莉大招过场：自带的白色拍立得底板/相框层（bg、1.big、2.small）会盖住构图，去掉后只留人物与面包。"
+    },
+    "c352_02_skillcut": {
+      "sceneBone": "bone",
+      "sceneBgBases": [
+        {
+          "sideMul": 1.1065,
+          "cxOffPct": -3.929,
+          "cyOffPct": 10.742
+        },
+        {
+          "sideMul": 1.4766,
+          "cxOffPct": -1.785,
+          "cyOffPct": -22.474
+        }
+      ],
+      "sceneBgKeys": [
+        [],
+        [
+          {
+            "t": 3.11,
+            "cx": -45.3624,
+            "cy": -126.8381,
+            "side": 4902.4816,
+            "rot": 0
+          },
+          {
+            "t": 5.33,
+            "cx": -54.3296,
+            "cy": -1220.2894,
+            "side": 6482.1701,
+            "rot": 0
+          }
+        ]
+      ],
+      "sceneBgKeyDrive": [
+        null,
+        {
+          "bone": "hl2_Body_1",
+          "s0": 1.2715,
+          "s1": 1.6779
+        }
+      ],
+      "comment": "海伦浴后大招双背景（calib 实测拟合）：第一镜直接套 bone 的完整仿射（t=0 基准 side 4081.9，俯冲到 3.22× 时与校准值误差 <15 世界单位）；第二镜为 3.11/5.33 两帧，插值由 hl2_Body_1 的缩放进度驱动（该骨负责人物下沉+放大 1.27→1.68），避免按时间线性插值导致中间帧与人物脱节。sceneFx 为从 bundle 粒子图集裁出的窗光/星芒/尘埃 PoC。"
+    }
+  }
+}
