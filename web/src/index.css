@@ -448,11 +448,15 @@ img { display: block; }
   padding: 0 12px 12px; text-align: center;
   font-size: 12px; letter-spacing: .04em; color: var(--dim-2);
 }
-.detail-page .detail-visual .variant-caption { padding: 0 0 16px; }
+/* 皮肤名并入皮肤条：width:100% 让它在 flex 换行里独占一行，
+   落在渐变的实色区，与下方控制栏无缝衔接 */
+.detail-page .detail-visual .variant-caption {
+  width: 100%; padding: 6px 0 10px;
+}
 
-/* 角色详情：实时 Spine 模型控制条 */
+/* 角色详情：实时 Spine 模型控制条。不加 border-top——
+   上方皮肤条的渐变已经把两块融成一个面板，加线反而截断 */
 .char-bar {
-  border-top: 1px solid var(--line);
   background: var(--surface);
   transition: background .35s, border-color .35s;
 }
@@ -1382,11 +1386,17 @@ img { display: block; }
 }
 @keyframes figureIn { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
 
+/* 皮肤切换条骑在舞台下缘：背景自上而下由透明渐变到面板实色——顶部露出
+   立绘，底部并进信息面板。渐变用百分比，皮肤多到换行时依旧成立。
+   皮肤名 caption 也收在条内（width:100% 独占一行），下沿直接接控制栏。 */
 .detail-page .detail-visual .variants {
   flex-shrink: 0;
-  display: flex; gap: 8px; padding: 14px 0 18px;
-  border-top: 1px solid var(--line);
+  position: relative; z-index: 2;
+  display: flex; gap: 8px; padding: 46px 0 0;
+  margin-top: -60px;
+  border-top: none;
   flex-wrap: wrap; justify-content: center;
+  background: linear-gradient(180deg, transparent 0%, var(--surface) 58%);
 }
 .detail-page .detail-visual .variants button {
   width: 54px; height: 54px; padding: 0; cursor: pointer;
