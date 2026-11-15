@@ -22,11 +22,16 @@ export type SpineStatus = {
 /** 校准模式导出的骨骼快照（世界矩阵 a,b,c,d,wx,wy） */
 export type CalibBoneDump = { name: string; m: [number, number, number, number, number, number] }
 
+/** 校准面板的微调量 */
+export type CalibAdj = { dxPct: number; dyPct: number; scale: number; rot: number }
+
 /** 校准面板「记录本帧」导出的单条数据：骨架原始矩阵 + 用户微调量，
     用于离线反推背景板与骨架的正确绑定公式 */
 export type CalibSnapshot = {
   anim: string
   t: number
+  /** 本条记录针对哪张背景（0 = bg，1 = bg2；单背景恒为 0） */
+  bgIndex: number
   side0: number
   center0: [number, number]
   baseCx: number
@@ -99,6 +104,11 @@ export type SpinePlayerProps = {
    * 缩放/拖拽/复位时跟着动，不铺满舞台。未传则无此层。
    */
   sceneBg?: string
+  /**
+   * 第二张场景背景（多镜大招）：切镜点（camera 骨平移跳变处）之后换用。
+   * 两张图共用同一套世界矩形基准与 camera 骨变换，仅内容不同。
+   */
+  sceneBg2?: string
   /** 校准模式：显示背景板微调面板（URL 带 calib=1 时由页面传入），
       用于人工对齐背景与骨架并导出数据 */
   calib?: boolean
@@ -246,18 +256,27 @@ function collectSlotAreas(skeleton: any): number[] {
  */
 export default function SpinePlayer({
   name, dir = 'spine', className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
-  backgroundSrc, fitMode = 'contain', hideShadows, sceneBg, pickDefaultAnim, extra, calib,
+  backgroundSrc, fitMode = 'contain', hideShadows, sceneBg, sceneBg2, pickDefaultAnim, extra, calib,
 }: SpinePlayerProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const sceneBgRef = useRef<HTMLImageElement>(null)
-  /** 校准面板的实时微调量；drawFrame 通过 ref 读取，调整不会重建播放器 */
-  const calibRef = useRef({ dxPct: 0, dyPct: 0, scale: 1, rot: 0 })
+  const sceneBg2Ref = useRef<HTMLImageElement>(null)
+  /** 校准面板的实时微调量（按背景分槽：0 = bg，1 = bg2）；drawFrame 通过 ref
+      读取，调整不会重建播放器 */
+  const calibRef = useRef<Record<number, CalibAdj>>({ 0: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 }, 1: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 } })
   /** 校准模式开关（ref：渲染循环内读取，不触发 effect 重建） */
   const calibOnRef = useRef(false)
-  const [calibAdj, setCalibAdj] = useState({ dxPct: 0, dyPct: 0, scale: 1, rot: 0 })
+  const [calibAdj, setCalibAdj] = useState<Record<number, CalibAdj>>({
+    0: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 },
+    1: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 },
+  })
   const [calibRecords, setCalibRecords] = useState<CalibSnapshot[]>([])
   const [calibOut, setCalibOut] = useState('')
+  /** 双背景切镜点（秒）；null = 单背景 */
+  const [calibCut, setCalibCut] = useState<number | null>(null)
+  /** 校准面板用的当前动画时间（emit 里 ~10Hz 刷新） */
+  const [calibTime, setCalibTime] = useState(0)
   /** 预加载好的背景图，供保存当前帧时与 WebGL 画面合成 */
   const bgImageRef = useRef<HTMLImageElement | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -325,6 +344,7 @@ export default function SpinePlayer({
       lastTick = now
       const s = status()
       setUi({ anims: s.anims, current: s.anim, paused: !s.playing, speed: s.speed, zoom: s.zoom })
+      if (calibOnRef.current) setCalibTime(currentTime())
       callbacks.current.onTick?.(s)
     }
 
@@ -446,6 +466,19 @@ export default function SpinePlayer({
             大件——运行期只统计这些槽位，中心/面积中位数就只跟着角色本体走，
             第二镜里大面积特效簇（all 子树自放大到 1.68×）不会再污染估计 */
         let bodySlots: Set<number> | null = null
+        // 运镜骨骼：riggers 命名的 camera 骨（水花等场景件就挂在这条链下）。
+        // 背景板直接绑定它相对 t=0 的仿射变换，与骨架内水花严格同变换——
+        // 之前用本体槽位统计近似，角色身体局部动画（前倾/挥手）会把背景板
+        // 带着一起晃，水花就溢出浴缸了
+        let sceneBone: any = null
+        if (dir === 'spine_skillcut') {
+          const boneData: any = data.bones.find((b: any) => /^camera$/i.test(String(b.name)))
+          sceneBone = boneData
+            ? skeleton.bones.find((b: any) => b.data === boneData || b.data?.name === boneData.name) || null
+            : null
+        }
+        /** 双背景切镜点：camera 骨平移的最大不连续处（Infinity = 无 bg2/无切镜） */
+        let sceneCut = Infinity
         if (dir === 'spine_skillcut') {
           // 大招动画把角色的运镜烤进了骨架位移（游戏里是 Cinemachine 跟拍），
           // 按 t=0 的骨架 bounds 取景会随播放把角色甩出画面外。
@@ -558,6 +591,47 @@ export default function SpinePlayer({
               framed = true
             }
           }
+          // 双背景切镜点：camera 骨平移的最大不连续处（粗采样定位 → 细采样收窄）。
+          // 切镜瞬间背景板与角色一起瞬移，第二张场景图从这个时刻开始换用
+          if (sceneBg2 && sceneBone && duration > 0) {
+            const st0 = state!
+            const sk0 = skeleton!
+            const camPos = (t: number): [number, number] => {
+              if (track0) track0.trackTime = t
+              st0.update(0)
+              st0.apply(sk0)
+              sk0.updateWorldTransform()
+              return [sceneBone.worldX, sceneBone.worldY]
+            }
+            const COARSE = 16
+            const pts: Array<[number, number, number]> = []
+            for (let i = 0; i <= COARSE; i++) {
+              const t = (i / COARSE) * duration
+              const p = camPos(t)
+              pts.push([t, p[0], p[1]])
+            }
+            let bi = 0
+            let bj = -1
+            for (let i = 0; i < COARSE; i++) {
+              const d = Math.hypot(pts[i + 1][1] - pts[i][1], pts[i + 1][2] - pts[i][2])
+              if (d > bj) { bj = d; bi = i }
+            }
+            if (bj > 1) {
+              const FINE = 16
+              let fa = pts[bi][0]
+              let fb = pts[bi + 1][0]
+              let fj = bj
+              for (let i = 0; i < FINE; i++) {
+                const t0 = pts[bi][0] + ((pts[bi + 1][0] - pts[bi][0]) * i) / FINE
+                const t1 = pts[bi][0] + ((pts[bi + 1][0] - pts[bi][0]) * (i + 1)) / FINE
+                const p0 = camPos(t0)
+                const p1 = camPos(t1)
+                const d = Math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+                if (d >= fj) { fj = d; fa = t0; fb = t1 }
+              }
+              sceneCut = (fa + fb) / 2
+            }
+          }
           // 采样后把动画拨回开头，与外部预期的初始状态一致
           if (track0) track0.trackTime = 0
           state.update(0)
@@ -565,19 +639,13 @@ export default function SpinePlayer({
           applyHiddenSlots(skeleton)
           skeleton.updateWorldTransform()
         }
-        // 运镜骨骼：riggers 命名的 camera 骨（水花等场景件就挂在这条链下）。
-        // 背景板直接绑定它相对 t=0 的仿射变换，与骨架内水花严格同变换——
-        // 之前用本体槽位统计近似，角色身体局部动画（前倾/挥手）会把背景板
-        // 带着一起晃，水花就溢出浴缸了
-        let sceneBone: any = null
+        // 运镜骨骼 t=0 基准矩阵（拟合块最后已把动画拨回开头）
         let sceneBone0: { a: number; b: number; c: number; d: number; x: number; y: number } | null = null
-        if (dir === 'spine_skillcut') {
-          const boneData: any = data.bones.find((b: any) => /^camera$/i.test(String(b.name)))
-          const inst = boneData ? skeleton.bones.find((b: any) => b.data === boneData || b.data?.name === boneData.name) : null
-          if (inst) {
-            sceneBone = inst
-            sceneBone0 = { a: inst.a, b: inst.b, c: inst.c, d: inst.d, x: inst.worldX, y: inst.worldY }
-          }
+        if (sceneBone) {
+          sceneBone0 = { a: sceneBone.a, b: sceneBone.b, c: sceneBone.c, d: sceneBone.d, x: sceneBone.worldX, y: sceneBone.worldY }
+        }
+        if (dir === 'spine_skillcut' && sceneBg2) {
+          setCalibCut(sceneCut === Infinity ? null : sceneCut)
         }
         if (!framed) {
           skeleton.getBounds(offset, size, [])
@@ -612,6 +680,27 @@ export default function SpinePlayer({
         const sceneCenter0 = sceneRect ? { x: sceneRect.cx, y: sceneRect.cy } : null
         /** 复位视图时背景板直接吸附到目标，不经过渐近 */
         let sceneSnap = false
+        /** 第二张背景板（多镜大招）：与 bg 共用 center0/side0 基准与 camera 骨
+            变换，仅图片内容不同；切镜点后显示。null = 无 bg2 */
+        const sceneRect2 = sceneBg2 && sceneRect ? { ...sceneRect } : null
+        /** 每张背景的初始世界基准（矩形中心 + 边长）。override 的
+            sceneBgBases[i] = { sideMul, cxOffPct, cyOffPct }：side_i = side0×mul，
+            中心按各自身长的百分比偏移；缺省全部用校准拟合出的基准矩形 */
+        const sceneBases: Array<{ cx: number; cy: number; side: number }> = (() => {
+          const cfg = overrides[name]?.sceneBgBases
+          const mk = (i: number) => {
+            const c = cfg?.[i]
+            const side = sceneSide0 * (c?.sideMul ?? 1)
+            return {
+              cx: sceneCenter0!.x + ((c?.cxOffPct ?? 0) / 100) * side,
+              cy: sceneCenter0!.y + ((c?.cyOffPct ?? 0) / 100) * side,
+              side,
+            }
+          }
+          const arr = [mk(0)]
+          if (sceneRect2) arr.push(mk(1))
+          return arr
+        })()
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
         /** 相机跟拍开关：大招默认开启，用户拖拽/滚轮接管后关闭，复位恢复 */
@@ -632,8 +721,11 @@ export default function SpinePlayer({
           cam.update()
           gl.viewport(0, 0, canvas.width, canvas.height)
 
-          // 场景背景层：世界矩形 → 屏幕矩形（与骨架共用同一相机）
+          // 场景背景层：世界矩形 → 屏幕矩形（与骨架共用同一相机）。
+          // 多镜大招有两张板，按切镜点只显示当前那张
           const sb = sceneBgRef.current
+          const sb2 = sceneBg2Ref.current
+          const active = activeBg()
           if (sb && sceneRect) {
             const side = sceneRect.side * z
             sb.style.left = `${W / 2 + (sceneRect.cx - sceneRect.side / 2 - view.cx) * z}px`
@@ -642,6 +734,17 @@ export default function SpinePlayer({
             sb.style.height = `${side}px`
             sb.style.transformOrigin = '50% 50%'
             sb.style.transform = sceneRect.rot ? `rotate(${sceneRect.rot.toFixed(3)}deg)` : ''
+            sb.style.visibility = active === 0 ? 'visible' : 'hidden'
+          }
+          if (sb2 && sceneRect2) {
+            const side = sceneRect2.side * z
+            sb2.style.left = `${W / 2 + (sceneRect2.cx - sceneRect2.side / 2 - view.cx) * z}px`
+            sb2.style.top = `${H / 2 - (sceneRect2.cy + sceneRect2.side / 2 - view.cy) * z}px`
+            sb2.style.width = `${side}px`
+            sb2.style.height = `${side}px`
+            sb2.style.transformOrigin = '50% 50%'
+            sb2.style.transform = sceneRect2.rot ? `rotate(${sceneRect2.rot.toFixed(3)}deg)` : ''
+            sb2.style.visibility = active === 1 ? 'visible' : 'hidden'
           }
 
           // 把 WebGL 相机的变换换算成 CSS translate/scale（transform-origin: 0 0），
@@ -684,17 +787,22 @@ export default function SpinePlayer({
         const dumpBone = (b: any): CalibBoneDump | null =>
           b ? { name: String(b.data?.name ?? ''), m: [b.a, b.b, b.c, b.d, b.worldX, b.worldY] } : null
         /** 把校准面板的微调量叠加到当前矩形上 */
-        const applyCalibAdj = () => {
-          const cal = calibRef.current
-          if (!sceneRect) return
+        /** 把校准面板的微调量叠加到指定背景的矩形上（calibAdj 按背景分槽） */
+        const applyCalibAdj = (idx: number) => {
+          const cal = calibRef.current[idx]
+          if (!cal) return
+          const rect = idx === 1 ? sceneRect2 : sceneRect
+          if (!rect) return
           if (!cal.dxPct && !cal.dyPct && cal.scale === 1 && !cal.rot) return
-          sceneRect.cx += (cal.dxPct / 100) * sceneSide0
-          sceneRect.cy += (cal.dyPct / 100) * sceneSide0
-          sceneRect.side *= cal.scale
-          sceneRect.rot += cal.rot
+          rect.cx += (cal.dxPct / 100) * sceneSide0
+          rect.cy += (cal.dyPct / 100) * sceneSide0
+          rect.side *= cal.scale
+          rect.rot += cal.rot
         }
         /** 覆盖补偿是否允许（校准模式关闭，保证记录的微调量相对自然矩形） */
         const coverageAllowed = () => !calibOnRef.current
+        /** 当前应显示哪张背景：0 = bg，1 = bg2（无 bg2 恒为 0） */
+        const activeBg = () => (sceneRect2 && currentTime() >= sceneCut ? 1 : 0)
 
         /**
          * 场景背景板跟随。首选：绑定 rig 自带的 camera 运镜骨骼——水花等
@@ -718,45 +826,65 @@ export default function SpinePlayer({
             const r22 = b * i12 + d * i22
             const qx = i11 * ex0 + i12 * ey0
             const qy = i21 * ex0 + i22 * ey0
-            sceneRect.cx = r11 * sceneCenter0.x + r12 * sceneCenter0.y
-              + (sceneBone.worldX - (a * qx + c * qy))
-            sceneRect.cy = r21 * sceneCenter0.x + r22 * sceneCenter0.y
-              + (sceneBone.worldY - (b * qx + d * qy))
-            const naturalSide0 = sceneSide0 * Math.max(0.05, Math.sqrt(Math.abs(r11 * r22 - r12 * r21)))
+            const rot = -Math.atan2(r21, r11) * 180 / Math.PI
+            const kScale = Math.max(0.05, Math.sqrt(Math.abs(r11 * r22 - r12 * r21)))
+            const active = activeBg()
+            const base0 = sceneBases[0]
+            const base1 = sceneBases[1] || sceneBases[0]
+            const anchorOf = (bx: number, by: number) => ({
+              x: r11 * bx + r12 * by + (sceneBone.worldX - (a * qx + c * qy)),
+              y: r21 * bx + r22 * by + (sceneBone.worldY - (b * qx + d * qy)),
+            })
+            const p0 = anchorOf(base0.cx, base0.cy)
+            const p1 = anchorOf(base1.cx, base1.cy)
+            const n0 = base0.side * kScale
+            const n1 = base1.side * kScale
             // 覆盖补偿：角色冲出场景锚点（俯冲/特写）时跟拍视角跟着走，画面
             // 一角会露出舞台底色——此时以锚点为中心把面板放大到也盖住视口
             // （纹理绕锚点缩放，水/浴缸对齐不变）。锚点还在视口内时不扩，
             // 保留初始构图的留白；扩幅封顶 3×，切镜滑移时不会出现巨幅糊 zoom。
             // 校准模式下跳过（记录的微调量要相对自然矩形，方便离线拟合）。
-            let naturalSide = naturalSide0
+            // 只作用在当前显示的那张板上，另一张保持自然尺寸。
+            let covSide: number | null = null
             if (coverageAllowed() && follow && scene) {
+              const anchor = active === 1 ? p1 : p0
               const cam = scene.camera
               const halfW = cam.viewportWidth / 2
               const halfH = cam.viewportHeight / 2
-              const outside = sceneRect.cx < view.cx - halfW || sceneRect.cx > view.cx + halfW
-                || sceneRect.cy < view.cy - halfH || sceneRect.cy > view.cy + halfH
+              const outside = anchor.x < view.cx - halfW || anchor.x > view.cx + halfW
+                || anchor.y < view.cy - halfH || anchor.y > view.cy + halfH
               if (outside) {
-                const dx0 = Math.abs(view.cx - halfW - sceneRect.cx)
-                const dx1 = Math.abs(view.cx + halfW - sceneRect.cx)
-                const dy0 = Math.abs(view.cy - halfH - sceneRect.cy)
-                const dy1 = Math.abs(view.cy + halfH - sceneRect.cy)
-                naturalSide = Math.min(
-                  naturalSide0 * 3,
-                  Math.max(naturalSide, 2 * Math.max(dx0, dx1, dy0, dy1)),
+                const dx0 = Math.abs(view.cx - halfW - anchor.x)
+                const dx1 = Math.abs(view.cx + halfW - anchor.x)
+                const dy0 = Math.abs(view.cy - halfH - anchor.y)
+                const dy1 = Math.abs(view.cy + halfH - anchor.y)
+                covSide = Math.min(
+                  (active === 1 ? n1 : n0) * 3,
+                  Math.max(active === 1 ? n1 : n0, 2 * Math.max(dx0, dx1, dy0, dy1)),
                 )
               }
             }
-            sceneRect.side = naturalSide
-            // 世界 y 向上、屏幕 y 向下：世界逆时针 = CSS 顺时针的相反数
-            sceneRect.rot = -Math.atan2(r21, r11) * 180 / Math.PI
+            sceneRect.cx = p0.x
+            sceneRect.cy = p0.y
+            sceneRect.side = active === 0 ? (covSide ?? n0) : n0
+            sceneRect.rot = rot
+            if (sceneRect2) {
+              sceneRect2.cx = p1.x
+              sceneRect2.cy = p1.y
+              sceneRect2.side = active === 1 ? (covSide ?? n1) : n1
+              sceneRect2.rot = rot
+            }
             if (calibOnRef.current) {
+              const base = active === 1 ? base1 : base0
+              const anchor = active === 1 ? p1 : p0
               calibBase = {
-                side0: sceneSide0,
-                center0: [sceneCenter0.x, sceneCenter0.y],
-                baseCx: sceneRect.cx,
-                baseCy: sceneRect.cy,
-                baseSide: sceneRect.side,
-                baseRot: sceneRect.rot,
+                bgIndex: active,
+                side0: base.side,
+                center0: [base.cx, base.cy],
+                baseCx: anchor.x,
+                baseCy: anchor.y,
+                baseSide: active === 1 ? (covSide ?? n1) : (covSide ?? n0),
+                baseRot: rot,
                 camBone: dumpBone(sceneBone),
                 camParent: dumpBone(sceneBone.parent),
                 camChildren: (sceneBone.children || [])
@@ -764,7 +892,8 @@ export default function SpinePlayer({
                   .filter((x: CalibBoneDump | null): x is CalibBoneDump => !!x),
               }
             }
-            applyCalibAdj()
+            applyCalibAdj(0)
+            applyCalibAdj(1)
             return
           }
           if (!stats || areaRef <= 0 || !sceneSide0) return
@@ -784,6 +913,7 @@ export default function SpinePlayer({
           }
           if (calibOnRef.current) {
             calibBase = {
+              bgIndex: 0,
               side0: sceneSide0,
               center0: [sceneCenter0.x, sceneCenter0.y],
               baseCx: sceneRect.cx,
@@ -795,7 +925,7 @@ export default function SpinePlayer({
               camChildren: [],
             }
           }
-          applyCalibAdj()
+          applyCalibAdj(0)
         }
 
         /** 把当前姿态画一帧。渲染循环和「尺寸变化后立即补帧」共用。 */
@@ -891,10 +1021,12 @@ export default function SpinePlayer({
           if (e.button !== 0) return
           dragging = 'view'
           follow = false // 拖拽接管视图
-          // 校准模式：按在背景板上时，拖拽改为移动背景板（其余区域仍是移动视角）
-          if (calibOnRef.current && sceneBgRef.current) {
-            const r = sceneBgRef.current.getBoundingClientRect()
-            if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+          // 校准模式：按在「当前显示的背景板」上时，拖拽改为移动背景板
+          //（其余区域仍是移动视角）
+          if (calibOnRef.current) {
+            const el = activeBg() === 1 ? sceneBg2Ref.current : sceneBgRef.current
+            const r = el?.getBoundingClientRect()
+            if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
               dragging = 'bg'
             }
           }
@@ -910,11 +1042,19 @@ export default function SpinePlayer({
             const w = worldPerPx()
             const dxPct = ((e.clientX - lx) * w / sceneSide0) * 100
             const dyPct = (-(e.clientY - ly) * w / sceneSide0) * 100
-            setCalibAdj((s) => ({
-              ...s,
-              dxPct: Math.round((s.dxPct + dxPct) * 1000) / 1000,
-              dyPct: Math.round((s.dyPct + dyPct) * 1000) / 1000,
-            }))
+            const curIdx = activeBg()
+            setCalibAdj((s) => {
+              const cur = s[curIdx]
+              return {
+                ...s,
+                [curIdx]: {
+                  dxPct: Math.round((cur.dxPct + dxPct) * 1000) / 1000,
+                  dyPct: Math.round((cur.dyPct + dyPct) * 1000) / 1000,
+                  scale: cur.scale,
+                  rot: cur.rot,
+                },
+              }
+            })
             lx = e.clientX
             ly = e.clientY
             apply()
@@ -962,6 +1102,23 @@ export default function SpinePlayer({
             state.apply(skeleton)
             applyHiddenSlots(skeleton)
             skeleton.updateWorldTransform()
+            // seek 是时间上的硬跳变，跟拍视角直接吸附到目标（不然切镜后
+            // 画面要花一秒才追上，背景板还留在旧位置，校准拖拽会扑空）
+            if (follow && unionRect) {
+              const st = contentStats(skeleton, bodySlots ?? undefined)
+              if (st) {
+                const vw = scene ? scene.camera.viewportWidth : 0
+                const vh = scene ? scene.camera.viewportHeight : 0
+                const [ux0, uy0, ux1, uy1] = unionRect
+                const tx = vw >= ux1 - ux0 ? (ux0 + ux1) / 2
+                  : Math.min(Math.max(st.cx, ux0 + vw / 2), ux1 - vw / 2)
+                const ty = vh >= uy1 - uy0 ? (uy0 + uy1) / 2
+                  : Math.min(Math.max(st.cy, uy0 + vh / 2), uy1 - vh / 2)
+                view.cx = tx
+                view.cy = ty
+              }
+            }
+            sceneSnap = true
             emit(true)
           },
           setSpeed(v) {
@@ -975,7 +1132,7 @@ export default function SpinePlayer({
           getStatus() { return status() },
           calibSnapshot() {
             if (!calibBase) return null
-            const cal = calibRef.current
+            const cal = calibRef.current[calibBase.bgIndex] || { dxPct: 0, dyPct: 0, scale: 1, rot: 0 }
             return {
               anim: currentAnim,
               t: currentTime(),
@@ -1062,15 +1219,20 @@ export default function SpinePlayer({
     return <div className={`spine-player err ${className}`}>模型加载失败：{error}</div>
   }
 
+  /** 校准面板当前编辑哪张背景（随切镜点切换） */
+  const calibActive: 0 | 1 = calibCut != null && calibTime >= calibCut ? 1 : 0
   const recordCalib = () => {
     const snap = localCtrl.current?.calibSnapshot?.()
     if (!snap) return
     setCalibRecords((r) => [...r, snap])
-    setCalibAdj({ dxPct: 0, dyPct: 0, scale: 1, rot: 0 })
+    setCalibAdj((s) => ({ ...s, [calibActive]: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 } }))
   }
-  /** ± 按钮微调（保留 3 位小数，避免浮点噪声累积） */
+  /** ± 按钮微调（保留 3 位小数，避免浮点噪声累积）；只动当前背景的槽 */
   const nudgeCalib = (k: 'dxPct' | 'dyPct' | 'scale' | 'rot', d: number) =>
-    setCalibAdj((s) => ({ ...s, [k]: Math.round((s[k] + d) * 1000) / 1000 }))
+    setCalibAdj((s) => {
+      const cur = s[calibActive]
+      return { ...s, [calibActive]: { ...cur, [k]: Math.round((cur[k] + d) * 1000) / 1000 } }
+    })
   const calibBtnCss = {
     width: 22, flexShrink: 0, padding: 0, fontSize: 12, lineHeight: '16px', cursor: 'pointer',
   }
@@ -1086,6 +1248,9 @@ export default function SpinePlayer({
         {sceneBg && (
           <img className="spine-scene-bg" ref={sceneBgRef} src={sceneBg} alt="" draggable={false} />
         )}
+        {sceneBg2 && (
+          <img className="spine-scene-bg" ref={sceneBg2Ref} src={sceneBg2} alt="" draggable={false} />
+        )}
         <canvas ref={canvasRef} />
         {controls && <div className="spine-hint">滚轮缩放 · 拖拽平移 · 双击复位 · 空格播放/暂停</div>}
       </div>
@@ -1098,7 +1263,12 @@ export default function SpinePlayer({
             boxShadow: '0 2px 12px rgba(0,0,0,.4)',
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>背景校准（calib）</div>
+          <div style={{ fontWeight: 700, marginBottom: 2 }}>背景校准（calib）</div>
+          {calibCut != null && (
+            <div style={{ fontSize: 10, opacity: 0.85, marginBottom: 4 }}>
+              第 {calibActive + 1} 张 / 共 2 张 · 切镜点 {calibCut.toFixed(2)}s
+            </div>
+          )}
           {([
             ['平移X', 'dxPct', -30, 30, 0.1, 0.05, (v: number) => `${v.toFixed(2)}%`],
             ['平移Y', 'dyPct', -30, 30, 0.1, 0.05, (v: number) => `${v.toFixed(2)}%`],
@@ -1106,14 +1276,17 @@ export default function SpinePlayer({
             ['旋转', 'rot', -5, 5, 0.02, 0.02, (v: number) => `${v.toFixed(2)}°`],
           ] as const).map(([label, key, min, max, step, fine, fmt]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-              <span style={{ width: 86, flexShrink: 0 }}>{label} {fmt(calibAdj[key])}</span>
+              <span style={{ width: 86, flexShrink: 0 }}>{label} {fmt(calibAdj[calibActive][key])}</span>
               <button
                 onClick={() => nudgeCalib(key, -fine)} title={`微调 −${fine}`}
                 style={calibBtnCss}
               >−</button>
               <input
-                type="range" min={min} max={max} step={step} value={calibAdj[key]} style={{ flex: 1, minWidth: 0 }}
-                onChange={(e) => setCalibAdj((s) => ({ ...s, [key]: Number(e.target.value) }))}
+                type="range" min={min} max={max} step={step} value={calibAdj[calibActive][key]} style={{ flex: 1, minWidth: 0 }}
+                onChange={(e) => setCalibAdj((s) => ({
+                  ...s,
+                  [calibActive]: { ...s[calibActive], [key]: Number(e.target.value) },
+                }))}
               />
               <button
                 onClick={() => nudgeCalib(key, fine)} title={`微调 +${fine}`}
@@ -1126,7 +1299,7 @@ export default function SpinePlayer({
               记录本帧
             </button>
             <button
-              onClick={() => setCalibAdj({ dxPct: 0, dyPct: 0, scale: 1, rot: 0 })}
+              onClick={() => setCalibAdj((s) => ({ ...s, [calibActive]: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 } }))}
               style={{ flex: '1 1 auto', padding: '3px 6px', fontSize: 11, cursor: 'pointer' }}
             >
               重置调整

@@ -271,6 +271,8 @@ export type SkillcutIndex = {
   bySkin: Record<string, string>
   byChar: Record<string, string>
   bg: Set<string>
+  /** 多镜大招的第二张场景图（切镜后换用） */
+  bg2: Set<string>
 }
 
 let cacheSkillcut: SkillcutIndex | null = null
@@ -278,15 +280,16 @@ let cacheSkillcut: SkillcutIndex | null = null
 export async function loadCharSkillcut(): Promise<SkillcutIndex> {
   if (cacheSkillcut) return cacheSkillcut
   try {
-    const d = await getJSON<{ bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[] }>(
+    const d = await getJSON<{ bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[]; bg2s?: string[] }>(
       '/data/char_spine_skillcut.json')
     cacheSkillcut = {
       bySkin: d.bySkin || {},
       byChar: d.byChar || {},
       bg: new Set(d.bgs || []),
+      bg2: new Set(d.bg2s || []),
     }
   } catch {
-    cacheSkillcut = { bySkin: {}, byChar: {}, bg: new Set() }
+    cacheSkillcut = { bySkin: {}, byChar: {}, bg: new Set(), bg2: new Set() }
   }
   return cacheSkillcut
 }
@@ -387,6 +390,13 @@ export type ViewTransform = { scale: number; tx: number; ty: number }
 /** 单个模型的渲染覆盖配置（隐藏素材自带装饰层、补回独立背景图等） */
 export type SpineOverride = {
   hiddenSlots?: string[]
+  /**
+   * 多镜大招每张场景背景的初始世界基准。sceneBgBases[i] 对应第 i+1 张图：
+   * side_i = 基准边长 × sideMul，中心 = 校准中心 + (cxOffPct, cyOffPct)%
+   * × side_i（世界坐标，y 向上）。用于给不同取景的场景图一个接近正确的
+   * 初始摆放，之后用校准模式（URL calib=1）微调。
+   */
+  sceneBgBases?: Array<{ sideMul?: number; cxOffPct?: number; cyOffPct?: number }>
   /** 独立背景 CG 的名字（按 cg_index 查 hash），或 / 开头的图片 URL */
   background?: string
   comment?: string

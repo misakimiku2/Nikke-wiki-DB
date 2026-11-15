@@ -357,6 +357,7 @@ export default function CharacterDetail() {
                 dir="spine_skillcut"
                 pickDefaultAnim={pickBurstAnim}
                 sceneBg={skillcut?.bg.has(burstName) ? `/spine_skillcut/${burstName}/bg.webp` : undefined}
+                sceneBg2={skillcut?.bg2.has(burstName) ? `/spine_skillcut/${burstName}/bg2.webp` : undefined}
                 calib={calibMode}
                 controls={false}
                 controllerRef={spineRef}

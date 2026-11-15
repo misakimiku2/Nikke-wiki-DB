@@ -90,16 +90,21 @@ def convert(job, force=False, size=0):
             stem, _ext = os.path.splitext(page)
             plan.append((page, stem + ".webp", src_page))
 
-        # 大招 cut-in 的独立背景贴图（extract 阶段挑好存成 bg.png）
+        # 大招 cut-in 的独立背景贴图（extract 阶段挑好存成 bg.png / bg2.png，
+        # bg2 是多镜大招的第二张场景图，网页在切镜点后换用它）
         bg_src = os.path.join(folder_src, "bg.png")
         bg_dst = os.path.join(folder, "bg.webp")
         has_bg = os.path.exists(bg_src)
+        bg2_src = os.path.join(folder_src, "bg2.png")
+        bg2_dst = os.path.join(folder, "bg2.webp")
+        has_bg2 = os.path.exists(bg2_src)
 
         if not force and os.path.exists(dst_atlas) and os.path.exists(dst_skel) \
                 and all(os.path.exists(os.path.join(folder, np)) for _p, np, _s in plan) \
-                and (not has_bg or os.path.exists(bg_dst)):
+                and (not has_bg or os.path.exists(bg_dst)) \
+                and (not has_bg2 or os.path.exists(bg2_dst)):
             total = sum(os.path.getsize(os.path.join(folder, np)) for _p, np, _s in plan)
-            return {"name": name, "cached": True, "bytes": total, "bg": has_bg}
+            return {"name": name, "cached": True, "bytes": total, "bg": has_bg, "bg2": has_bg2}
 
         lines = atlas_text.splitlines()
         for old_page, new_name, src_page in plan:
@@ -126,8 +131,10 @@ def convert(job, force=False, size=0):
         with open(dst_skel, "wb") as f:
             f.write(data)
 
-        if has_bg:
-            with Image.open(bg_src) as bim:
+        for bsrc, bdst in ((bg_src, bg_dst), (bg2_src, bg2_dst)):
+            if not os.path.exists(bsrc):
+                continue
+            with Image.open(bsrc) as bim:
                 bim = bim.convert("RGBA")
                 if size and bim.width > size:
                     bim = bim.resize((size, size), Image.LANCZOS)
@@ -136,11 +143,12 @@ def convert(job, force=False, size=0):
                 bim = Image.composite(
                     Image.new("RGBA", bim.size, (0, 0, 0, 0)), bim, zero_mask
                 )
-                bim.save(bg_dst, "WEBP", lossless=True, method=6, exact=True)
+                bim.save(bdst, "WEBP", lossless=True, method=6, exact=True)
 
         total = sum(os.path.getsize(os.path.join(folder, np)) for _p, np, _s in plan)
         return {"name": name, "bytes": total, "pages": len(plan), "bg": has_bg,
-                "atlas": os.path.getsize(dst_atlas), "skel": os.path.getsize(dst_skel)}
+                "bg2": has_bg2, "atlas": os.path.getsize(dst_atlas),
+                "skel": os.path.getsize(dst_skel)}
     except Exception as e:
         return {"name": name, "error": f"{type(e).__name__}: {e}"}
 
@@ -195,6 +203,7 @@ def main():
     meta = {"total": len(names), "items": names}
     if args.kind == "skillcut":
         meta["bgs"] = sorted(r["name"] for r in ok if r.get("bg"))
+        meta["bg2s"] = sorted(r["name"] for r in ok if r.get("bg2"))
         # 大招模型的命名五花八门（源数据就有拼写变体/皮肤段位置不一），
         # 直接在这里把「皮肤 → 模型」映射算好，前端两级查找：
         #   bySkin["c010_00"] = "c010_00_skillcut"   常规：<皮肤>_<后缀>
