@@ -263,6 +263,52 @@ export function combatModelName(current: string, pose: 'aim' | 'cover', have: Se
   return have.has(name) ? name : null
 }
 
+/* 角色大招 cut-in 模型（c010_00_skillcut 等，源数据有拼写变体）。
+   构建期已算好 皮肤→模型 映射；byChar 是无皮肤段模型的角色级兜底 */
+
+export type SkillcutIndex = { bySkin: Record<string, string>; byChar: Record<string, string> }
+
+let cacheSkillcut: SkillcutIndex | null = null
+
+export async function loadCharSkillcut(): Promise<SkillcutIndex> {
+  if (cacheSkillcut) return cacheSkillcut
+  try {
+    const d = await getJSON<SkillcutIndex>('/data/char_spine_skillcut.json')
+    cacheSkillcut = { bySkin: d.bySkin || {}, byChar: d.byChar || {} }
+  } catch {
+    cacheSkillcut = { bySkin: {}, byChar: {} }
+  }
+  return cacheSkillcut
+}
+
+/** 皮肤 c010_00 → 大招模型；先查皮肤级，再查角色级（c093_skillcut 这类无皮肤段） */
+export function skillcutModelName(current: string, idx: SkillcutIndex): string | null {
+  return idx.bySkin[current] || idx.byChar[current.match(/^(c\d+)_/)?.[1] || ''] || null
+}
+
+/**
+ * 大招 cut-in 的主动画挑选。源数据命名五花八门（全量 233 个里 30 个不带
+ * skillcut_1）：skillcut_0 / skillcut_01 / skilcut_1（拼写错误）/ skillcut1 /
+ * skillcut / skill_cut / skill_01 / c094 的 _OFF 三段式 / c532 的 _all 分层。
+ * 精确名优先，其余在含 skil 的动画里取编号最小的（分段式取第 1 段）。
+ */
+export function pickBurstAnim(names: string[]): string | undefined {
+  const exact = [/^skillcut_1_all$/, /^skillcut_1$/, /^skillcut$/, /^skill_cut$/]
+  for (const p of exact) {
+    const hit = names.find((n) => p.test(n))
+    if (hit) return hit
+  }
+  const cand = names.filter((n) => /skil/i.test(n) && !/_bg$|_character$/.test(n))
+  if (cand.length) {
+    const num = (n: string) => {
+      const m = n.match(/(\d+)/g)
+      return m ? Number(m[m.length - 1]) : 0
+    }
+    return [...cand].sort((a, b) => num(a) - num(b))[0]
+  }
+  return undefined
+}
+
 /** 表情动画的中文名；未收录的原样显示（talk_* 是口型，放在下拉里） */
 export const EXPR_LABEL: Record<string, string> = {
   idle: '待机',

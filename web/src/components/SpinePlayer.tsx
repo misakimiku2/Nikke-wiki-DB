@@ -36,9 +36,9 @@ export type SpinePlayerProps = {
   name: string
   /**
    * 模型所在目录（public 下的一级目录）：CG 是 spine，角色站姿是 spine_char，
-   * 角色战斗姿态（背身射击/掩体）是 spine_combat
+   * 角色战斗姿态（背身射击/掩体）是 spine_combat，大招 cut-in 是 spine_skillcut
    */
-  dir?: 'spine' | 'spine_char' | 'spine_combat'
+  dir?: 'spine' | 'spine_char' | 'spine_combat' | 'spine_skillcut'
   className?: string
   /** 是否渲染自带控制条；二级查看页传 false，改用页面底部统一控制条 */
   controls?: boolean
@@ -68,6 +68,9 @@ export type SpinePlayerProps = {
    * 默认跟随 dir：CG 开、角色关。显式传值可覆盖。
    */
   hideShadows?: boolean
+  /** 自定义默认动画挑选（模型动画列表 → 动画名）；缺省自动挑 idle
+      （站姿 idle / 战斗 aim_idle / 大招 Idle）。返回 undefined 时回落到 idle */
+  pickDefaultAnim?: (names: string[]) => string | undefined
   /** 自带控制条右侧的额外内容 */
   extra?: ReactNode
 }
@@ -117,7 +120,7 @@ function drawContain(
  */
 export default function SpinePlayer({
   name, dir = 'spine', className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
-  backgroundSrc, fitMode = 'contain', hideShadows, extra,
+  backgroundSrc, fitMode = 'contain', hideShadows, pickDefaultAnim, extra,
 }: SpinePlayerProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -276,9 +279,11 @@ export default function SpinePlayer({
           emit(true)
         }
         // 默认动画：站姿是 idle，战斗模型是 aim_idle / cover_idle，统一按
-        // 「以 idle 结尾或就叫 idle」匹配，匹配不到再落第一个
+        // 「以 idle 结尾或就叫 idle」匹配，匹配不到再落第一个；
+        // pickDefaultAnim 优先（大招 cut-in 的动画命名五花八门，见 pickBurstAnim）
         const idleFirst = animNames.find((a) => /(^|_)idle$/i.test(a)) || animNames[0] || ''
-        setAnim(idleFirst)
+        const first = (pickDefaultAnim && pickDefaultAnim(animNames)) || idleFirst
+        setAnim(first)
 
         // 相机 / 视图
         const offset = new Vector2()
@@ -532,7 +537,7 @@ export default function SpinePlayer({
       if (controllerRef) controllerRef.current = null
       localCtrl.current = null
     }
-  }, [name, dir, controllerRef, fitMode, hideShadows])
+  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim])
 
   if (error) {
     return <div className={`spine-player err ${className}`}>模型加载失败：{error}</div>

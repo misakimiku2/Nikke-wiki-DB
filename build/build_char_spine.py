@@ -42,6 +42,7 @@ SRC_ROOT = os.path.join(os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract"), "
 KINDS = {
     "stand": ("spine_stand", "spine_char", "char_spine.json", "角色站姿模型"),
     "combat": ("spine_combat", "spine_combat", "char_spine_combat.json", "角色战斗姿态模型"),
+    "skillcut": ("spine_char", "spine_skillcut", "char_spine_skillcut.json", "角色大招 cut-in 模型"),
 }
 
 def paths_for(kind):
@@ -173,9 +174,36 @@ def main():
                 print(f"  {i}/{len(jobs)}  {done_mb:.0f} MB  {time.time()-t0:.0f}s", flush=True)
 
     names = sorted({r["name"] for r in ok})
+    meta = {"total": len(names), "items": names}
+    if args.kind == "skillcut":
+        # 大招模型的命名五花八门（源数据就有拼写变体/皮肤段位置不一），
+        # 直接在这里把「皮肤 → 模型」映射算好，前端两级查找：
+        #   bySkin["c010_00"] = "c010_00_skillcut"   常规：<皮肤>_<后缀>
+        #   byChar["c093"]    = "c093_skillcut"      无皮肤段的兜底
+        by_skin, by_char = {}, {}
+        for name in names:
+            if name.startswith("dummy"):
+                continue
+            m = re.match(r"^(c\d+)_(\d+)$", name)              # c821_01 无后缀
+            if m:
+                by_skin.setdefault(m.group(0), name)
+                continue
+            m = re.match(r"^(c\d+)_skillcut_(\d+)$", name)     # c840_skillcut_00 皮肤段在后
+            if m:
+                by_skin.setdefault(f"{m.group(1)}_{m.group(2)}", name)
+                continue
+            m = re.match(r"^(c\d+_\d+)_(.+)$", name)           # c010_00_skillcut / c017_00_slillcut / c470_00_z_f
+            if m:
+                by_skin.setdefault(m.group(1), name)
+                continue
+            m = re.match(r"^(c\d+)_", name)                    # c093_skillcut 无皮肤段
+            if m:
+                by_char.setdefault(m.group(1), name)
+        meta["bySkin"] = by_skin
+        meta["byChar"] = by_char
+        print(f"  皮肤映射 {len(by_skin)} 条，角色级兜底 {len(by_char)} 条")
     with open(META, "w", encoding="utf-8") as f:
-        json.dump({"total": len(names), "items": names}, f,
-                  ensure_ascii=False, separators=(",", ":"))
+        json.dump(meta, f, ensure_ascii=False, separators=(",", ":"))
 
     total = sum(r.get("bytes", 0) for r in ok)
     pages = sum(r.get("pages", 0) for r in ok)

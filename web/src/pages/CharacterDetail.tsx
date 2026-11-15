@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
-  loadCharImages, loadCharMi, loadCharSkills, loadCharStories, loadCharSpine, loadCharacters,
-  mainBase, nf, tintFor, variantsOf,
-  type CharArtMap, type CharImages, type Character, type CharSkill, type CharSkillsData, type CharStoriesData,
+  loadCharImages, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories, loadCharSpine,
+  loadCharacters, mainBase, nf, pickBurstAnim, skillcutModelName, tintFor, variantsOf,
+  type CharArtMap, type CharImages, type Character, type CharSkill, type CharSkillsData,
+  type CharStoriesData, type SkillcutIndex,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
@@ -38,6 +39,16 @@ const COMBAT_CHIP_DEFS: Array<{ re: RegExp; label: string }> = [
   { re: /_hit$/, label: '受击' },
   { re: /_stun$/, label: '眩晕' },
 ]
+
+/** 大招 cut-in：主动画由 pickBurstAnim 挑（命名太乱），其余 idle 当待机 */
+function pickBurstChips(anims: string[]): { label: string; anim: string }[] {
+  const out: { label: string; anim: string }[] = []
+  const burst = pickBurstAnim(anims)
+  if (burst) out.push({ label: '大招', anim: burst })
+  const idle = anims.find((a) => /(^|_)idle/i.test(a))
+  if (idle && idle !== burst) out.push({ label: '待机', anim: idle })
+  return out
+}
 
 function animLabel(a: string): string {
   if (EXPR_LABEL[a]) return EXPR_LABEL[a]
@@ -131,8 +142,10 @@ export default function CharacterDetail() {
   const [mi, setMi] = useState<Set<string>>(new Set())
   const [spine, setSpine] = useState<Set<string>>(new Set())
   const [combat, setCombat] = useState<Set<string>>(new Set())
-  /** 舞台姿态：stand 立绘（站姿模型/静态图），aim 背身射击，cover 掩体 */
-  const [pose, setPose] = useState<'stand' | 'aim' | 'cover'>('stand')
+  /** 大招 cut-in 索引；null = 还没加载完（避免加载完前误判「无模型」回退姿态） */
+  const [skillcut, setSkillcut] = useState<SkillcutIndex | null>(null)
+  /** 舞台姿态：stand 立绘（站姿模型/静态图），aim 背身射击，cover 掩体，burst 大招 */
+  const [pose, setPose] = useState<'stand' | 'aim' | 'cover' | 'burst'>('stand')
   const [pick, setPick] = useState<string | null>(null)
   const [status, setStatus] = useState<SpineStatus>(EMPTY)
   const [modelReady, setModelReady] = useState(false)
@@ -155,6 +168,7 @@ export default function CharacterDetail() {
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
     loadCharCombat().then(setCombat).catch(() => {})
+    loadCharSkillcut().then(setSkillcut).catch(() => {})
     loadCharSkills().then(setSkillData).catch(() => {})
     loadCharStories().then(setStoriesMap).catch(() => {})
     loadCharArt().then(setArt).catch(() => {})
@@ -188,13 +202,20 @@ export default function CharacterDetail() {
     aim: current ? combatModelName(current, 'aim', combat) : null,
     cover: current ? combatModelName(current, 'cover', combat) : null,
   }), [current, combat])
-  // 切了皮肤后当前战斗姿态不存在（比如该皮肤没出战斗模型）就退回立绘
+  /** 当前皮肤的大招模型（先查皮肤级映射，再查角色级兜底） */
+  const burstName = useMemo(
+    () => (current && skillcut ? skillcutModelName(current, skillcut) : null),
+    [current, skillcut],
+  )
+  // 切了皮肤后当前姿态的模型不存在（该皮肤没出战斗/大招模型）就退回立绘
   useEffect(() => {
-    if (pose !== 'stand' && !combatAvail[pose]) setPose('stand')
-  }, [combatAvail, pose])
-  const combatName = pose === 'stand' ? null : combatAvail[pose]
-  /** 舞台挂的是不是实时模型（立绘站姿或战斗姿态都算） */
-  const stageLive = pose === 'stand' ? hasModel : !!combatName
+    if (pose === 'aim' && !combatAvail.aim) setPose('stand')
+    else if (pose === 'cover' && !combatAvail.cover) setPose('stand')
+    else if (pose === 'burst' && current && skillcut && !burstName) setPose('stand')
+  }, [combatAvail, burstName, pose, current, skillcut])
+  const combatName = pose === 'aim' ? combatAvail.aim : pose === 'cover' ? combatAvail.cover : null
+  /** 舞台挂的是不是实时模型（立绘站姿/战斗姿态/大招都算） */
+  const stageLive = pose === 'stand' ? hasModel : pose === 'burst' ? !!burstName : !!combatName
   const skills = id ? skillData.items[String(id)] : null
   const rel = id ? storiesMap[String(id)] : null
   const relStories = rel?.stories ?? []
@@ -212,7 +233,8 @@ export default function CharacterDetail() {
     [status.anims, pose],
   )
   const chips = useMemo(
-    () => pickChips(anims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS),
+    () => (pose === 'burst' ? pickBurstChips(anims)
+      : pickChips(anims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS)),
     [anims, pose],
   )
   const extras = useMemo(() => {
@@ -227,9 +249,10 @@ export default function CharacterDetail() {
   const toggle = useCallback(() => spineRef.current?.toggle(), [])
   const resetView = useCallback(() => spineRef.current?.resetView(), [])
   const saveFrame = useCallback(() => {
-    const nm = pose === 'stand' ? current : combatName || current
+    const nm = pose === 'stand' ? current
+      : pose === 'burst' ? (burstName || current) : (combatName || current)
     spineRef.current?.saveFrame(`${nm}_${status.anim}_${status.time.toFixed(2)}.png`)
-  }, [current, combatName, pose, status.anim, status.time])
+  }, [current, burstName, combatName, pose, status.anim, status.time])
 
   // ---- 时间轴（与 CG 查看器同一套交互：拖动时暂停、松手续播、交还焦点）----
   const canSeek = hasModel && modelReady && status.duration > 0
@@ -326,6 +349,17 @@ export default function CharacterDetail() {
               ) : (
                 <div className="char-empty-mark">{c.name.slice(0, 1)}</div>
               )
+            ) : pose === 'burst' && burstName ? (
+              <SpinePlayer
+                name={burstName}
+                dir="spine_skillcut"
+                pickDefaultAnim={pickBurstAnim}
+                controls={false}
+                controllerRef={spineRef}
+                onTick={setStatus}
+                onReady={() => setModelReady(true)}
+                onError={() => setPose('stand')}
+              />
             ) : combatName ? (
               <SpinePlayer
                 name={combatName}
@@ -334,14 +368,14 @@ export default function CharacterDetail() {
                 controllerRef={spineRef}
                 onTick={setStatus}
                 onReady={() => setModelReady(true)}
-                onError={() => { if (pose !== 'stand') setPose('stand') }}
+                onError={() => setPose('stand')}
               />
             ) : null}
             {stageLive && !modelReady && (
               <div className="char-loading"><span className="cv-spin" />加载实时模型…</div>
             )}
-            {/* 有战斗姿态时徽标换成姿态切换；否则维持原来的实时徽标 */}
-            {(combatAvail.aim || combatAvail.cover) ? (
+            {/* 有战斗/大招模型时徽标换成姿态切换；否则维持原来的实时徽标 */}
+            {(combatAvail.aim || combatAvail.cover || burstName) ? (
               <div className="char-modes">
                 <button className={pose === 'stand' ? 'on' : ''} onClick={() => setPose('stand')}>
                   立绘
@@ -354,6 +388,11 @@ export default function CharacterDetail() {
                 {combatAvail.cover && (
                   <button className={pose === 'cover' ? 'on' : ''} onClick={() => setPose('cover')}>
                     掩体
+                  </button>
+                )}
+                {burstName && (
+                  <button className={pose === 'burst' ? 'on' : ''} onClick={() => setPose('burst')}>
+                    大招
                   </button>
                 )}
               </div>
@@ -392,7 +431,8 @@ export default function CharacterDetail() {
               <div className="char-anims">
                 {chips.length === 0 && (
                   <span className="char-anims-hint">
-                    {pose === 'stand' ? '表情动画载入中…' : '战斗动作载入中…'}
+                    {pose === 'stand' ? '表情动画载入中…'
+                      : pose === 'burst' ? '大招动画载入中…' : '战斗动作载入中…'}
                   </span>
                 )}
                 {chips.map((c2) => (
@@ -412,7 +452,9 @@ export default function CharacterDetail() {
                     onChange={(e) => e.target.value && spineRef.current?.setAnim(e.target.value)}
                     title={pose === 'stand' ? '更多表情' : '更多动作'}
                   >
-                    <option value="">{pose === 'stand' ? '更多表情' : '更多动作'}</option>
+                    <option value="">
+                      {pose === 'stand' ? '更多表情' : pose === 'burst' ? '更多动画' : '更多动作'}
+                    </option>
                     {extras.map((a) => <option key={a} value={a}>{animLabel(a)}</option>)}
                   </select>
                 )}
