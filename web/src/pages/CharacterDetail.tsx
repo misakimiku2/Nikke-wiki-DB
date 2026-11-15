@@ -298,6 +298,8 @@ export default function CharacterDetail() {
 
   const desc = (c.desc || '').split('\n').filter(Boolean)
   const palette = tintFor(c.id)
+  /** 校准模式：URL hash 带 calib=1 时在大招视图显示背景板微调面板（人工对齐采数） */
+  const calibMode = /[?&]calib=1/.test(window.location.hash)
 
   return (
     <div className="detail-page">
@@ -355,6 +357,7 @@ export default function CharacterDetail() {
                 dir="spine_skillcut"
                 pickDefaultAnim={pickBurstAnim}
                 sceneBg={skillcut?.bg.has(burstName) ? `/spine_skillcut/${burstName}/bg.webp` : undefined}
+                calib={calibMode}
                 controls={false}
                 controllerRef={spineRef}
                 onTick={setStatus}
