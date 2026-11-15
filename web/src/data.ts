@@ -264,19 +264,29 @@ export function combatModelName(current: string, pose: 'aim' | 'cover', have: Se
 }
 
 /* 角色大招 cut-in 模型（c010_00_skillcut 等，源数据有拼写变体）。
-   构建期已算好 皮肤→模型 映射；byChar 是无皮肤段模型的角色级兜底 */
+   构建期已算好 皮肤→模型 映射；byChar 是无皮肤段模型的角色级兜底。
+   bg = 有独立手绘背景贴图的模型（网页里铺在大招画布底下） */
 
-export type SkillcutIndex = { bySkin: Record<string, string>; byChar: Record<string, string> }
+export type SkillcutIndex = {
+  bySkin: Record<string, string>
+  byChar: Record<string, string>
+  bg: Set<string>
+}
 
 let cacheSkillcut: SkillcutIndex | null = null
 
 export async function loadCharSkillcut(): Promise<SkillcutIndex> {
   if (cacheSkillcut) return cacheSkillcut
   try {
-    const d = await getJSON<SkillcutIndex>('/data/char_spine_skillcut.json')
-    cacheSkillcut = { bySkin: d.bySkin || {}, byChar: d.byChar || {} }
+    const d = await getJSON<{ bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[] }>(
+      '/data/char_spine_skillcut.json')
+    cacheSkillcut = {
+      bySkin: d.bySkin || {},
+      byChar: d.byChar || {},
+      bg: new Set(d.bgs || []),
+    }
   } catch {
-    cacheSkillcut = { bySkin: {}, byChar: {} }
+    cacheSkillcut = { bySkin: {}, byChar: {}, bg: new Set() }
   }
   return cacheSkillcut
 }

@@ -272,6 +272,13 @@ export default function SpinePlayer({
           currentAnim = n
           duration = a.duration || 0
           state.setAnimation(0, n, true)
+          // 大招 cut-in（c513/c852 等）的背景层在同一个骨架里，游戏用两个实例
+          // 分别播 <主动画> 与 <主动画>_bg；这里用第二轨道复现同一合成
+          const bgAnim = dir === 'spine_skillcut'
+            ? data.animations.find((x: any) => x.name === `${n}_bg`)
+            : null
+          if (bgAnim) state.setAnimation(1, bgAnim.name, true)
+          else state.setEmptyAnimation(1, 0)
           state.update(0)
           state.apply(skeleton)
           applyHiddenSlots(skeleton)

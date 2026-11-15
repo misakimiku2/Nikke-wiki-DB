@@ -350,16 +350,27 @@ export default function CharacterDetail() {
                 <div className="char-empty-mark">{c.name.slice(0, 1)}</div>
               )
             ) : pose === 'burst' && burstName ? (
-              <SpinePlayer
-                name={burstName}
-                dir="spine_skillcut"
-                pickDefaultAnim={pickBurstAnim}
-                controls={false}
-                controllerRef={spineRef}
-                onTick={setStatus}
-                onReady={() => setModelReady(true)}
-                onError={() => setPose('stand')}
-              />
+              <>
+                {/* 游戏里大招的背景（有独立贴图时）：铺在实时画布底下 */}
+                {skillcut?.bg.has(burstName) && (
+                  <img
+                    className="char-burst-bg"
+                    src={`/spine_skillcut/${burstName}/bg.webp`}
+                    alt=""
+                    draggable={false}
+                  />
+                )}
+                <SpinePlayer
+                  name={burstName}
+                  dir="spine_skillcut"
+                  pickDefaultAnim={pickBurstAnim}
+                  controls={false}
+                  controllerRef={spineRef}
+                  onTick={setStatus}
+                  onReady={() => setModelReady(true)}
+                  onError={() => setPose('stand')}
+                />
+              </>
             ) : combatName ? (
               <SpinePlayer
                 name={combatName}

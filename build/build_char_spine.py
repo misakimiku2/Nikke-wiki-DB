@@ -90,10 +90,16 @@ def convert(job, force=False, size=0):
             stem, _ext = os.path.splitext(page)
             plan.append((page, stem + ".webp", src_page))
 
+        # 大招 cut-in 的独立背景贴图（extract 阶段挑好存成 bg.png）
+        bg_src = os.path.join(folder_src, "bg.png")
+        bg_dst = os.path.join(folder, "bg.webp")
+        has_bg = os.path.exists(bg_src)
+
         if not force and os.path.exists(dst_atlas) and os.path.exists(dst_skel) \
-                and all(os.path.exists(os.path.join(folder, np)) for _p, np, _s in plan):
+                and all(os.path.exists(os.path.join(folder, np)) for _p, np, _s in plan) \
+                and (not has_bg or os.path.exists(bg_dst)):
             total = sum(os.path.getsize(os.path.join(folder, np)) for _p, np, _s in plan)
-            return {"name": name, "cached": True, "bytes": total}
+            return {"name": name, "cached": True, "bytes": total, "bg": has_bg}
 
         lines = atlas_text.splitlines()
         for old_page, new_name, src_page in plan:
@@ -120,8 +126,20 @@ def convert(job, force=False, size=0):
         with open(dst_skel, "wb") as f:
             f.write(data)
 
+        if has_bg:
+            with Image.open(bg_src) as bim:
+                bim = bim.convert("RGBA")
+                if size and bim.width > size:
+                    bim = bim.resize((size, size), Image.LANCZOS)
+                alpha = bim.getchannel("A")
+                zero_mask = alpha.point(lambda v: 255 if v == 0 else 0)
+                bim = Image.composite(
+                    Image.new("RGBA", bim.size, (0, 0, 0, 0)), bim, zero_mask
+                )
+                bim.save(bg_dst, "WEBP", lossless=True, method=6, exact=True)
+
         total = sum(os.path.getsize(os.path.join(folder, np)) for _p, np, _s in plan)
-        return {"name": name, "bytes": total, "pages": len(plan),
+        return {"name": name, "bytes": total, "pages": len(plan), "bg": has_bg,
                 "atlas": os.path.getsize(dst_atlas), "skel": os.path.getsize(dst_skel)}
     except Exception as e:
         return {"name": name, "error": f"{type(e).__name__}: {e}"}
@@ -176,6 +194,7 @@ def main():
     names = sorted({r["name"] for r in ok})
     meta = {"total": len(names), "items": names}
     if args.kind == "skillcut":
+        meta["bgs"] = sorted(r["name"] for r in ok if r.get("bg"))
         # 大招模型的命名五花八门（源数据就有拼写变体/皮肤段位置不一），
         # 直接在这里把「皮肤 → 模型」映射算好，前端两级查找：
         #   bySkin["c010_00"] = "c010_00_skillcut"   常规：<皮肤>_<后缀>
