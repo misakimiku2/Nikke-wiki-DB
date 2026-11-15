@@ -165,6 +165,25 @@ function contentBounds(skeleton: any): [number, number, number, number] | null {
   return x1 > x0 ? [x0, y0, x1, y1] : null
 }
 
+/** 可见槽位中心的「中位数」——对少数飞散的特效件鲁棒（bbox 中心会被
+    单个远处的 FX 网格拉偏，中位数不受影响），用作相机跟拍目标 */
+function contentCenter(skeleton: any): [number, number] | null {
+  const xs: number[] = []
+  const ys: number[] = []
+  for (const slot of skeleton.slots) {
+    const b = slotBBox(slot)
+    if (!b) continue
+    xs.push((b[0] + b[2]) / 2)
+    ys.push((b[1] + b[3]) / 2)
+  }
+  if (!xs.length) return null
+  const med = (arr: number[]) => {
+    const s = [...arr].sort((a, b) => a - b)
+    return s[Math.floor(s.length / 2)]
+  }
+  return [med(xs), med(ys)]
+}
+
 /**
  * spine-webgl 实时播放：
  *  - 图集是游戏导出的 pma:true 贴图；构建时用 exact 无损 WebP 保留全透明像素的
@@ -356,13 +375,17 @@ export default function SpinePlayer({
         let cx0 = 0
         let cy0 = 0
         let framed = false
-        /** 大招动画全程的内容并集（相机跟拍的活动范围），初始为空 */
+        /** 大招动画全程的内容并集（相机跟拍的限位范围），初始为空 */
         let unionRect: [number, number, number, number] | null = null
+        /** 「安静半场」的典型范围：FX 突发样本被排除后的角色本体典型 extent */
+        let calmRect: { cx: number; cy: number; w: number; h: number } | null = null
         if (dir === 'spine_skillcut') {
           // 大招动画把角色的运镜烤进了骨架位移（游戏里是 Cinemachine 跟拍），
           // 按 t=0 的骨架 bounds 取景会随播放把角色甩出画面外。
-          // 采样动画全程的「实际可见内容」包围盒，剔除离群样本（个别特效网格
-          // 顶点会飞到天文数字）后取稳健并集 —— 这是相机的活动范围。
+          // 采样动画全程的「实际可见内容」包围盒：剔除离群样本后取稳健并集
+          // （相机的活动限位），再用「安静半场」（面积较小的一半样本 ≈ 角色
+          // 本体的典型范围，FX 突发被排除）决定取景与场景背景板的比例——
+          // 否则被 FX 撑大的并集会把背景板/角色比例搞得失调。
           const track0: any = state.getCurrent(0)
           const SAMPLE_N = 16
           const samples: Array<[number, number, number, number]> = []
@@ -380,12 +403,11 @@ export default function SpinePlayer({
               const s = [...arr].sort((a, b) => a - b)
               return s[Math.floor(s.length / 2)]
             }
-            const medW = med(samples.map((b) => b[2] - b[0]))
-            const medH = med(samples.map((b) => b[3] - b[1]))
-            const medCx = med(samples.map((b) => (b[0] + b[2]) / 2))
-            const medCy = med(samples.map((b) => (b[1] + b[3]) / 2))
+            const area = (b: [number, number, number, number]) => (b[2] - b[0]) * (b[3] - b[1])
+            const medW0 = med(samples.map((b) => b[2] - b[0]))
+            const medH0 = med(samples.map((b) => b[3] - b[1]))
             const kept = samples.filter(
-              (b) => b[2] - b[0] <= medW * 8 && b[3] - b[1] <= medH * 8,
+              (b) => b[2] - b[0] <= medW0 * 8 && b[3] - b[1] <= medH0 * 8,
             )
             const use = kept.length ? kept : samples
             let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
@@ -395,27 +417,33 @@ export default function SpinePlayer({
             }
             if (x1 > x0 && y1 > y0) {
               unionRect = [x0, y0, x1, y1]
-              // 初始取景：角色典型活动范围（中位窗口 ×1.25）与并集的交集。
-              // 比整个并集更近——角色在画面里更大，相机跟拍也有平移空间。
-              const winW = medW * 1.25
-              const winH = medH * 1.25
-              const ix0 = Math.max(x0, medCx - winW / 2)
-              const iy0 = Math.max(y0, medCy - winH / 2)
-              const ix1 = Math.min(x1, medCx + winW / 2)
-              const iy1 = Math.min(y1, medCy + winH / 2)
-              if (ix1 - ix0 > medW * 0.4 && iy1 - iy0 > medH * 0.4) {
+              const calm = [...use]
+                .sort((a, b) => area(a) - area(b))
+                .slice(0, Math.max(3, Math.floor(use.length / 2)))
+              const cW = med(calm.map((b) => b[2] - b[0]))
+              const cH = med(calm.map((b) => b[3] - b[1]))
+              const cCx = med(calm.map((b) => (b[0] + b[2]) / 2))
+              const cCy = med(calm.map((b) => (b[1] + b[3]) / 2))
+              calmRect = { cx: cCx, cy: cCy, w: cW, h: cH }
+              // 初始取景：典型范围 ×1.25 与并集的交集（交集退化则回退并集）
+              const winW = cW * 1.25
+              const winH = cH * 1.25
+              const ix0 = Math.max(x0, cCx - winW / 2)
+              const iy0 = Math.max(y0, cCy - winH / 2)
+              const ix1 = Math.min(x1, cCx + winW / 2)
+              const iy1 = Math.min(y1, cCy + winH / 2)
+              if (ix1 - ix0 > cW * 0.4 && iy1 - iy0 > cH * 0.4) {
                 bw = ix1 - ix0
                 bh = iy1 - iy0
                 cx0 = (ix0 + ix1) / 2
                 cy0 = (iy0 + iy1) / 2
-                framed = true
               } else {
                 bw = x1 - x0
                 bh = y1 - y0
                 cx0 = (x0 + x1) / 2
                 cy0 = (y0 + y1) / 2
-                framed = true
               }
+              framed = true
             }
           }
           // 采样后把动画拨回开头，与外部预期的初始状态一致
@@ -432,18 +460,23 @@ export default function SpinePlayer({
           cx0 = offset.x + bw / 2
           cy0 = offset.y + bh / 2
         }
-        // 场景背景层的世界矩形：铺住整个并集（以并集中心为中心、短边为边长的
-        // 方形；背景图都是方图集页）——与骨架同一坐标系，相机跟拍时在画面里
-        // 随之平移，不溢出查看器（stage overflow hidden 裁剪）
-        const sceneRect = unionRect
+        // 场景背景板：安静半场典型范围 ×1.15（max 维度），中心=典型中心——
+        // 与角色本体成比例，随相机跟拍在画面里平移；舞台 overflow hidden 裁边
+        const sceneRect = calmRect
           ? {
-              cx: (unionRect[0] + unionRect[2]) / 2,
-              cy: (unionRect[1] + unionRect[3]) / 2,
-              side: Math.min(unionRect[2] - unionRect[0], unionRect[3] - unionRect[1]),
+              cx: calmRect.cx,
+              cy: calmRect.cy,
+              side: Math.max(calmRect.w, calmRect.h) * 1.15,
             }
-          : sceneBg
-            ? { cx: cx0, cy: cy0, side: Math.min(bw, bh) }
-            : null
+          : unionRect
+            ? {
+                cx: (unionRect[0] + unionRect[2]) / 2,
+                cy: (unionRect[1] + unionRect[3]) / 2,
+                side: Math.min(unionRect[2] - unionRect[0], unionRect[3] - unionRect[1]),
+              }
+            : sceneBg
+              ? { cx: cx0, cy: cy0, side: Math.min(bw, bh) }
+              : null
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
         /** 相机跟拍开关：大招默认开启，用户拖拽/滚轮接管后关闭，复位恢复 */
@@ -496,13 +529,13 @@ export default function SpinePlayer({
          */
         const followUpdate = () => {
           if (!scene || !skeleton || !unionRect) return
-          const b = contentBounds(skeleton)
-          if (!b) return
+          const target = contentCenter(skeleton)
+          if (!target) return
           const vw = scene.camera.viewportWidth
           const vh = scene.camera.viewportHeight
           const [ux0, uy0, ux1, uy1] = unionRect
-          let tx = (b[0] + b[2]) / 2
-          let ty = (b[1] + b[3]) / 2
+          let tx = target[0]
+          let ty = target[1]
           tx = vw >= ux1 - ux0 ? (ux0 + ux1) / 2
             : Math.min(Math.max(tx, ux0 + vw / 2), ux1 - vw / 2)
           ty = vh >= uy1 - uy0 ? (uy0 + uy1) / 2
