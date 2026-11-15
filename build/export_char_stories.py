@@ -61,19 +61,41 @@ def load_chars():
     return en2, zh_of
 
 
-def load_skin_names():
-    """bucket(lower) → 皮肤中文名，从咨询会话标题解析"""
+def load_fullnames():
+    """角色中文全名 -> id。剧情标题若正好命中，说明该卷属于这个具体角色卡。
+
+    「艾玛：战术升级」这类独立抽卡角色和基础角色是同一个人，bucket 里只写了
+    简写（emma_tactical），按 base+皮肤拆分会把整卷并到基础角色身上；英文名重名
+    的角色（莱伊 / 零 都写作 Rei）也会互相抢，所以都用剧情标题反查。
+    """
+    chars = json.load(open(os.path.join(ROOT, "public", "data", "characters.json"),
+                           encoding="utf-8"))["items"]
+    return {ch["name"]: ch["id"] for ch in chars if ch["name"]}
+
+
+COUNSEL_TITLE = re.compile(
+    r"^(?:与)?([^：]+?)(?:：([^：]+?))?的(?:咨询|追忆|回忆)：\d+$")
+
+
+def load_counsel_meta():
+    """bucket(lower) -> (皮肤中文名, 完整角色中文名)，从咨询会话标题解析"""
     path = os.path.join(SRC, "其他剧情", "咨询对话", "咨询对话_全量.json")
     if not os.path.exists(path):
-        return {}
+        return {}, {}
     data = json.load(open(path, encoding="utf-8"))
-    out = {}
+    skins, fulls = {}, {}
     for u in data:
         title = (u["groups"][0].get("title") or "") if u.get("groups") else ""
-        m = re.match(r"^(?:与)?([^：]+)(?:：([^：]+))?的(?:咨询|追忆|回忆)：\d+$", title)
-        if m and m.group(2):
-            out[u["bucket"].lower()] = m.group(2)
-    return out
+        m = COUNSEL_TITLE.match(title)
+        if not m:
+            continue
+        lb = u["bucket"].lower()
+        if m.group(2):
+            skins[lb] = m.group(2)
+            fulls[lb] = f"{m.group(1)}：{m.group(2)}"
+        else:
+            fulls[lb] = m.group(1)
+    return skins, fulls
 
 
 def prettify(sfx):
@@ -83,7 +105,8 @@ def prettify(sfx):
 
 def main():
     en2, zh_of = load_chars()
-    skin_names = load_skin_names()
+    skin_names, counsel_full = load_counsel_meta()
+    fullnames = load_fullnames()
 
     con = sqlite3.connect(DB)
     units = con.execute(
@@ -121,19 +144,27 @@ def main():
         sfx = m.group(2 if not treasure else 1)
 
         # ---- 角色匹配 ----
+        # 先看剧情标题是不是某个独立抽卡角色的全名：这类角色（艾玛：战术升级）
+        # 和基础角色共用前缀，按 bucket 拆分只会并到基础角色身上
         cid, skin = None, None
         n = norm(sfx)
-        if n in en2:
-            cid = en2[n]
-        elif sfx in ALIAS:
-            cid = ALIAS[sfx]
-        elif "_" in sfx and not sfx.startswith(SKIP):
-            base, sk = sfx.rsplit("_", 1)
-            if base in ALIAS:
-                cid = ALIAS[base]
-            elif norm(base) in en2:
-                cid = en2[norm(base)]
-                skin = sk
+        if not sfx.startswith(SKIP):
+            if _title and _title in fullnames:
+                cid = fullnames[_title]
+            elif lb in counsel_full and counsel_full[lb] in fullnames:
+                cid = fullnames[counsel_full[lb]]
+        if cid is None:
+            if n in en2:
+                cid = en2[n]
+            elif sfx in ALIAS:
+                cid = ALIAS[sfx]
+            elif "_" in sfx and not sfx.startswith(SKIP):
+                base, sk = sfx.rsplit("_", 1)
+                if base in ALIAS:
+                    cid = ALIAS[base]
+                elif norm(base) in en2:
+                    cid = en2[norm(base)]
+                    skin = sk
         if cid is None and not sfx.startswith(SKIP):
             # 拼接皮肤：最长角色名前缀
             for key in sorted(en2, key=len, reverse=True):

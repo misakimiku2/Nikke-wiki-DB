@@ -64,11 +64,14 @@ export default function Characters() {
     }
     if (filter === 'desc') out = out.filter((c) => c.hasDesc)
     if (filter === 'lines') out = out.filter((c) => c.lines > 0)
-    if (filter === 'img') out = out.filter((c) => !!mainBase(imgs, c.id))
+    // 只显示有可用立绘/头像的条目，避免 NPC 空卡
+    out = out.filter((c) => !!mainBase(imgs, c.id))
     return out
   }, [list, imgs, q, filter])
 
   if (!list) return <div className="loading">LOADING…</div>
+
+  const total = list.filter((c) => !!mainBase(imgs, c.id)).length
 
   return (
     <div className="wrap">
@@ -77,7 +80,7 @@ export default function Characters() {
           <div className="idx">01 / CHARACTER</div>
           <h2>角色图鉴</h2>
         </div>
-        <div className="meta">{nf(list.length)} ENTRIES</div>
+        <div className="meta">{nf(total)} ENTRIES</div>
       </div>
 
       <div className="toolbar">

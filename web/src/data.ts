@@ -42,7 +42,8 @@ export function accentFor(id: number): string {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const r = await fetch(path)
+  // no-cache：每次重新验证，避免数据重导出后浏览器还拿旧的 characters/char_images
+  const r = await fetch(path, { cache: 'no-cache' })
   if (!r.ok) throw new Error(`${path} ${r.status}`)
   return r.json()
 }
@@ -120,6 +121,26 @@ export function charPortrait(base: string | null, mi: Set<string>): string | nul
 export function charThumb(base: string, mi: Set<string>): string {
   if (mi.has(base)) return `/charmi/${base}.webp`
   return charArt(base)
+}
+
+/** 立绘显示名（来自游戏本地化/皮肤名），key 为 c010_02 这种资源代号 */
+export type CharArtInfo = { n: string; old: boolean }
+export type CharArtMap = Record<string, CharArtInfo>
+
+let cacheArtMap: CharArtMap | null = null
+
+export async function loadCharArt(): Promise<CharArtMap> {
+  if (cacheArtMap) return cacheArtMap
+  try {
+    cacheArtMap = await getJSON<CharArtMap>('/data/char_art.json')
+  } catch {
+    cacheArtMap = {}
+  }
+  return cacheArtMap
+}
+
+export function artLabel(art: CharArtMap, base: string): string {
+  return art[base]?.n || base
 }
 
 /* 角色技能说明（desc 模板里的 {description_value_NN} 由前端按等级填充） */

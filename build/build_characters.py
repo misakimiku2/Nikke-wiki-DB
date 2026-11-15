@@ -31,6 +31,85 @@ DB_PATH = os.path.join(ROOT, "data", "nikke.db")
 
 LANGS = ["zh-CN", "en", "ja", "ko", "zh-TW"]
 
+# NPC 的 Locale id 与立绘资源代号不一致时，显示用的 code 以实际立绘为准
+CODE_FIX = {
+    909: "c914",   # 伯宁姆 Burningum
+    930: "c113",   # E.H.（NPC 形态，复用 c113_01）
+    931: "c939",   # 多万 Doban
+    932: "c922",   # 真 Jin
+    933: "c943",   # 莉莉维丝 Liliweiss
+    934: "c941",   # 皮娜 Pinne
+    935: "c961",   # 奥斯华 Oswald
+}
+# 非角色或重复条目：777 部队名；908 与 890 芭比珑重复；914 嚣嘈缺图集；
+# 930 是 E.H. 的空壳条目（113 才是带介绍的正主）；510 同理，514 才是格拉维正主
+DROP_IDS = {777, 908, 914, 930, 510}
+
+# Locale 里没有数字 key、但剧情里有名字的 NPC（名字来自 npc_567_name）
+NAME_FIX = {
+    9003: {"zh-CN": "米赛斯小姐", "en": "Mrs. Miss", "ja": "ミセス・ミス", "ko": "미세스 미스"},
+    915: {"zh-CN": "莱普琪立安", "en": "Raptilon", "ja": "ラプチリアン", "ko": "랩틸리언"},
+}
+
+# 只有剧情模型、没有 Locale 数字条目的 NPC：补成独立条目（名字来自 npc_XXX_name）
+EXTRA = {
+    813: ("c813", "9S", "9S"),
+    923: ("c923", "董事会的男性高层", "Male Executive"),
+    924: ("c924", "董事会的女性高层", "Female Executive"),
+    945: ("c945", "警卫机器人", "Security Robot"),
+    947: ("c947", "穿着外套的男人", "Man in a Jacket"),
+    948: ("c948", "莉思", "Riss"),
+    951: ("c951", "小男孩", "Boy"),
+    952: ("c952", "小女孩", "Little Girl"),
+    983: ("c983", "纳迪娅", "Nadia"),
+    997: ("c997", "独一", "Only One"),
+    9006: ("c9006", "德尔帕拉", "Deipara"),
+    9026: ("c9026", "艾米", "Amy"),
+    9031: ("c931", "收集机器人", "Collection Robot"),
+    # 第 43 章「独一」登场的具名 NPC，代号取自 ScenarioCharacterSettingTable 的
+    # spine/standing 字段（不是 Locale id）
+    9016: ("c9016", "女祭司", "Priestess"),
+    9017: ("c9017", "奥图露亚", "Altruia"),
+    9018: ("c9018", "普林瑟斯", "Princess"),
+    9019: ("c9019", "斯托尔三世", "Stall III"),
+    # 其余专属立绘的具名 NPC（同样是 Locale 无数字条目、只有剧情模型）
+    263: ("c263", "茵迪维利亚", "Indivilia"),
+    803: ("c803", "电次", "Denji"),
+    804: ("c804", "早川秋", "Aki Hayakawa"),
+    9002: ("c9002", "诺拉", "Nora"),
+    9010: ("c9010", "珍", "Jane"),
+    9011: ("c9011", "莱因", "Rain"),
+    9023: ("c9023", "汉森", "Hanson"),
+    9024: ("c9024", "宥宥", "Yoyo"),
+    9025: ("c9025", "艾格维斯塔", "Egovista"),
+    9030: ("c9030", "安曼", "Enme"),
+    9034: ("c9034", "企鹅1号", "Penguin No.1"),
+    9035: ("c9035", "企鹅2号", "Penguin No.2"),
+    9036: ("c9036", "企鹅3号", "Penguin No.3"),
+    9037: ("c9037", "企鹅4号", "Penguin No.4"),
+    936: ("c936", "麦克斯", "Max"),
+    946: ("c946", "露露", "Ruru"),
+    967: ("c967", "露咪", "Lumi"),
+    968: ("c968", "二姐", "Lua"),
+    969: ("c969", "大姐", "Lena"),
+    975: ("c975", "媞美", "Timi"),
+    976: ("c976", "T.Rony", "T.Rony"),
+    980: ("c980", "汉塞尔", "Hansel"),
+    981: ("c981", "葛丽特", "Gretel"),
+    988: ("c988", "村长", "Village Chief"),
+    991: ("c991", "D.E.E.P.", "D.E.E.P."),
+    # 以下几位的 Locale id 已被 CODE_FIX 挪作他用（930-935 指向别的立绘），
+    # 只能另开 id 段，避免覆盖 E.H./多万/真/莉莉维丝/皮娜/奥斯华
+    9100: ("c930", "碧翠丝", "Beatrice"),
+    9101: ("c932", "伏特MK.ll", "Volt MK.II"),
+    9102: ("c933", "伏特", "Volt"),
+    9103: ("c934", "安洁丽娜", "Angelina"),
+    9104: ("c935", "约瑟夫", "Joseph"),
+    # 已实装 / 即将实装的独立角色卡（不是现有角色的皮肤）
+    9200: ("c474", "桃乐丝：异端", "Dorothy: Heretic"),
+    9201: ("c235", "诺雅：异端", "Noah: Heretic"),
+}
+
 
 def log(m):
     print(m, flush=True)
@@ -85,7 +164,12 @@ def build_characters(con_target):
 
     rows = []
     for cid in sorted(ids):
+        if cid in DROP_IDS:
+            continue
+
         def g(k, lang="zh-CN"):
+            if cid in NAME_FIX and k == f"{cid}_name":
+                return NAME_FIX[cid].get(lang) or NAME_FIX[cid].get("zh-CN")
             v = data.get(k)
             return (v or {}).get(lang) if v else None
 
@@ -93,7 +177,7 @@ def build_characters(con_target):
         d = data.get(desc_key) or {}
         rows.append((
             cid,
-            "c%03d" % cid,
+            CODE_FIX.get(cid, "c%03d" % cid),
             g(f"{cid}_name"),
             g(f"{cid}_name", "en"),
             g(f"{cid}_name", "ja"),
@@ -106,6 +190,13 @@ def build_characters(con_target):
             g(f"{cid}_cv"),
             1 if d.get("zh-CN") else 0,
         ))
+
+    have = {r[0] for r in rows}
+    for cid, (code, zh, en) in EXTRA.items():
+        if cid in have:
+            continue
+        rows.append((cid, code, zh, en, None, None, None,
+                     None, None, None, None, None, 0))
 
     con_target.executemany(
         "INSERT OR REPLACE INTO character_entries"

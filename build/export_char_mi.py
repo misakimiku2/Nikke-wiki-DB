@@ -20,6 +20,7 @@ import argparse
 import io
 import json
 import os
+import pathlib
 import re
 import sqlite3
 import sys
@@ -99,6 +100,72 @@ def worker(job, quality=92):
         cat.close()
 
 
+def make_from_art(quality=92):
+    """给没有官方 mi 头像的 NPC 从全身立绘裁一张头肩像。
+
+    客户端里只有 icons-char-mi 的角色才有官方头像；NPC 的 mi 缺失时会退回
+    1024 全身图，卡片会和旁白一样是一条完整人形。这里按 alpha 包围盒取
+    头顶往下 34% 的区域，统一成 256×512 的头肩像。
+
+    头身比偏大的角色（小孩体型）34% 会一路裁到腰，用 RATIO_FIX 单独收紧。
+    """
+    from PIL import Image
+
+    # 矮身角色：头在全身里占比小，34% 会裁进腰部
+    RATIO_FIX = {
+        "c9019_00": 0.27,
+        "c975_00": 0.62,   # 媞美是只小狗，官方 mi 是狗脸充满画面，改从立绘裁半身
+    }
+    # 已生成也要强制用立绘重裁：媞美官方 mi 是狗脸充满画面，另两个走手工裁剪框
+    FORCE_ART = {"c975_00", "c983_00", "c227_00"}
+    # 人物被机械/轮椅挤到角落时，alpha 自动定位会失准，这里直接给原图裁剪框
+    # (头部中心 x, 顶部 y, 宽, 高)，宽高比固定 1:2
+    MANUAL_CROP = {
+        "c983_00": (410, 45, 170, 340),   # 纳迪娅：坐在轮椅上，头在画面左上，左侧是支架
+        "c227_00": (520, 258, 175, 350),  # 匹诺曹：被大型机械环包围，头在正中被机械挡
+    }
+    art_dir = os.path.join(ROOT, "public", "char")
+    made = []
+    if not os.path.isdir(art_dir):
+        return made
+    have = {f[:-5] for f in os.listdir(OUT) if f.endswith(".webp")}
+    for fn in sorted(os.listdir(art_dir)):
+        if not fn.endswith(".png"):
+            continue
+        stem = fn[:-4]
+        if stem in have and stem not in FORCE_ART:
+            continue
+        try:
+            im = Image.open(os.path.join(art_dir, fn)).convert("RGBA")
+            bbox = im.getchannel("A").getbbox()
+            if not bbox:
+                continue
+            x0, y0, x1, y1 = bbox
+            fw, fh = x1 - x0, y1 - y0
+            if stem in MANUAL_CROP:
+                cx, top, cw, ch = MANUAL_CROP[stem]
+            else:
+                ch = fh * RATIO_FIX.get(stem, 0.34)
+                cw = ch / 2
+                if cw < fw * 0.28:
+                    cw = fw * 0.28
+                    ch = cw * 2
+                # 头部水平中心只看头顶 12%：手持物、披风会把整张图的包围盒中心拉偏
+                band = im.getchannel("A").crop(
+                    (0, y0, im.width, int(y0 + fh * 0.12))).getbbox()
+                cx = (band[0] + band[2]) / 2 if band else (x0 + x1) / 2
+                top = y0 - fh * 0.015
+            crop = im.crop((int(cx - cw / 2), int(top),
+                            int(cx + cw / 2), int(top + ch)))
+            crop.resize((256, 512), Image.LANCZOS).save(
+                os.path.join(OUT, stem + ".webp"), "WEBP",
+                quality=quality, method=6)
+            made.append(stem)
+        except Exception as e:
+            print("  ! 头像裁剪失败", stem, e)
+    return made
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--probe", action="store_true")
@@ -142,7 +209,12 @@ def main():
                 if i % 40 == 0 or i == len(todo):
                     print(f"  {i}/{len(todo)}  {time.time()-t0:.0f}s", flush=True)
 
-    names = sorted(set(ok))
+    extra = make_from_art(args.quality)
+    if extra:
+        print(f"  从全身立绘补头像 {len(extra)} 张")
+    # 以磁盘上实际存在的头像为准：重跑时官方 mi 会被跳过，若只统计本次处理结果，
+    # 之前从立绘裁出来的那批就会从 json 里丢掉，角色卡随即退回全身图
+    names = sorted(p.stem for p in pathlib.Path(OUT).glob("*.webp"))
     with open(META, "w", encoding="utf-8") as f:
         json.dump({"total": len(names), "items": names}, f,
                   ensure_ascii=False, separators=(",", ":"))

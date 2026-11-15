@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  accentFor, charArt, charThumb, EXPR_LABEL, loadCharImages, loadCharMi,
+  accentFor, artLabel, charArt, charThumb, EXPR_LABEL, loadCharArt, loadCharImages, loadCharMi,
   loadCharSkills, loadCharStories, loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
-  type CharImages, type Character, type CharSkill, type CharSkillsData, type CharStoriesData,
+  type CharArtMap, type CharImages, type Character, type CharSkill, type CharSkillsData, type CharStoriesData,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
@@ -121,6 +121,7 @@ export default function CharacterDetail() {
   const [skillData, setSkillData] = useState<CharSkillsData>({ items: {}, terms: {} })
   const [skillLv, setSkillLv] = useState(10)
   const [storiesMap, setStoriesMap] = useState<CharStoriesData>({})
+  const [art, setArt] = useState<CharArtMap>({})
   const [relTab, setRelTab] = useState<'stories' | 'counsel'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
@@ -132,6 +133,7 @@ export default function CharacterDetail() {
     loadCharSpine().then(setSpine).catch(() => {})
     loadCharSkills().then(setSkillData).catch(() => {})
     loadCharStories().then(setStoriesMap).catch(() => {})
+    loadCharArt().then(setArt).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -149,8 +151,11 @@ export default function CharacterDetail() {
   }, [pick])
 
   const c = list?.find((x) => String(x.id) === id) || null
-  const vars = c ? variantsOf(imgs, c.id) : []
+  // 旧版立绘（例如 c010_01 Rapi_old）不是当前皮肤，混在切换条里会让人以为是错图
+  const vars = (c ? variantsOf(imgs, c.id) : []).filter((v) => !art[v]?.old)
   const current = pick || (c ? mainBase(imgs, c.id) : null) || ''
+  const artName = current ? artLabel(art, current) : ''
+  const currentLabel = !artName ? '' : (c && !artName.startsWith(c.name) ? `${c.name} · ${artName}` : artName)
   const staticSrc = current ? charArt(current) : ''
   const hasModel = !!current && spine.has(current) && !modelError
   const skills = id ? skillData.items[String(id)] : null
@@ -311,19 +316,25 @@ export default function CharacterDetail() {
           )}
 
           {vars.length > 1 && (
-            <div className="variants">
-              {vars.map((v) => (
-                <button
-                  key={v}
-                  className={v === current ? 'on' : ''}
-                  onClick={() => setPick(v)}
-                  title={spine.has(v) ? `${v} · 可动` : v}
-                >
-                  <img src={charThumb(v, mi)} alt={v} loading="lazy" />
-                  {spine.has(v) && <i className="vt-live" />}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="variants">
+                {vars.map((v) => {
+                  const label = artLabel(art, v)
+                  return (
+                    <button
+                      key={v}
+                      className={v === current ? 'on' : ''}
+                      onClick={() => setPick(v)}
+                      title={spine.has(v) ? `${label} · 可动` : label}
+                    >
+                      <img src={charThumb(v, mi)} alt={label} loading="lazy" />
+                      {spine.has(v) && <i className="vt-live" />}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="variant-caption">{currentLabel}</div>
+            </>
           )}
         </div>
 
