@@ -397,6 +397,43 @@ export type SpineOverride = {
    * 初始摆放，之后用校准模式（URL calib=1）微调。
    */
   sceneBgBases?: Array<{ sideMul?: number; cxOffPct?: number; cyOffPct?: number }>
+  /**
+   * 场景背景板绑定的骨骼名（默认 camera）。c352_02 的运镜真正落在 `bone`
+   * （camera → bone → hl1_body/水花）：镜头推进和俯冲特写都在 bone 上，
+   * 绑 camera 只能跟到 1.15× 的慢推，角色俯冲到 3.2× 时背景就错位了。
+   */
+  sceneBone?: string
+  /**
+   * 背景板的绑定方式：
+   *  - bone（默认）：套用运镜骨相对 t=0 的完整仿射（平移+缩放）。
+   *  - body：只取运镜骨的缩放/旋转，并以角色身体中心为轴心缩放——
+   *    对应游戏里「镜头跟着角色推近」的观感。骨骼自身的世界原点离角色
+   *    很远（c352 的 bone 在 (-2033,-2024)），直接用全仿射会把背景板
+   *    甩到屏幕外，只剩一片纯色。
+   */
+  sceneBgPivot?: 'bone' | 'body'
+  /** 「body」模式下真正作为缩放轴心的骨骼名（例如 c352 的 hl1_body）。
+      缺省用可见内容的中位中心——那个点会随姿势漂移，导出的校准值对不上 */
+  pivotBone?: string
+  /**
+   * 某张背景的绝对世界矩形关键帧（校准导出的最终值，单位为骨架世界坐标）。
+   * 存在时优先于骨骼绑定：按时间线性插值，用于复现骨骼上不存在的独立
+   * 镜头推拉（例如 c352 第二镜结尾背景自己放大到 1.19×）。
+   */
+  sceneBgKeys?: Array<Array<{ t: number; cx: number; cy: number; side: number; rot?: number }>>
+  /**
+   * 关键帧的插值驱动骨（按骨骼缩放进度插值，而不是按时间线性）。
+   * s0/s1 为该骨在首/末关键帧时刻的缩放，用于把当前缩放归一化成 0..1。
+   */
+  sceneBgKeyDrive?: Array<{ bone: string; s0: number; s1: number } | null>
+  /**
+   * 某张背景刚性挂在指定骨骼上（按该校准帧反解出的骨骼局部偏移）。
+   * 用于角色自身有连续缩放/下沉、但不在 sceneBone 上的镜头：背景跟着
+   * 骨骼平滑运动，比稀疏关键帧的线性插值更贴合人物。
+   * vx/vy 为骨骼世界位置到背景中心的偏移（世界方向，未乘骨骼缩放），
+   * side 为骨骼缩放为 1 时的背景边长。
+   */
+  sceneBgBoneBinds?: Array<{ bone: string; vx: number; vy: number; side: number } | null>
   /** 独立背景 CG 的名字（按 cg_index 查 hash），或 / 开头的图片 URL */
   background?: string
   comment?: string

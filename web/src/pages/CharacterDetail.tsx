@@ -158,6 +158,8 @@ export default function CharacterDetail() {
   const [relTab, setRelTab] = useState<'stories' | 'counsel'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
+  /** 大招镜头运镜开关：默认开启（自动跟拍 + 锁定取景），关闭后可手动拖拽/缩放 */
+  const [cameraFollow, setCameraFollow] = useState(true)
   /** 拖时间轴时先暂停，松手后按拖前的状态继续（与 CG 查看器同一套交互） */
   const wasPlaying = useRef(false)
   const seeking = useRef(false)
@@ -187,6 +189,8 @@ export default function CharacterDetail() {
     setStatus(EMPTY)
     setModelReady(false)
     setModelError(false)
+    // 换皮肤 / 切姿态后模型会重建，镜头运镜恢复默认开启
+    setCameraFollow(true)
   }, [pick, pose])
 
   const c = list?.find((x) => String(x.id) === id) || null
@@ -497,6 +501,24 @@ export default function CharacterDetail() {
                   </select>
                 </label>
                 <span className="cb-spacer" />
+                {pose === 'burst' && (
+                  <button
+                    className={`cb-btn cb-camera ${cameraFollow ? 'on' : ''}`}
+                    disabled={!modelReady}
+                    onClick={() => {
+                      const next = !cameraFollow
+                      setCameraFollow(next)
+                      spineRef.current?.setCameraFollow?.(next)
+                    }}
+                    title={
+                      cameraFollow
+                        ? '镜头运镜：开（画面锁定，不能拖拽/缩放；关闭后可手动调整）'
+                        : '镜头运镜：关（不再自动运镜，可拖拽或滚轮调整画面）'
+                    }
+                  >
+                    运镜 {cameraFollow ? '开' : '关'}
+                  </button>
+                )}
                 <button className="cb-btn" onClick={resetView} title="复位取景（双击画面也可以）">
                   ⟲ {status.zoom.toFixed(1)}×
                 </button>

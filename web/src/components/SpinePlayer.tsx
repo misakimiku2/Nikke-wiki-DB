@@ -55,6 +55,8 @@ export type SpineController = {
   setSpeed(v: number): void
   setAnim(n: string): void
   resetView(): void
+  /** 镜头运镜开关：开=自动跟拍且禁用拖拽/缩放，关=固定/手动取景 */
+  setCameraFollow?(on: boolean): void
   saveFrame(filename?: string): void
   getStatus(): SpineStatus
   /** 校准模式专用：当前帧的骨架矩阵 + 基础矩形（未含用户微调） */
@@ -326,6 +328,8 @@ export default function SpinePlayer({
     let animNames: string[] = []
     let currentAnim = ''
     let playing = true
+    /** 镜头运镜总开关：开 = 自动跟拍 + 禁止手动移动/缩放；关 = 不跟拍，可手动 */
+    let cinemaOn = true
     let speed = 1
     let zoom = 1
     let ready = false
@@ -480,23 +484,40 @@ export default function SpinePlayer({
         /** 第二镜的本体槽位与安静半场：多镜大招每个镜头可能用不同槽位组画
             角色（c352 第一镜 hailun*、第二镜另一组），基准摆放也各自独立 */
         let bodySlots2: Set<number> | null = null
+        /** 「body」绑定模式下身体中心在 t=0 的位置（缩放轴心），首帧懒记录 */
+        let bodyCenter0: { x: number; y: number } | null = null
+        /** 背景板是否以角色身体为轴心跟随运镜缩放（data.ts sceneBgPivot） */
+        const pivotBody = overrides[name]?.sceneBgPivot === 'body'
         let calmRect2: {
           cx: number; cy: number; w: number; h: number
           ref?: number; bodyCx?: number | null; bodyCy?: number | null
         } | null = null
         /** 切镜时刻的 camera 矩阵：bg2 的相对变换以它（而不是 t=0）为基准 */
         let sceneBoneCut: { a: number; b: number; c: number; d: number; x: number; y: number } | null = null
-        // 运镜骨骼：riggers 命名的 camera 骨（水花等场景件就挂在这条链下）。
-        // 背景板直接绑定它相对 t=0 的仿射变换，与骨架内水花严格同变换——
-        // 之前用本体槽位统计近似，角色身体局部动画（前倾/挥手）会把背景板
-        // 带着一起晃，水花就溢出浴缸了
+        // 运镜骨骼：优先按模型覆盖配置（sceneBone），默认 riggers 命名的
+        // camera 骨。背景板直接绑定它相对 t=0 的仿射变换，与骨架内水花
+        // 严格同变换——之前用本体槽位统计近似，角色身体局部动画（前倾/挥手）
+        // 会把背景板带着一起晃，水花就溢出浴缸了
         let sceneBone: any = null
         if (dir === 'spine_skillcut') {
-          const boneData: any = data.bones.find((b: any) => /^camera$/i.test(String(b.name)))
+          const want = overrides[name]?.sceneBone
+          const boneData: any = want
+            ? data.bones.find((b: any) => String(b.name).toLowerCase() === want.toLowerCase())
+            : data.bones.find((b: any) => /^camera$/i.test(String(b.name)))
           sceneBone = boneData
             ? skeleton.bones.find((b: any) => b.data === boneData || b.data?.name === boneData.name) || null
             : null
         }
+        /** 「body」模式的缩放轴心骨（例如 hl1_body）：沿用它才能让校准
+            导出的偏移在 t=0 与俯冲特写之间严格按缩放倍率对应 */
+        let pivotBoneObj: any = null
+        if (dir === 'spine_skillcut' && overrides[name]?.pivotBone) {
+          const pb: any = data.bones.find((b: any) => String(b.name) === overrides[name]!.pivotBone)
+          pivotBoneObj = pb ? skeleton.bones.find((b: any) => b.data === pb) || null : null
+        }
+        /** 轴心骨在 t=0 与切镜时刻的世界位置（分别供两张背景板使用） */
+        let pivotBone0: { x: number; y: number } | null = null
+        let pivotBoneCut: { x: number; y: number } | null = null
         /** 双背景切镜点：camera 骨平移的最大不连续处（Infinity = 无 bg2/无切镜） */
         let sceneCut = Infinity
         if (dir === 'spine_skillcut') {
@@ -595,6 +616,9 @@ export default function SpinePlayer({
                   state.apply(skeleton)
                   skeleton.updateWorldTransform()
                   sceneBoneCut = { a: sceneBone.a, b: sceneBone.b, c: sceneBone.c, d: sceneBone.d, x: sceneBone.worldX, y: sceneBone.worldY }
+                  if (pivotBoneObj) {
+                    pivotBoneCut = { x: pivotBoneObj.worldX, y: pivotBoneObj.worldY }
+                  }
                 }
               }
               // 按切镜点把样本分成两镜，各自算安静半场与本体槽位
@@ -711,6 +735,9 @@ export default function SpinePlayer({
         if (sceneBone) {
           sceneBone0 = { a: sceneBone.a, b: sceneBone.b, c: sceneBone.c, d: sceneBone.d, x: sceneBone.worldX, y: sceneBone.worldY }
         }
+        if (pivotBoneObj) {
+          pivotBone0 = { x: pivotBoneObj.worldX, y: pivotBoneObj.worldY }
+        }
         if (dir === 'spine_skillcut' && sceneBg2) {
           setCalibCut(sceneCut === Infinity ? null : sceneCut)
         }
@@ -752,14 +779,13 @@ export default function SpinePlayer({
         const sceneRect2 =
           sceneBg2 && sceneRect
             ? {
-                // 中心用第二镜「身体槽位中位」的典型位置（内容 bbox 被 FX 撑大），
-                // 边长按两镜本体面积比的平方根缩放（第二镜角色表观更大）
+                // 中心用第二镜「身体槽位中位」的典型位置（内容 bbox 被 FX 撑大）
                 cx: calmRect2?.bodyCx ?? sceneRect.cx,
                 cy: calmRect2?.bodyCy ?? sceneRect.cy,
-                side:
-                  calmRect2?.ref && areaRef
-                    ? sceneSide0 * Math.sqrt(calmRect2.ref / areaRef)
-                    : sceneRect.side,
+                // 两张板来自同一张 512² 帧图集，游戏里按各自粒子尺寸铺在
+                // 镜头前；这里以第一镜的自然边长为基准，具体倍率交给
+                // spine_overrides.json 的 sceneBgBases[1].sideMul 校准
+                side: sceneRect.side,
                 rot: 0,
               }
             : null
@@ -767,6 +793,10 @@ export default function SpinePlayer({
             sceneBgBases[i] = { sideMul, cxOffPct, cyOffPct }：side_i = side0×mul，
             中心按各自身长的百分比偏移；缺省全部用校准拟合出的基准矩形 */
         const sceneBases: Array<{ cx: number; cy: number; side: number }> = (() => {
+          // 没有场景背景板（非大招模型、或大招模型没有 bg 图）时 sceneCenter0
+          // 为 null：这里直接返回空表，不能解引用——否则每个普通模型都会在
+          // 初始化时抛 TypeError，被 catch 成「模型加载失败」退回静态图
+          if (!sceneCenter0) return []
           const cfg = overrides[name]?.sceneBgBases
           const mk = (i: number, base: { cx: number; cy: number; side: number }) => {
             const c = cfg?.[i]
@@ -900,9 +930,10 @@ export default function SpinePlayer({
             rot: -Math.atan2(r21, r11) * 180 / Math.PI,
           }
         }
-        /** 跟拍/吸附目标：当前镜的本体槽位统计 → 全槽位统计 → 背景锚点。
-            多镜大招每个镜头可能用不同槽位组画角色（c352 第二镜的 hailun*
-            第一镜槽全被换装），所以要按当前镜选槽位集合 */
+        /** 跟拍/吸附目标：当前镜的本体槽位统计 → 全槽位统计。多镜大招每个
+            镜头可能用不同槽位组画角色（c352 第二镜的 hailun* 第一镜槽全被
+            换装），所以要按当前镜选槽位集合。背景板是否跟随由 sceneBone /
+            sceneBgPivot 决定，视角这里始终以角色为准（游戏镜头跟拍角色） */
         const followTarget = (): { cx: number; cy: number } | null => {
           const idx = activeBg()
           const slots = (idx === 1 ? bodySlots2 : bodySlots) ?? undefined
@@ -935,6 +966,182 @@ export default function SpinePlayer({
          */
         const sceneBgUpdate = (stats: { cx: number; cy: number; medArea?: number } | null) => {
           if (!sceneRect || !framed || !sceneCenter0) return
+          /** 校准面板 / 记录用的骨架矩阵快照 */
+          const dumpTree = () => ({
+            camBone: dumpBone(sceneBone),
+            camParent: sceneBone ? dumpBone(sceneBone.parent) : null,
+            camChildren: ((sceneBone?.children || []) as any[])
+              .map((c: any) => dumpBone(c))
+              .filter((x: CalibBoneDump | null): x is CalibBoneDump => !!x),
+          })
+          // 刚性挂骨：第二镜人物会连续下沉+放大（hl2_Body_1 缩放 1.27→1.68），
+          // 背景按该骨的实时变换运动，避免关键帧之间线性插值与人物脱节
+          const active = activeBg()
+          const bind = overrides[name]?.sceneBgBoneBinds?.[active]
+          if (bind) {
+            const bb: any = skeleton!.bones.find((b: any) => String(b.data?.name) === bind.bone)
+            if (bb) {
+              const det = bb.a * bb.d - bb.b * bb.c
+              const s = Math.sqrt(Math.abs(det))
+              const rect = active === 1 ? sceneRect2 : sceneRect
+              if (rect) {
+                rect.cx = bb.worldX + bind.vx * s
+                rect.cy = bb.worldY + bind.vy * s
+                rect.side = bind.side * s
+                rect.rot = 0
+              }
+              if (calibOnRef.current) {
+                const base = sceneBases[active] || sceneBases[0]
+                const cur = rect || sceneRect
+                calibBase = {
+                  bgIndex: active,
+                  side0: base.side,
+                  center0: [base.cx, base.cy],
+                  baseCx: cur.cx,
+                  baseCy: cur.cy,
+                  baseSide: cur.side,
+                  baseRot: cur.rot,
+                  ...dumpTree(),
+                }
+              }
+              applyCalibAdj(active)
+              return
+            }
+          }
+          // 关键帧轨道：直接使用校准导出的绝对世界矩形（可复现骨骼上不存在的
+          // 独立镜头推拉，例如第二镜结尾背景自己放大到 1.19×）
+          const keys = overrides[name]?.sceneBgKeys
+          const track = keys?.[active]
+          if (track && track.length) {
+            const t = currentTime()
+            const arr = [...track].sort((a, b) => a.t - b.t)
+            let kf: { t: number; cx: number; cy: number; side: number; rot?: number } | null = null
+            // 由骨骼缩放驱动的插值参数：第二镜人物下沉/放大是骨骼连续动画，
+            // 用它的缩放进度 u 来插值端点，比按时间线性插值贴合人物得多
+            const drive = overrides[name]?.sceneBgKeyDrive?.[active]
+            if (drive && arr.length >= 2) {
+              const db: any = skeleton!.bones.find((b: any) => String(b.data?.name) === drive.bone)
+              if (db) {
+                const ds = Math.sqrt(Math.abs(db.a * db.d - db.b * db.c))
+                const u = Math.min(1, Math.max(0, (ds - drive.s0) / (drive.s1 - drive.s0 || 1)))
+                const a = arr[0]
+                const z = arr[arr.length - 1]
+                kf = {
+                  t,
+                  cx: a.cx + (z.cx - a.cx) * u,
+                  cy: a.cy + (z.cy - a.cy) * u,
+                  side: a.side + (z.side - a.side) * u,
+                  rot: (a.rot ?? 0) + ((z.rot ?? 0) - (a.rot ?? 0)) * u,
+                }
+              }
+            }
+            if (!kf) {
+              kf = arr[0]
+              if (t >= arr[arr.length - 1].t) {
+                kf = arr[arr.length - 1]
+              } else if (t > arr[0].t) {
+                for (let i = 0; i < arr.length - 1; i++) {
+                  if (t >= arr[i].t && t <= arr[i + 1].t) {
+                    const f = (t - arr[i].t) / (arr[i + 1].t - arr[i].t || 1)
+                    kf = {
+                      t,
+                      cx: arr[i].cx + (arr[i + 1].cx - arr[i].cx) * f,
+                      cy: arr[i].cy + (arr[i + 1].cy - arr[i].cy) * f,
+                      side: arr[i].side + (arr[i + 1].side - arr[i].side) * f,
+                      rot: (arr[i].rot ?? 0) + ((arr[i + 1].rot ?? 0) - (arr[i].rot ?? 0)) * f,
+                    }
+                    break
+                  }
+                }
+              }
+            }
+            const rect = active === 1 ? sceneRect2 : sceneRect
+            if (rect) {
+              rect.cx = kf.cx
+              rect.cy = kf.cy
+              rect.side = kf.side
+              rect.rot = kf.rot || 0
+            }
+            if (calibOnRef.current) {
+              const base = sceneBases[active] || sceneBases[0]
+              calibBase = {
+                bgIndex: active,
+                side0: base.side,
+                center0: [base.cx, base.cy],
+                baseCx: kf.cx,
+                baseCy: kf.cy,
+                baseSide: kf.side,
+                baseRot: kf.rot || 0,
+                ...dumpTree(),
+              }
+            }
+            applyCalibAdj(active)
+            return
+          }
+          // 「镜头式」绑定：只取运镜骨的缩放/旋转，以身体骨为轴心。
+          // 游戏里角色俯冲 3.22× 是镜头推近，背景应绕角色一起放大；直接套
+          // bone 的完整仿射会连它远离角色的世界原点一起缩放，面板被甩出屏。
+          if (pivotBody && stats && sceneBone && sceneBone0 && sceneBases.length) {
+            if (!bodyCenter0) bodyCenter0 = { x: stats.cx, y: stats.cy }
+            const base0 = sceneBases[0]
+            const base1 = sceneBases[1] || sceneBases[0]
+            const rel0 = camRel(sceneBone0!)
+            const rel1 = camRel(sceneBoneCut ?? sceneBone0!)
+            const followOne = (
+              base: { cx: number; cy: number; side: number },
+              rel: { r11: number; r12: number; r21: number; r22: number; k: number; rot: number },
+              pivot0: { x: number; y: number },
+              pivotNow: { x: number; y: number },
+            ) => {
+              const k = Math.min(3.6, rel.k)
+              const ox = (base.cx - pivot0.x) * k
+              const oy = (base.cy - pivot0.y) * k
+              return {
+                cx: pivotNow.x + rel.r11 * ox + rel.r12 * oy,
+                cy: pivotNow.y + rel.r21 * ox + rel.r22 * oy,
+                side: base.side * k,
+                rot: rel.rot,
+              }
+            }
+            // 轴心：优先用配置的身体骨（hl1_body），它会随角色一起被俯冲
+            // 缩放；没有配置才退回可见内容的中位中心
+            const useBone = !!(pivotBoneObj && pivotBone0)
+            const pivotNow = useBone ? { x: pivotBoneObj.worldX, y: pivotBoneObj.worldY } : { x: stats.cx, y: stats.cy }
+            const bodyCenterCut =
+              calmRect2?.bodyCx != null && calmRect2?.bodyCy != null
+                ? { x: calmRect2.bodyCx, y: calmRect2.bodyCy }
+                : bodyCenter0!
+            const pivotCut = (useBone && pivotBoneCut) ? pivotBoneCut : bodyCenterCut
+            const r0 = followOne(base0, rel0, useBone ? pivotBone0! : bodyCenter0!, pivotNow)
+            sceneRect.cx = r0.cx
+            sceneRect.cy = r0.cy
+            sceneRect.side = r0.side
+            sceneRect.rot = r0.rot
+            if (sceneRect2) {
+              const r1 = followOne(base1, rel1, pivotCut, pivotNow)
+              sceneRect2.cx = r1.cx
+              sceneRect2.cy = r1.cy
+              sceneRect2.side = r1.side
+              sceneRect2.rot = r1.rot
+            }
+            if (calibOnRef.current) {
+              const base = active === 1 ? base1 : base0
+              const cur = active === 1 ? (sceneRect2 || r0) : sceneRect
+              calibBase = {
+                bgIndex: active,
+                side0: base.side,
+                center0: [base.cx, base.cy],
+                baseCx: cur.cx,
+                baseCy: cur.cy,
+                baseSide: cur.side,
+                baseRot: cur.rot,
+                ...dumpTree(),
+              }
+            }
+            applyCalibAdj(0)
+            applyCalibAdj(1)
+            return
+          }
           if (sceneBone && sceneBone0 && sceneSide0) {
             const active = activeBg()
             const base0 = sceneBases[0]
@@ -1090,11 +1297,12 @@ export default function SpinePlayer({
             view.cx = cx0
             view.cy = cy0
             zoom = 1
-            follow = dir === 'spine_skillcut' && framed // 复位后恢复相机跟拍
+            follow = cinemaOn && dir === 'spine_skillcut' && framed // 复位后恢复相机跟拍
             sceneSnap = true // 背景板吸附回当前时刻的角色位置/比例
           }
           apply()
           if (sizeChanged) drawFrame()
+          canvas.style.cursor = cinemaOn && !calibOnRef.current ? 'default' : 'grab'
           emit(true)
         }
         fitFn = () => fit(true)
@@ -1106,6 +1314,8 @@ export default function SpinePlayer({
 
         const onWheel = (e: WheelEvent) => {
           e.preventDefault()
+          // 运镜开启时锁定取景：不接受滚轮缩放（calib 调试除外）
+          if (cinemaOn && !calibOnRef.current) return
           follow = false // 用户接管视图，相机跟拍暂停（复位恢复）
           const rect = canvas.getBoundingClientRect()
           const mx = e.clientX - rect.left - rect.width / 2
@@ -1131,6 +1341,8 @@ export default function SpinePlayer({
         let ly = 0
         const onDown = (e: PointerEvent) => {
           if (e.button !== 0) return
+          // 运镜开启时锁定取景：不接受拖拽（calib 调试除外）
+          if (cinemaOn && !calibOnRef.current) return
           dragging = 'view'
           follow = false // 拖拽接管视图
           // 校准模式：按在「当前显示的背景板」上时，拖拽改为移动背景板
@@ -1240,6 +1452,17 @@ export default function SpinePlayer({
           },
           setAnim(n) { setAnim(n) },
           resetView() { fitFn?.() },
+          setCameraFollow(on) {
+            cinemaOn = on
+            canvas.style.cursor = on ? 'default' : 'grab'
+            if (on) {
+              // 回到默认取景并恢复跟拍，避免保留用户之前拖出来的偏移
+              fit(true)
+            } else {
+              follow = false
+              emit(true)
+            }
+          },
           saveFrame(filename) { pendingSave = filename || `${name}.png` },
           getStatus() { return status() },
           calibSnapshot() {
@@ -1337,7 +1560,8 @@ export default function SpinePlayer({
     const snap = localCtrl.current?.calibSnapshot?.()
     if (!snap) return
     setCalibRecords((r) => [...r, snap])
-    setCalibAdj((s) => ({ ...s, [calibActive]: { dxPct: 0, dyPct: 0, scale: 1, rot: 0 } }))
+    // 记录后保留当前微调：校准值经常需要连续微调，归零会把刚调好的
+    // 位置/缩放丢掉（要继续采下一帧时得从头再来）。需要归零用「重置调整」
   }
   /** ± 按钮微调（保留 3 位小数，避免浮点噪声累积）；只动当前背景的槽 */
   const nudgeCalib = (k: 'dxPct' | 'dyPct' | 'scale' | 'rot', d: number) =>
@@ -1382,13 +1606,15 @@ export default function SpinePlayer({
             </div>
           )}
           {([
-            ['平移X', 'dxPct', -30, 30, 0.1, 0.05, (v: number) => `${v.toFixed(2)}%`],
-            ['平移Y', 'dyPct', -30, 30, 0.1, 0.05, (v: number) => `${v.toFixed(2)}%`],
-            ['缩放', 'scale', 0.8, 1.25, 0.002, 0.002, (v: number) => `×${v.toFixed(3)}`],
-            ['旋转', 'rot', -5, 5, 0.02, 0.02, (v: number) => `${v.toFixed(2)}°`],
+            // 量程放宽：实际校准经常需要把背景推得很远 / 放得很大
+            // （太窄的滑杆会在拖动时把超范围的值夹回去）
+            ['平移X', 'dxPct', -300, 300, 0.1, 0.05, (v: number) => `${v.toFixed(2)}%`],
+            ['平移Y', 'dyPct', -300, 300, 0.1, 0.05, (v: number) => `${v.toFixed(2)}%`],
+            ['缩放', 'scale', 0.2, 6, 0.002, 0.002, (v: number) => `×${v.toFixed(3)}`],
+            ['旋转', 'rot', -45, 45, 0.02, 0.02, (v: number) => `${v.toFixed(2)}°`],
           ] as const).map(([label, key, min, max, step, fine, fmt]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-              <span style={{ width: 86, flexShrink: 0 }}>{label} {fmt(calibAdj[calibActive][key])}</span>
+              <span style={{ width: 100, flexShrink: 0 }}>{label} {fmt(calibAdj[calibActive][key])}</span>
               <button
                 onClick={() => nudgeCalib(key, -fine)} title={`微调 −${fine}`}
                 style={calibBtnCss}
@@ -1442,7 +1668,8 @@ export default function SpinePlayer({
           <div style={{ fontSize: 10, opacity: 0.78, marginTop: 6, lineHeight: 1.5 }}>
             暂停 → 拖时间轴 → 直接拖背景板移动它（拖其他区域仍是移动视角），
             或用滑杆 / −＋ 按钮精调，直到背景与骨架（水/浴缸）对齐 →
-            记录本帧。多个时刻各记一次（开头、推近、特写、结尾），滚轮放大可检查接缝。
+            记录本帧（记录后保留当前微调，不会被清空）。多个时刻各记一次
+            （开头、推近、特写、结尾），滚轮放大可检查接缝。
           </div>
         </div>
       )}

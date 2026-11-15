@@ -512,6 +512,8 @@ img { display: block; }
   transition: color .15s, border-color .15s;
 }
 .cb-btn:hover { color: var(--text); border-color: var(--line-2); }
+.cb-btn.on { color: #fff; background: var(--red); border-color: var(--red); }
+.cb-btn:disabled { opacity: .45; cursor: default; }
 .cb-spacer { flex: 1; }
 .char-empty-mark {
   width: 100%; height: 100%; display: grid; place-items: center;
