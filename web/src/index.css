@@ -1,6 +1,9 @@
 /* ============ 主题变量 ============ */
+/* color-scheme 让原生控件（select 下拉弹层 / 滚动条 / checkbox）跟随主题：
+   深色模式下「更多表情」这类下拉的弹层才是深底浅字，而不是白底浅字 */
 :root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: #07070a;
   --bg-2: #0c0c11;
   --surface: #12121a;
@@ -39,6 +42,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #f4f1e8;
   --bg-2: #eae6d9;
   --surface: #ffffff;
@@ -77,6 +81,14 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* select 展开后的 option 弹层：显式给底色与文字色。不写的话 option 会继承
+   下拉自身的颜色——比如「更多表情」选中态是反色（color: var(--bg)），
+   深色模式弹层里就变成深字深底，浅色模式浅字浅底，全都读不了 */
+select option {
+  background: var(--surface-2);
+  color: var(--text);
+}
 
 /* ============ 通用滚动条 ============ */
 /* 标准属性：Chromium 121+ / Firefox，细窄并跟随主题（* 让每个滚动容器都继承） */
@@ -469,6 +481,13 @@ img { display: block; }
 .char-bar-row {
   display: flex; align-items: center; gap: 6px; padding: 10px 12px 12px;
 }
+/* 时间轴拖拽条：滑块本体直接复用 CG 查看器的 .cv-seek（track/thumb/进度填充
+   已完整接管，主题变量 --cv-track/--cv-thumb 两套主题各有定义） */
+.char-timeline {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px 0;
+}
+.char-timeline .cv-time { flex: none; min-width: 44px; font-size: 10px; }
 .cb-play {
   width: 32px; height: 32px; padding: 0; cursor: pointer;
   display: grid; place-items: center; font-size: 12px;

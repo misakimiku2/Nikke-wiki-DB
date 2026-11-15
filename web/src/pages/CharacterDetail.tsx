@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, artLabel, charArt, charThumb, EXPR_LABEL, loadCharArt, loadCharImages, loadCharMi,
@@ -37,6 +37,13 @@ function animLabel(a: string): string {
   if (zh) return tail ? `${zh} ${tail}` : zh
   if (a.startsWith('talk')) return '口型 ' + a.slice(5).toUpperCase()
   return a
+}
+
+/** 与 CG 查看器一致的时间显示：0:05.3 */
+function fmtTime(t: number): string {
+  if (!Number.isFinite(t) || t < 0) return '0:00.0'
+  const m = Math.floor(t / 60)
+  return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}`
 }
 
 /** 技能描述：把 {description_value_NN} 按当前等级的数值表填充，数值用主题色标出 */
@@ -125,6 +132,9 @@ export default function CharacterDetail() {
   const [relTab, setRelTab] = useState<'stories' | 'counsel'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
+  /** 拖时间轴时先暂停，松手后按拖前的状态继续（与 CG 查看器同一套交互） */
+  const wasPlaying = useRef(false)
+  const seeking = useRef(false)
 
   useEffect(() => {
     loadCharacters().then(setList).catch(() => setList([]))
@@ -178,6 +188,9 @@ export default function CharacterDetail() {
     return anims.filter((a) => !used.has(a))
   }, [anims, chips])
   const onChip = chips.some((c) => c.anim === status.anim)
+  /** 时间轴已播放段的填充比例，写入 --cv-pct 给滑块画进度 */
+  const pct = status.duration > 0
+    ? Math.max(0, Math.min(100, status.time / status.duration * 100)) : 0
 
   const toggle = useCallback(() => spineRef.current?.toggle(), [])
   const resetView = useCallback(() => spineRef.current?.resetView(), [])
@@ -185,14 +198,37 @@ export default function CharacterDetail() {
     spineRef.current?.saveFrame(`${current}_${status.anim}_${status.time.toFixed(2)}.png`)
   }, [current, status.anim, status.time])
 
-  // 键盘：空格播放/暂停，R 复位取景（输入框/下拉聚焦时不抢键）
+  // ---- 时间轴（与 CG 查看器同一套交互：拖动时暂停、松手续播、交还焦点）----
+  const canSeek = hasModel && modelReady && status.duration > 0
+  const onSeekStart = () => {
+    if (!canSeek) return
+    wasPlaying.current = status.playing
+    seeking.current = true
+    spineRef.current?.pause()
+  }
+  const onSeekEnd = () => {
+    if (!seeking.current) return
+    seeking.current = false
+    if (wasPlaying.current) spineRef.current?.play()
+    // 焦点留在滑块上会让空格被浏览器吃掉，还会画出 focus 外框，拖完就 blur
+    if (document.activeElement instanceof HTMLInputElement
+      && document.activeElement.type === 'range') document.activeElement.blur()
+  }
+  const onSeek = (v: number) => {
+    setStatus((s) => ({ ...s, time: v }))
+    spineRef.current?.seek(v)
+  }
+
+  // 键盘：空格播放/暂停，R 复位取景。只排除文本类输入；type=range 必须放行，
+  // 否则拖过时间轴后焦点留在滑块上，空格播放/暂停会失效
   useEffect(() => {
     if (!hasModel) return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       const tag = t?.tagName
       const typing = t?.isContentEditable || tag === 'SELECT'
-        || tag === 'TEXTAREA' || tag === 'INPUT'
+        || tag === 'TEXTAREA'
+        || (tag === 'INPUT' && (t as HTMLInputElement).type !== 'range')
       if (typing) return
       if (e.code === 'Space') { e.preventDefault(); toggle() }
       else if (e.key === 'r' || e.key === 'R') resetView()
@@ -266,7 +302,30 @@ export default function CharacterDetail() {
             )}
           </div>
 
-          {/* 实时模型控制条：表情 / 速度 / 取景 / 保存当前帧 */}
+          {/* 皮肤切换条：放在底部控制栏的上方，紧贴舞台底部 */}
+          {vars.length > 1 && (
+            <>
+              <div className="variants">
+                {vars.map((v) => {
+                  const label = artLabel(art, v)
+                  return (
+                    <button
+                      key={v}
+                      className={v === current ? 'on' : ''}
+                      onClick={() => setPick(v)}
+                      title={spine.has(v) ? `${label} · 可动` : label}
+                    >
+                      <img src={charThumb(v, mi)} alt={label} loading="lazy" />
+                      {spine.has(v) && <i className="vt-live" />}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="variant-caption">{currentLabel}</div>
+            </>
+          )}
+
+          {/* 实时模型控制条：表情 / 时间轴 / 速度 / 取景 / 保存当前帧 */}
           {hasModel && (
             <div className="char-bar">
               <div className="char-anims">
@@ -293,6 +352,26 @@ export default function CharacterDetail() {
                   </select>
                 )}
               </div>
+              <div className="char-timeline">
+                <span className="cv-time">{fmtTime(status.time)}</span>
+                <input
+                  className="cv-seek"
+                  type="range"
+                  min={0}
+                  max={status.duration || 1}
+                  step={0.01}
+                  value={Math.min(status.time, status.duration || 1)}
+                  disabled={!canSeek}
+                  style={{ '--cv-pct': `${pct}%` } as CSSProperties}
+                  onPointerDown={onSeekStart}
+                  onPointerUp={onSeekEnd}
+                  onPointerCancel={onSeekEnd}
+                  onBlur={onSeekEnd}
+                  onChange={(e) => onSeek(Number(e.target.value))}
+                  aria-label="动画时间轴"
+                />
+                <span className="cv-time dim">{fmtTime(status.duration)}</span>
+              </div>
               <div className="char-bar-row">
                 <button className="cb-play" onClick={toggle} disabled={!modelReady} title="播放 / 暂停（空格）">
                   {status.playing ? '⏸' : '▶'}
@@ -313,28 +392,6 @@ export default function CharacterDetail() {
                 <a className="cb-btn" href={staticSrc} target="_blank" rel="noreferrer" title="打开静态立绘原图">↗</a>
               </div>
             </div>
-          )}
-
-          {vars.length > 1 && (
-            <>
-              <div className="variants">
-                {vars.map((v) => {
-                  const label = artLabel(art, v)
-                  return (
-                    <button
-                      key={v}
-                      className={v === current ? 'on' : ''}
-                      onClick={() => setPick(v)}
-                      title={spine.has(v) ? `${label} · 可动` : label}
-                    >
-                      <img src={charThumb(v, mi)} alt={label} loading="lazy" />
-                      {spine.has(v) && <i className="vt-live" />}
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="variant-caption">{currentLabel}</div>
-            </>
           )}
         </div>
 
