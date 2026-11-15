@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import {
-  AnimationState, AnimationStateData, AtlasAttachmentLoader, GLTexture,
-  ManagedWebGLRenderingContext, SceneRenderer, Skeleton, SkeletonBinary,
-  TextureAtlas, Vector2,
+  AnimationState, AnimationStateData, AtlasAttachmentLoader, ClippingAttachment,
+  GLTexture, ManagedWebGLRenderingContext, RegionAttachment, SceneRenderer, Skeleton,
+  SkeletonBinary, TextureAtlas, Vector2, VertexAttachment,
 } from '@esotericsoftware/spine-webgl'
 import { loadSpineOverrides, type SpineOverride, type ViewTransform } from '../data'
 
@@ -108,6 +108,55 @@ function drawContain(
   const w = img.naturalWidth * s
   const h = img.naturalHeight * s
   ctx.drawImage(img, (W - w) * 0.5, (H - h) * 0.5, w, h)
+}
+
+const BBOX_SCRATCH = new Float32Array(8192)
+
+/** 单个槽位附件的世界空间包围盒（只统计可见内容，color.a<=0 或未知类型跳过） */
+function slotBBox(slot: any): [number, number, number, number] | null {
+  const att: any = slot.getAttachment()
+  if (!att || slot.color.a <= 0.01) return null
+  if (att instanceof ClippingAttachment) return null
+  let xs: number[] = []
+  let ys: number[] = []
+  try {
+    if (att instanceof RegionAttachment) {
+      att.computeWorldVertices(slot, BBOX_SCRATCH, 0, 2)
+      xs = [BBOX_SCRATCH[0], BBOX_SCRATCH[2], BBOX_SCRATCH[4], BBOX_SCRATCH[6]]
+      ys = [BBOX_SCRATCH[1], BBOX_SCRATCH[3], BBOX_SCRATCH[5], BBOX_SCRATCH[7]]
+    } else if (att instanceof VertexAttachment) {
+      const n: number = att.worldVerticesLength
+      const out = n > BBOX_SCRATCH.length ? new Float32Array(n) : BBOX_SCRATCH
+      att.computeWorldVertices(slot, 0, n, out, 0, 2)
+      for (let i = 0; i < n; i += 2) { xs.push(out[i]); ys.push(out[i + 1]) }
+    } else {
+      return null
+    }
+  } catch {
+    return null
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (let i = 0; i < xs.length; i++) {
+    if (xs[i] < x0) x0 = xs[i]
+    if (xs[i] > x1) x1 = xs[i]
+    if (ys[i] < y0) y0 = ys[i]
+    if (ys[i] > y1) y1 = ys[i]
+  }
+  if (x1 <= x0 || y1 <= y0) return null
+  return [x0, y0, x1, y1]
+}
+
+/** 整个骨架当前姿态下「实际会画出来」的内容包围盒（比 getBounds 紧得多，
+    后者会把隐藏/透明槽位的几何也算进去） */
+function contentBounds(skeleton: any): [number, number, number, number] | null {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const slot of skeleton.slots) {
+    const b = slotBBox(slot)
+    if (!b) continue
+    x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1])
+    x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3])
+  }
+  return x1 > x0 ? [x0, y0, x1, y1] : null
 }
 
 /**
@@ -295,11 +344,66 @@ export default function SpinePlayer({
         // 相机 / 视图
         const offset = new Vector2()
         const size = new Vector2()
-        skeleton.getBounds(offset, size, [])
-        const bw = Math.max(1, size.x)
-        const bh = Math.max(1, size.y)
-        const cx0 = offset.x + bw / 2
-        const cy0 = offset.y + bh / 2
+        let bw = 1
+        let bh = 1
+        let cx0 = 0
+        let cy0 = 0
+        let framed = false
+        if (dir === 'spine_skillcut') {
+          // 大招动画把角色的运镜烤进了骨架位移（游戏里是 Cinemachine 跟拍），
+          // 按 t=0 的骨架 bounds 取景会随播放把角色甩出画面外。
+          // 采样动画全程的「实际可见内容」包围盒，剔除离群样本（个别特效网格
+          // 顶点会飞到天文数字）后取稳健并集 —— 保证角色任何时刻都在画面内。
+          const track0: any = state.getCurrent(0)
+          const SAMPLE_N = 16
+          const samples: Array<[number, number, number, number]> = []
+          for (let i = 0; i < SAMPLE_N; i++) {
+            if (track0) track0.trackTime = (i / SAMPLE_N) * duration
+            state.update(0)
+            state.apply(skeleton)
+            applyHiddenSlots(skeleton)
+            skeleton.updateWorldTransform()
+            const b = contentBounds(skeleton)
+            if (b) samples.push(b)
+          }
+          if (samples.length) {
+            const med = (arr: number[]) => {
+              const s = [...arr].sort((a, b) => a - b)
+              return s[Math.floor(s.length / 2)]
+            }
+            const medW = med(samples.map((b) => b[2] - b[0]))
+            const medH = med(samples.map((b) => b[3] - b[1]))
+            const kept = samples.filter(
+              (b) => b[2] - b[0] <= medW * 8 && b[3] - b[1] <= medH * 8,
+            )
+            const use = kept.length ? kept : samples
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+            for (const b of use) {
+              x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1])
+              x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3])
+            }
+            if (x1 > x0 && y1 > y0) {
+              bw = x1 - x0
+              bh = y1 - y0
+              cx0 = (x0 + x1) / 2
+              cy0 = (y0 + y1) / 2
+              framed = true
+            }
+          }
+          // 采样后把动画拨回开头，与外部预期的初始状态一致
+          if (track0) track0.trackTime = 0
+          state.update(0)
+          state.apply(skeleton)
+          applyHiddenSlots(skeleton)
+          skeleton.updateWorldTransform()
+        }
+        if (!framed) {
+          skeleton.getBounds(offset, size, [])
+          bw = Math.max(1, size.x)
+          bh = Math.max(1, size.y)
+          cx0 = offset.x + bw / 2
+          cy0 = offset.y + bh / 2
+        }
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
 
