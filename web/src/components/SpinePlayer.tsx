@@ -356,11 +356,13 @@ export default function SpinePlayer({
         let cx0 = 0
         let cy0 = 0
         let framed = false
+        /** 大招动画全程的内容并集（相机跟拍的活动范围），初始为空 */
+        let unionRect: [number, number, number, number] | null = null
         if (dir === 'spine_skillcut') {
           // 大招动画把角色的运镜烤进了骨架位移（游戏里是 Cinemachine 跟拍），
           // 按 t=0 的骨架 bounds 取景会随播放把角色甩出画面外。
           // 采样动画全程的「实际可见内容」包围盒，剔除离群样本（个别特效网格
-          // 顶点会飞到天文数字）后取稳健并集 —— 保证角色任何时刻都在画面内。
+          // 顶点会飞到天文数字）后取稳健并集 —— 这是相机的活动范围。
           const track0: any = state.getCurrent(0)
           const SAMPLE_N = 16
           const samples: Array<[number, number, number, number]> = []
@@ -380,6 +382,8 @@ export default function SpinePlayer({
             }
             const medW = med(samples.map((b) => b[2] - b[0]))
             const medH = med(samples.map((b) => b[3] - b[1]))
+            const medCx = med(samples.map((b) => (b[0] + b[2]) / 2))
+            const medCy = med(samples.map((b) => (b[1] + b[3]) / 2))
             const kept = samples.filter(
               (b) => b[2] - b[0] <= medW * 8 && b[3] - b[1] <= medH * 8,
             )
@@ -390,11 +394,28 @@ export default function SpinePlayer({
               x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3])
             }
             if (x1 > x0 && y1 > y0) {
-              bw = x1 - x0
-              bh = y1 - y0
-              cx0 = (x0 + x1) / 2
-              cy0 = (y0 + y1) / 2
-              framed = true
+              unionRect = [x0, y0, x1, y1]
+              // 初始取景：角色典型活动范围（中位窗口 ×1.25）与并集的交集。
+              // 比整个并集更近——角色在画面里更大，相机跟拍也有平移空间。
+              const winW = medW * 1.25
+              const winH = medH * 1.25
+              const ix0 = Math.max(x0, medCx - winW / 2)
+              const iy0 = Math.max(y0, medCy - winH / 2)
+              const ix1 = Math.min(x1, medCx + winW / 2)
+              const iy1 = Math.min(y1, medCy + winH / 2)
+              if (ix1 - ix0 > medW * 0.4 && iy1 - iy0 > medH * 0.4) {
+                bw = ix1 - ix0
+                bh = iy1 - iy0
+                cx0 = (ix0 + ix1) / 2
+                cy0 = (iy0 + iy1) / 2
+                framed = true
+              } else {
+                bw = x1 - x0
+                bh = y1 - y0
+                cx0 = (x0 + x1) / 2
+                cy0 = (y0 + y1) / 2
+                framed = true
+              }
             }
           }
           // 采样后把动画拨回开头，与外部预期的初始状态一致
@@ -411,14 +432,22 @@ export default function SpinePlayer({
           cx0 = offset.x + bw / 2
           cy0 = offset.y + bh / 2
         }
-        // 场景背景层的世界矩形：以角色内容范围的中心为圆心、取内容范围短边的
-        // 正方形（背景图都是方图集页）——与骨架同一坐标系，不铺满舞台，
-        // 缩放/拖拽时与模型一起动（同 EventScene_Main_01_01 的合成模式）
-        const sceneRect = sceneBg
-          ? { cx: cx0, cy: cy0, side: Math.min(bw, bh) }
-          : null
+        // 场景背景层的世界矩形：铺住整个并集（以并集中心为中心、短边为边长的
+        // 方形；背景图都是方图集页）——与骨架同一坐标系，相机跟拍时在画面里
+        // 随之平移，不溢出查看器（stage overflow hidden 裁剪）
+        const sceneRect = unionRect
+          ? {
+              cx: (unionRect[0] + unionRect[2]) / 2,
+              cy: (unionRect[1] + unionRect[3]) / 2,
+              side: Math.min(unionRect[2] - unionRect[0], unionRect[3] - unionRect[1]),
+            }
+          : sceneBg
+            ? { cx: cx0, cy: cy0, side: Math.min(bw, bh) }
+            : null
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
+        /** 相机跟拍开关：大招默认开启，用户拖拽/滚轮接管后关闭，复位恢复 */
+        let follow = dir === 'spine_skillcut' && framed
 
         const apply = () => {
           const el = boxRef.current
@@ -460,12 +489,36 @@ export default function SpinePlayer({
           callbacks.current.onView?.(bgTransform)
         }
 
+        /**
+         * 相机跟拍：视角平滑追随当前可见内容的中心（限制在内容并集内），
+         * 场景背景板随之在画面里平移——复现游戏里 Cinemachine 跟拍的观感。
+         * 用户拖拽/滚轮会关闭跟随（follow=false），复位时恢复。
+         */
+        const followUpdate = () => {
+          if (!scene || !skeleton || !unionRect) return
+          const b = contentBounds(skeleton)
+          if (!b) return
+          const vw = scene.camera.viewportWidth
+          const vh = scene.camera.viewportHeight
+          const [ux0, uy0, ux1, uy1] = unionRect
+          let tx = (b[0] + b[2]) / 2
+          let ty = (b[1] + b[3]) / 2
+          tx = vw >= ux1 - ux0 ? (ux0 + ux1) / 2
+            : Math.min(Math.max(tx, ux0 + vw / 2), ux1 - vw / 2)
+          ty = vh >= uy1 - uy0 ? (uy0 + uy1) / 2
+            : Math.min(Math.max(ty, uy0 + vh / 2), uy1 - vh / 2)
+          view.cx += (tx - view.cx) * 0.06
+          view.cy += (ty - view.cy) * 0.06
+        }
+
         /** 把当前姿态画一帧。渲染循环和「尺寸变化后立即补帧」共用。 */
         const drawFrame = () => {
           if (!scene || !state || !skeleton) return
           state.apply(skeleton)
           applyHiddenSlots(skeleton)
           skeleton.updateWorldTransform()
+          if (follow) followUpdate()
+          apply()
           gl.clearColor(0, 0, 0, 0)
           gl.clear(gl.COLOR_BUFFER_BIT)
           scene.begin()
@@ -502,6 +555,7 @@ export default function SpinePlayer({
             view.cx = cx0
             view.cy = cy0
             zoom = 1
+            follow = dir === 'spine_skillcut' && framed // 复位后恢复相机跟拍
           }
           apply()
           if (sizeChanged) drawFrame()
@@ -516,6 +570,7 @@ export default function SpinePlayer({
 
         const onWheel = (e: WheelEvent) => {
           e.preventDefault()
+          follow = false // 用户接管视图，相机跟拍暂停（复位恢复）
           const rect = canvas.getBoundingClientRect()
           const mx = e.clientX - rect.left - rect.width / 2
           const my = e.clientY - rect.top - rect.height / 2
@@ -541,6 +596,7 @@ export default function SpinePlayer({
         const onDown = (e: PointerEvent) => {
           if (e.button !== 0) return
           dragging = true
+          follow = false // 拖拽接管视图
           lx = e.clientX
           ly = e.clientY
           canvas.setPointerCapture(e.pointerId)

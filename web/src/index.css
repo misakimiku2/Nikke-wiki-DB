@@ -1560,7 +1560,7 @@ img { display: block; }
   display: flex; flex-direction: column;
 }
 .lb-stage .spine-player { position: absolute; inset: 0; }
-.spine-stage { position: relative; flex: 1; min-height: 0; }
+.spine-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .spine-stage canvas { position: relative; z-index: 1; display: block; width: 100%; height: 100%; }
 /* 场景背景层（大招 cut-in）：世界坐标里的方图场景板，按骨架内容范围绘制，
    由播放器按相机逐帧换算屏幕位置——不铺满舞台，与模型共用取景/缩放/拖拽。
