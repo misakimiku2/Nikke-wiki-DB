@@ -566,15 +566,6 @@ img { display: block; }
 .char-modes button:hover { color: var(--text); }
 .char-modes button.on { background: var(--red); color: #fff; }
 
-/* 大招模式的手绘背景贴图：铺满舞台、垫在实时画布底下（画布本身是透明的）。
-   要压过 .detail-page .detail-visual img 的 contain/投影规则 */
-.detail-page .detail-visual .char-burst-bg {
-  position: absolute; inset: 0; z-index: 0;
-  width: 100%; height: 100%;
-  object-fit: cover; object-position: center;
-  filter: none; animation: none;
-}
-
 .detail-code {
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
   letter-spacing: .2em; color: var(--red); margin-bottom: 14px;
@@ -1570,7 +1561,20 @@ img { display: block; }
 }
 .lb-stage .spine-player { position: absolute; inset: 0; }
 .spine-stage { position: relative; flex: 1; min-height: 0; }
-.spine-stage canvas { display: block; width: 100%; height: 100%; }
+.spine-stage canvas { position: relative; z-index: 1; display: block; width: 100%; height: 100%; }
+/* 场景背景层（大招 cut-in）：世界坐标里的方图场景板，按骨架内容范围绘制，
+   由播放器按相机逐帧换算屏幕位置——不铺满舞台，与模型共用取景/缩放/拖拽。
+   后一条是 detail 页专用覆盖：压过 .detail-page .detail-visual img 的
+   relative/contain/投影规则（specificity 0,3,0 > 0,2,1），否则场景图会挤进
+   文档流把画布顶出舞台 */
+.spine-scene-bg {
+  position: absolute; left: 0; top: 0; z-index: 0;
+  pointer-events: none; user-select: none;
+}
+.detail-page .detail-visual .spine-scene-bg {
+  position: absolute; z-index: 0;
+  filter: none; animation: none;
+}
 .spine-bar {
   flex: none; display: flex; align-items: center; gap: 10px;
   padding: 7px 10px;

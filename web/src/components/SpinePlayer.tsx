@@ -68,6 +68,12 @@ export type SpinePlayerProps = {
    * 默认跟随 dir：CG 开、角色关。显式传值可覆盖。
    */
   hideShadows?: boolean
+  /**
+   * 场景背景层（世界坐标）：大招 cut-in 的浴缸/场景图与骨架同属一个演出，
+   * 按「角色内容范围」的世界矩形绘制在画布底下，与模型共用同一套取景——
+   * 缩放/拖拽/复位时跟着动，不铺满舞台。未传则无此层。
+   */
+  sceneBg?: string
   /** 自定义默认动画挑选（模型动画列表 → 动画名）；缺省自动挑 idle
       （站姿 idle / 战斗 aim_idle / 大招 Idle）。返回 undefined 时回落到 idle */
   pickDefaultAnim?: (names: string[]) => string | undefined
@@ -169,10 +175,11 @@ function contentBounds(skeleton: any): [number, number, number, number] | null {
  */
 export default function SpinePlayer({
   name, dir = 'spine', className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
-  backgroundSrc, fitMode = 'contain', hideShadows, pickDefaultAnim, extra,
+  backgroundSrc, fitMode = 'contain', hideShadows, sceneBg, pickDefaultAnim, extra,
 }: SpinePlayerProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const sceneBgRef = useRef<HTMLImageElement>(null)
   /** 预加载好的背景图，供保存当前帧时与 WebGL 画面合成 */
   const bgImageRef = useRef<HTMLImageElement | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -404,6 +411,12 @@ export default function SpinePlayer({
           cx0 = offset.x + bw / 2
           cy0 = offset.y + bh / 2
         }
+        // 场景背景层的世界矩形：以角色内容范围的中心为圆心、取内容范围短边的
+        // 正方形（背景图都是方图集页）——与骨架同一坐标系，不铺满舞台，
+        // 缩放/拖拽时与模型一起动（同 EventScene_Main_01_01 的合成模式）
+        const sceneRect = sceneBg
+          ? { cx: cx0, cy: cy0, side: Math.min(bw, bh) }
+          : null
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
 
@@ -421,6 +434,16 @@ export default function SpinePlayer({
           cam.viewportHeight = H / z
           cam.update()
           gl.viewport(0, 0, canvas.width, canvas.height)
+
+          // 场景背景层：世界矩形 → 屏幕矩形（与骨架共用同一相机）
+          const sb = sceneBgRef.current
+          if (sb && sceneRect) {
+            const side = sceneRect.side * z
+            sb.style.left = `${W / 2 + (sceneRect.cx - sceneRect.side / 2 - view.cx) * z}px`
+            sb.style.top = `${H / 2 - (sceneRect.cy + sceneRect.side / 2 - view.cy) * z}px`
+            sb.style.width = `${side}px`
+            sb.style.height = `${side}px`
+          }
 
           // 把 WebGL 相机的变换换算成 CSS translate/scale（transform-origin: 0 0），
           // 让外层独立背景层与人物共用同一取景、一起缩放平移。
@@ -648,7 +671,7 @@ export default function SpinePlayer({
       if (controllerRef) controllerRef.current = null
       localCtrl.current = null
     }
-  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim])
+  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim, sceneBg])
 
   if (error) {
     return <div className={`spine-player err ${className}`}>模型加载失败：{error}</div>
@@ -657,6 +680,9 @@ export default function SpinePlayer({
   return (
     <div className={`spine-player ${className}`}>
       <div className="spine-stage" ref={boxRef}>
+        {sceneBg && (
+          <img className="spine-scene-bg" ref={sceneBgRef} src={sceneBg} alt="" draggable={false} />
+        )}
         <canvas ref={canvasRef} />
         {controls && <div className="spine-hint">滚轮缩放 · 拖拽平移 · 双击复位 · 空格播放/暂停</div>}
       </div>
