@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { loadStoryIndex, nf, type StoryUnit } from '../data'
 
 export default function Story() {
   const [units, setUnits] = useState<StoryUnit[] | null>(null)
-  const [cat, setCat] = useState<string>('main')
+  const [params, setParams] = useSearchParams()
   const [q, setQ] = useState('')
 
   useEffect(() => {
@@ -25,6 +25,17 @@ export default function Story() {
     }
     return seen
   }, [units])
+
+  // 当前分类写进 URL：从阅读器返回时才能回到原来的分类，而不是重置到主线
+  const wanted = params.get('cat') || 'main'
+  const cat = cats.length && !cats.some((c) => c.cat === wanted) ? cats[0].cat : wanted
+
+  const pickCat = (next: string) => {
+    const p = new URLSearchParams(params)
+    if (next === 'main') p.delete('cat')
+    else p.set('cat', next)
+    setParams(p, { replace: true })
+  }
 
   const shown = useMemo(() => {
     if (!units) return []
@@ -62,7 +73,7 @@ export default function Story() {
             <button
               key={c.cat}
               className={`chip ${cat === c.cat ? 'on' : ''}`}
-              onClick={() => setCat(c.cat)}
+              onClick={() => pickCat(c.cat)}
             >
               {c.label} · {c.n}
             </button>
@@ -76,8 +87,15 @@ export default function Story() {
         <div className="story-grid">
           {shown.map((u) => (
             <Link key={u.id} to={`/story/${u.id}`} className="story-card">
-              <div className="story-no">
-                {u.chapter !== null && u.chapter !== undefined ? String(u.chapter).padStart(2, '0') : u.label.slice(0, 2)}
+              <div className="story-cover">
+                {u.cover
+                  ? <img src={`/cover/${u.cover}.webp`} alt="" loading="lazy" />
+                  : <span className="story-cover-fallback">{u.title.slice(0, 2)}</span>}
+                <span className="story-no">
+                  {u.chapter !== null && u.chapter !== undefined
+                    ? String(u.chapter).padStart(2, '0')
+                    : u.label.slice(0, 2)}
+                </span>
               </div>
               <div className="story-body">
                 <h3>{u.title}</h3>
@@ -87,7 +105,6 @@ export default function Story() {
                   {u.source === 'locale_fill' && <span className="tag">补全</span>}
                 </div>
               </div>
-              <span className="story-arrow">→</span>
             </Link>
           ))}
         </div>

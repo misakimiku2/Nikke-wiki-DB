@@ -157,6 +157,29 @@ def collect_story_units():
         d = json.load(open(main_path, encoding="utf-8"))
         for order, ch in enumerate(d.get("chapters", []), start=1):
             no = ch.get("chapter")
+            sections = list(ch.get("sections", []))
+
+            # 序章（第 00 章）没有独立的数据块，内容是 d_main_01 的首段：
+            # BA-01 下坠 → ……遇敌！，共 35 句。压库时从第一章拆出来单独成章。
+            if no == 1 and sections and sections[0].get("group") == "d_main_01_01_s":
+                pro = sections.pop(0)
+                units.append(({
+                    "category": "main",
+                    "category_label": "主线剧情",
+                    "bucket": "d_main_00",
+                    "title": "序章",
+                    "chapter_no": 0,
+                    "sort_order": 0,
+                }, [{
+                    "group_key": pro["group"],
+                    "title": pro.get("title"),
+                    "part": pro.get("part"),
+                    "sort_order": 1,
+                    "lines": pro.get("lines") or [],
+                }]))
+            if not sections:
+                continue
+
             unit = {
                 "category": "main",
                 "category_label": "主线剧情",
@@ -166,7 +189,7 @@ def collect_story_units():
                 "sort_order": order,
             }
             segs = []
-            for so, sec in enumerate(ch.get("sections", []), start=1):
+            for so, sec in enumerate(sections, start=1):
                 segs.append({
                     "group_key": sec.get("group") or sec.get("group_key") or f"main_{order}_{so}",
                     "title": sec.get("title"),
@@ -179,8 +202,8 @@ def collect_story_units():
         # --- 章节标题以结构化导出为准：d_main_NN 就是「第 NN 章」（第01章 坠落、
         #     第02章 侵蚀…），JSON 里的 title 已经是正确中文名。不要再用
         #     Locale_Stage 的 chapter_name_NN 覆盖——那张表是 0-based（00 坠落、
-        #     01 侵蚀），直接按 1-based 章号取会整体错位一位，历史上曾因此造出
-        #     一个只有 35 句的幽灵「坠落」章，并把「决战」重复成第 49、50 两章。---
+        #     01 侵蚀），直接按 1-based 章号取会整体错位一位，历史上曾因此把
+        #     「决战」重复成第 49、50 两章。序章已在上面单独拆成 00 章。---
         log(f"  主线：{len(units)} 章")
 
     # --- 其他剧情 ---
@@ -394,6 +417,9 @@ def import_locale_fill(con):
             k = item.get("key")
             if not k:
                 continue
+            # 支线任务的界面说明（「【第2章】调查…」）不是剧情台词，不补进正文
+            if k.startswith("sub_quest_description"):
+                continue
             zh = item.get("zh-CN") or item.get("zh_CN")
             en, ja = item.get("en"), item.get("ja")
             m = LINE_SUFFIX.match(k)
@@ -445,10 +471,20 @@ def import_locale_fill(con):
         sid = seg_ids.get(group)
         if sid is None:
             slug = _slug_of(group)
+            # 活动补全段（event_lastkingdom1_b01）的 slug 带部曲号，去掉数字
+            # 才能挂回 event_lastkingdom 主卡，避免多出三张一句话活动卡
+            if cat == "event":
+                slug = re.sub(r"^(lastkingdom|miraclesnow)\d+$", r"\1", slug)
+            # 支线任务按委托号精确归属。所有 d_subquest_* 的 slug 都是
+            # 'subquest'，子串匹配会把孤儿段全挂到第一张卡上。
+            sub_m = re.match(r"^(d_subquest_\d{3})\d(?:_[se])?$", group)
+            exact = sub_m.group(1) if sub_m else None
             # main 类孤儿段落按章号直接归属（slug 提取会把 d_main_02af 这类 key 削成
             # 'main'，子串匹配会错挂到任意含 'main' 的单元——曾导致 af 段落进错章）
             if cat == "main" and chapter_no is not None and chapter_no in unit_by_chapter:
                 uid = unit_by_chapter[chapter_no]
+            elif exact and exact in unit_by_bucket:
+                uid = unit_by_bucket[exact]
             else:
                 bucket = None
                 # 找 bucket 里含 slug 的已有单元

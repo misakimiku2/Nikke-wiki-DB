@@ -440,19 +440,32 @@ export default function CharacterDetail() {
               </div>
 
               {relTab === 'stories' ? (
-                <div className="story-cards">
-                  {relStories.map((r, i) => (
-                    <Link key={r.id} to={`/story/${r.id}`} className="story-card">
-                      <span className="story-no">{String(i + 1).padStart(2, '0')}</span>
-                      <span className="story-main">
-                        <b>{r.t}</b>
-                        <em>
-                          {r.skin && <i className="story-skin">{r.skin}</i>}
-                          {r.segs} 段 · {nf(r.lines)} 句
-                        </em>
-                      </span>
-                      <span className="story-go" style={{ color: accentFor(c.id) }}>阅读 →</span>
-                    </Link>
+                <div className="story-blocks">
+                  {relStories.map((r) => (
+                    <div key={r.id} className="story-block">
+                      {/* 只有多卷时才需要卷名分隔；单卷直接平铺章节 */}
+                      {relStories.length > 1 && (
+                        <div className="story-block-label"><b>{r.t}</b></div>
+                      )}
+                      <div className="story-eps">
+                        {(r.chapters ?? []).map((ch, ci) => (
+                          <Link key={ci} to={`/story/${r.id}?ch=${ci}`} className="story-ep">
+                            <span className="story-ep-no">{String(ci + 1).padStart(2, '0')}</span>
+                            <span className="story-ep-name">{ch.t}</span>
+                            <span className="story-ep-meta">{nf(ch.n)} 句</span>
+                            <span className="story-ep-go">→</span>
+                          </Link>
+                        ))}
+                        {!r.chapters?.length && (
+                          <Link to={`/story/${r.id}`} className="story-ep">
+                            <span className="story-ep-no">01</span>
+                            <span className="story-ep-name">阅读全文</span>
+                            <span className="story-ep-meta">{nf(r.lines)} 句</span>
+                            <span className="story-ep-go">→</span>
+                          </Link>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               ) : (

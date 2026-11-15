@@ -96,6 +96,15 @@ def main():
         "where sort_order < 9000 and title is not null and title != '' group by unit_id"
     ).fetchall())
 
+    def chapters_of(uid):
+        """个人剧情的章节名与句数，供角色页直接展开（不必先跳阅读器）。"""
+        return [
+            {"t": t or f"第 {i} 章", "n": n}
+            for i, (t, n) in enumerate(con.execute(
+                "select title, line_count from story_segments"
+                " where unit_id=? and line_count>0 order by sort_order", (uid,)), start=1)
+        ]
+
     items = {}
     dropped = []
     for uid, bucket, _title, segs, lines, _so in units:
@@ -160,6 +169,7 @@ def main():
             rec["sessions"] = titled.get(uid, segs)
         else:
             rec["segs"] = segs
+            rec["chapters"] = chapters_of(uid)
         arr.append(rec)
 
     # 排序：无皮肤在前，皮肤按名字

@@ -61,8 +61,9 @@ function cgFlagsPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), cgFlagsPlugin()],
-  // 数据和图片都在上一级 public/，直接拿来做静态目录
-  publicDir: '../public',
+  // 数据和图片都在上一级 public/，直接拿来做静态目录。
+  // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
+  publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',
   server: { port: 5273, host: true },
   build: { outDir: '../dist', emptyOutDir: true },
 })

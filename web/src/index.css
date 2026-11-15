@@ -30,6 +30,12 @@
   --metrics-line: rgba(255, 255, 255, .09);
   --cv-track: rgba(255, 255, 255, .15);
   --cv-thumb: #f4f2ed;
+
+  /* 目录面板 / 滚动条 */
+  --red-soft: rgba(255, 45, 85, .13);
+  --red-line: rgba(255, 45, 85, .42);
+  --scroll-thumb: rgba(255, 255, 255, .18);
+  --scroll-thumb-hover: rgba(255, 255, 255, .32);
 }
 
 [data-theme="light"] {
@@ -62,9 +68,36 @@
   --metrics-line: rgba(23, 22, 15, .16);
   --cv-track: rgba(23, 22, 15, .2);
   --cv-thumb: #ffffff;
+
+  /* 目录面板 / 滚动条 */
+  --red-soft: rgba(216, 31, 63, .08);
+  --red-line: rgba(216, 31, 63, .38);
+  --scroll-thumb: rgba(23, 22, 15, .2);
+  --scroll-thumb-hover: rgba(23, 22, 15, .36);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* ============ 通用滚动条 ============ */
+/* 标准属性：Chromium 121+ / Firefox，细窄并跟随主题（* 让每个滚动容器都继承） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+/* WebKit 旧版（不支持标准属性时生效） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
 
 html, body, #root { min-height: 100%; }
 
@@ -698,6 +731,45 @@ img { display: block; }
 }
 .story-card:hover .story-go { text-decoration: underline; }
 
+/* --- 个人剧情：章节列表（直接平铺，点击进对应章节） --- */
+.story-blocks { display: flex; flex-direction: column; }
+.story-block + .story-block { border-top: 1px dashed var(--line); }
+.story-block-label {
+  padding: 14px 18px 2px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .14em; color: var(--dim);
+}
+.story-block-label b { font-weight: 700; }
+.story-eps { padding: 6px 12px 12px; }
+.story-ep {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  color: var(--dim);
+  transition: color .14s, background .14s;
+}
+.story-ep:hover { color: var(--text); background: var(--bg-2); }
+.story-ep-no {
+  flex: 0 0 auto; width: 22px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; color: var(--dim-2);
+}
+.story-ep-name {
+  flex: 1; min-width: 0; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.story-ep-meta {
+  flex: 0 0 auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; color: var(--dim-2);
+}
+.story-ep-go {
+  flex: 0 0 auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; color: var(--dim-2);
+  transition: color .14s, transform .14s;
+}
+.story-ep:hover .story-ep-go { color: var(--acc); transform: translateX(2px); }
+
 /* --- 咨询查看器 --- */
 .cc-units { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
 .cc-units button {
@@ -724,9 +796,8 @@ img { display: block; }
 .cc-pills button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 .cc-feed {
   margin: 14px 16px 16px; padding: 18px 20px 15px;
-  max-height: 58vh; overflow-y: auto; overscroll-behavior: contain;
+  /* 不设内部滚动：鼠标停在对话上时滚轮仍然滚动整个页面 */
   background: var(--bg-2); border: 1px solid var(--line);
-  scrollbar-width: thin; scrollbar-color: var(--line-2) transparent;
   transition: background .35s, border-color .35s;
 }
 .cc-seg-title {
@@ -840,30 +911,55 @@ img { display: block; }
   display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 26px;
 }
 .story-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px;
 }
-.story-card {
-  display: flex; align-items: center; gap: 16px;
-  padding: 15px 18px;
+.story-grid .story-card {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  padding: 0; overflow: hidden; position: relative;
   background: var(--surface); border: 1px solid var(--line);
   transition: border-color .18s, transform .18s, background .35s;
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
 }
-.story-card:hover { border-color: var(--line-2); transform: translateX(3px); }
-.story-no {
-  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 19px; font-weight: 700;
-  color: var(--dim-2); min-width: 34px; letter-spacing: -.02em;
-  transition: color .18s;
+.story-grid .story-card:hover { border-color: var(--line-2); transform: translateY(-3px); }
+.story-grid .story-cover {
+  position: relative; width: 100%; aspect-ratio: 3 / 4;
+  overflow: hidden; background: var(--surface-2);
 }
-.story-card:hover .story-no { color: var(--red); }
-.story-body { flex: 1; min-width: 0; }
-.story-body h3 {
-  font-size: 14.5px; font-weight: 800; letter-spacing: -.01em;
+.story-grid .story-cover img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  transition: transform .35s;
+}
+.story-grid .story-card:hover .story-cover img { transform: scale(1.04); }
+.story-grid .story-cover-fallback {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .18em; color: var(--dim-2);
+  background:
+    radial-gradient(circle at 50% 25%, rgba(255,45,85,.10), transparent 62%),
+    linear-gradient(135deg, var(--surface-2), var(--surface));
+}
+.story-grid .story-no {
+  position: absolute; top: 10px; left: 10px;
+  padding: 3px 7px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; font-weight: 700; letter-spacing: .04em;
+  color: #fff; background: rgba(0,0,0,.55);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  transition: background .18s;
+}
+.story-grid .story-card:hover .story-no { background: var(--red); }
+.story-grid .story-body {
+  flex: 1; min-width: 0; padding: 11px 13px 13px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.story-grid .story-body h3 {
+  font-size: 14px; font-weight: 800; letter-spacing: -.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.story-meta {
-  display: flex; gap: 12px; margin-top: 5px;
+.story-grid .story-meta {
+  display: flex; gap: 10px;
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9.5px;
   letter-spacing: .07em; color: var(--dim-2);
 }
@@ -871,14 +967,110 @@ img { display: block; }
   color: var(--cyan); border: 1px solid var(--cyan);
   padding: 0 5px; line-height: 1.5;
 }
-.story-arrow {
-  color: var(--dim-2); font-size: 15px;
-  transition: color .18s, transform .18s;
+@media (max-width: 620px) {
+  .story-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .story-grid .story-body { padding: 9px 10px 11px; }
+  .story-grid .story-body h3 { font-size: 13px; }
 }
-.story-card:hover .story-arrow { color: var(--text); transform: translateX(3px); }
 
 /* ================= 阅读器 ================= */
 .reader { max-width: 780px; margin: 0 auto; padding: 0 28px 140px; position: relative; z-index: 1; }
+
+/* ---------- 左侧剧情目录面板 ---------- */
+.reader-nav-panel {
+  position: fixed; top: 62px; bottom: 0; left: 0; width: 268px; z-index: 40;
+  display: flex; flex-direction: column;
+  background: var(--bg); border-right: 1px solid var(--line);
+  transform: translateX(-100%); visibility: hidden;
+  transition: transform .22s ease, visibility .22s;
+}
+.reader-nav-panel.open { transform: none; visibility: visible; }
+
+.reader-nav-edge {
+  position: fixed; left: 0; top: 96px; z-index: 36;
+  padding: 12px 7px;
+  background: var(--surface); border: 1px solid var(--line); border-left: 0;
+  color: var(--dim);
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .2em;
+  writing-mode: vertical-rl;
+  transition: color .15s, border-color .15s;
+}
+.reader-nav-edge:hover { color: var(--text); border-color: var(--line-2); }
+
+.rn-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 16px 12px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; letter-spacing: .16em; color: var(--dim);
+  border-bottom: 1px solid var(--line);
+}
+.rn-close { font-size: 18px; line-height: 1; color: var(--dim-2); padding: 2px 6px; }
+.rn-close:hover { color: var(--text); }
+
+.rn-cats {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+}
+.rn-cat {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid transparent; background: var(--surface);
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; color: var(--dim);
+  transition: color .15s, background .15s, border-color .15s;
+}
+.rn-cat:hover { color: var(--text); background: var(--surface-2); border-color: var(--line); }
+.rn-cat.on {
+  color: var(--red); background: var(--red-soft); border-color: var(--red-line);
+}
+.rn-cat em { font-style: normal; opacity: .55; font-size: 10px; }
+.rn-cat.on em { opacity: .75; }
+
+.rn-list { flex: 1; overflow-y: auto; scrollbar-gutter: stable; padding: 8px 8px 24px; }
+.rn-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-left: 2px solid transparent;
+  color: var(--dim); transition: all .14s;
+}
+.rn-item:hover { color: var(--text); background: var(--surface); }
+.rn-item.on { color: var(--text); background: var(--surface-2); border-left-color: var(--red); }
+.rn-title {
+  flex: 1; min-width: 0; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rn-meta {
+  flex: none;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; color: var(--dim-2);
+}
+
+.rn-chapters { margin: 0 0 6px 14px; border-left: 1px solid var(--line); }
+.rn-ch {
+  display: flex; gap: 8px; padding: 6px 10px;
+  font-size: 12px; color: var(--dim);
+}
+.rn-ch span {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; color: var(--dim-2);
+}
+.rn-ch:hover { color: var(--text); background: var(--surface); }
+.rn-ch.on { color: var(--red); }
+
+.rn-foot { border-top: 1px solid var(--line); padding: 12px 16px; }
+.rn-back {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .12em; color: var(--dim-2);
+}
+.rn-back:hover { color: var(--text); }
+
+@media (max-width: 1319px) {
+  .rn-backdrop {
+    display: block; position: fixed; inset: 62px 0 0;
+    background: rgba(0, 0, 0, .48); z-index: 35;
+  }
+  .reader-nav-panel { width: min(82vw, 300px); box-shadow: 0 0 40px rgba(0, 0, 0, .4); }
+}
 
 .reader-head {
   position: sticky; top: 62px; z-index: 10;
@@ -920,6 +1112,43 @@ img { display: block; }
   transition: all .15s;
 }
 .nav-btn:hover { color: var(--text); border-color: var(--line-2); }
+.reader-sub {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; letter-spacing: .12em; color: var(--dim); margin-top: 6px;
+}
+
+/* 活动章节列表 */
+.chapters { display: flex; flex-direction: column; gap: 8px; }
+.chapter-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 16px; border: 1px solid var(--line);
+  background: var(--surface); transition: all .16s;
+}
+.chapter-row:hover {
+  border-color: var(--red); background: var(--surface-2); transform: translateX(3px);
+}
+.chapter-no {
+  flex: none; width: 26px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; color: var(--dim-2);
+}
+.chapter-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.chapter-name { font-size: 15px; font-weight: 700; color: var(--text); }
+.chapter-preview {
+  font-size: 12px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chapter-meta {
+  flex: none;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .08em; color: var(--dim-2);
+}
+.chapter-arrow { flex: none; color: var(--dim-2); transition: color .16s; }
+.chapter-row:hover .chapter-arrow { color: var(--red); }
+@media (max-width: 620px) {
+  .chapter-row { gap: 10px; padding: 12px; }
+  .chapter-preview { display: none; }
+}
 
 .reader-body { }
 .seg { margin-bottom: 48px; }

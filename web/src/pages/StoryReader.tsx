@@ -15,6 +15,9 @@ type Frame = {
   n: string | null
 }
 
+/** 这些分类按「章节列表 → 单章正文」阅读；主线保持整章一页。 */
+const CHAPTER_CATS = new Set(['event', 'nikke', 'gaiden', 'sub', 'side_story'])
+
 /** 解析一组 CG → 前景帧 + 配对背景层（游戏中动态 CG = bg 层 + Spine 前景层） */
 function resolveCg(list: StoryCgRef[]): Frame {
   if (!list.length) return { fg: null, fgSpine: null, bg: null, n: null }
@@ -259,6 +262,116 @@ function StoryCgBg({
   )
 }
 
+/**
+ * 阅读器左侧目录面板：分类切换 + 当前分类的作品列表；正在阅读的作品会
+ * 展开它的章节，便于在作品/章节之间直接跳转。可整体收起。
+ */
+function ReaderNav({
+  open, onOpen, onClose, index, detail, panelCat, setPanelCat, chapterIndex, backTo,
+}: {
+  open: boolean
+  onOpen: () => void
+  onClose: () => void
+  index: StoryUnit[]
+  detail: StoryDetail
+  panelCat: string
+  setPanelCat: (cat: string) => void
+  chapterIndex: number | null
+  backTo: string
+}) {
+  const cats = useMemo(() => {
+    const seen: { cat: string; label: string; n: number }[] = []
+    for (const u of index) {
+      const hit = seen.find((s) => s.cat === u.cat)
+      if (hit) hit.n += 1
+      else seen.push({ cat: u.cat, label: u.label, n: 1 })
+    }
+    return seen
+  }, [index])
+
+  const list = useMemo(
+    () => index.filter((u) => u.cat === panelCat),
+    [index, panelCat],
+  )
+
+  const activeRef = useRef<HTMLAnchorElement>(null)
+  useEffect(() => {
+    if (!open) return
+    // 打开面板时把当前作品滚到可视区域
+    const t = window.setTimeout(
+      () => activeRef.current?.scrollIntoView({ block: 'nearest' }), 80)
+    return () => window.clearTimeout(t)
+  }, [open, panelCat, detail.id])
+
+  const narrow = () => { if (window.innerWidth <= 1100) onClose() }
+
+  // 角色页里的咨询分片不在剧情目录中，不显示目录面板
+  if (!cats.some((c) => c.cat === panelCat)) return null
+
+  return (
+    <>
+      {open && <div className="rn-backdrop" onClick={onClose} />}
+      <aside className={`reader-nav-panel${open ? ' open' : ''}`} aria-hidden={!open}>
+        <div className="rn-head">
+          <span>剧情目录</span>
+          <button className="rn-close" onClick={onClose} aria-label="收起目录">×</button>
+        </div>
+
+        <div className="rn-cats">
+          {cats.map((c) => (
+            <button
+              key={c.cat}
+              className={`rn-cat${panelCat === c.cat ? ' on' : ''}`}
+              onClick={() => setPanelCat(c.cat)}
+            >
+              {c.label}<em>{c.n}</em>
+            </button>
+          ))}
+        </div>
+
+        <div className="rn-list">
+          {list.map((u) => (
+            <div key={u.id}>
+              <Link
+                ref={u.id === detail.id ? activeRef : undefined}
+                to={`/story/${u.id}`}
+                className={`rn-item${u.id === detail.id ? ' on' : ''}`}
+                onClick={narrow}
+              >
+                <span className="rn-title">{u.title}</span>
+                <span className="rn-meta">{nf(u.lines)}</span>
+              </Link>
+              {u.id === detail.id && detail.segments.length > 1 && (
+                <div className="rn-chapters">
+                  {detail.segments.map((seg, i) => (
+                    <Link
+                      key={seg.g + i}
+                      to={`/story/${detail.id}?ch=${i}`}
+                      className={`rn-ch${chapterIndex === i ? ' on' : ''}`}
+                      onClick={narrow}
+                    >
+                      <span>{String(i + 1).padStart(2, '0')}</span>
+                      {seg.t || `第 ${i + 1} 章`}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="rn-foot">
+          <Link to={backTo} className="rn-back" onClick={narrow}>← 返回剧情目录</Link>
+        </div>
+      </aside>
+
+      {!open && (
+        <button className="reader-nav-edge" onClick={onOpen} title="展开剧情目录">目录</button>
+      )}
+    </>
+  )
+}
+
 export default function StoryReader() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -266,6 +379,22 @@ export default function StoryReader() {
   const [detail, setDetail] = useState<StoryDetail | null>(null)
   const [index, setIndex] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
+
+  // 左侧目录面板：展开状态记在 localStorage，窄屏默认收起
+  const [navOpen, setNavOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem('reader-nav')
+      if (saved === '0') return false
+      if (saved === '1') return true
+    } catch { /* ignore */ }
+    return window.innerWidth >= 1320
+  })
+  const rememberNav = (open: boolean) => {
+    setNavOpen(open)
+    try { localStorage.setItem('reader-nav', open ? '1' : '0') } catch { /* ignore */ }
+  }
+  const [panelCat, setPanelCat] = useState('')
+  useEffect(() => { if (detail) setPanelCat(detail.cat) }, [detail])
 
   useEffect(() => {
     setDetail(null)
@@ -276,8 +405,22 @@ export default function StoryReader() {
   }, [id])
 
   const pos = useMemo(() => index.findIndex((u) => String(u.id) === id), [index, id])
-  const prev = pos > 0 ? index[pos - 1] : null
-  const next = pos >= 0 && pos < index.length - 1 ? index[pos + 1] : null
+  // 上/下话只在同一分类内跳，避免活动最后一个跳到主线
+  const catUnits = useMemo(() => {
+    if (pos < 0) return []
+    const cat = index[pos].cat
+    return index.filter((u) => u.cat === cat)
+  }, [index, pos])
+  const catPos = useMemo(() => catUnits.findIndex((u) => String(u.id) === id), [catUnits, id])
+  const prev = catPos > 0 ? catUnits[catPos - 1] : null
+  const next = catPos >= 0 && catPos < catUnits.length - 1 ? catUnits[catPos + 1] : null
+
+  // 返回目录时回到进入前的分类（分类参数在 Story 页里写进了 URL）
+  const backTo = useMemo(() => {
+    if (!detail) return '/story'
+    if (!index.some((u) => u.cat === detail.cat)) return '/story'
+    return detail.cat === 'main' ? '/story' : `/story?cat=${detail.cat}`
+  }, [detail, index])
 
   const speakerMap = useMemo(() => {
     const m: Record<string, Character> = {}
@@ -320,37 +463,168 @@ export default function StoryReader() {
     return () => cancelAnimationFrame(raf)
   }, [detail, params])
 
+  const chapterParam = params.get('ch')
+  useEffect(() => {
+    // 切章节时回到顶部；带 line 的搜索/CG 跳转由上面的 effect 定位
+    if (params.get('line')) return
+    window.scrollTo({ top: 0 })
+  }, [chapterParam])
+
   if (!detail) return <div className="loading">LOADING…</div>
 
+  // 活动 / 个人剧情 / 支线 / 日常（多章节）先进章节目录，点章节才显示正文；
+  // 主线一章就是一篇长文，保持原来的整章阅读
+  const isMulti = CHAPTER_CATS.has(detail.cat) && detail.segments.length > 1
+  let chapterIndex: number | null = null
+  if (isMulti) {
+    if (chapterParam !== null) {
+      const n = Number(chapterParam)
+      if (Number.isInteger(n) && n >= 0 && n < detail.segments.length) chapterIndex = n
+    }
+    if (chapterIndex === null) {
+      // 搜索/CG 的 ?line= 是「单元内第几行」，换算成它所在的章节
+      const lineParam = params.get('line')
+      if (lineParam !== null) {
+        const target = Number(lineParam)
+        let acc = 0
+        for (let i = 0; i < detail.segments.length; i++) {
+          if (target < acc + detail.segments[i].l.length) { chapterIndex = i; break }
+          acc += detail.segments[i].l.length
+        }
+      }
+    }
+  }
+
   const total = blocks.reduce((a, b) => a + b.lines.length, 0)
+  const chapterSeg = chapterIndex !== null ? detail.segments[chapterIndex] : null
+  const chapterTitle = chapterSeg && chapterIndex !== null
+    ? (chapterSeg.t || `第 ${chapterIndex + 1} 章`)
+    : ''
+  const shownBlocks = chapterIndex !== null ? blocks.slice(chapterIndex, chapterIndex + 1) : blocks
+  const shownTotal = chapterSeg ? chapterSeg.l.length : total
+  const chapterHasCg = chapterIndex !== null ? (blocks[chapterIndex]?.runs.size ?? 0) > 0 : hasCg
+  const prevCh = chapterIndex !== null && chapterIndex > 0 ? chapterIndex - 1 : null
+  const nextCh = chapterIndex !== null && chapterIndex < detail.segments.length - 1 ? chapterIndex + 1 : null
+
+  if (isMulti && chapterIndex === null) {
+    const catWord = detail.cat === 'event' ? '活动' : '话'
+    return (
+      <>
+        <ReaderNav
+          open={navOpen}
+          onOpen={() => rememberNav(true)}
+          onClose={() => rememberNav(false)}
+          index={index}
+          detail={detail}
+          panelCat={panelCat || detail.cat}
+          setPanelCat={setPanelCat}
+          chapterIndex={chapterIndex}
+          backTo={backTo}
+        />
+        <div className="reader">
+        <div className="reader-head">
+          <Link to={backTo} className="reader-back">← 剧情目录</Link>
+          <div className="reader-title">
+            <span className="reader-cat">{detail.label}</span>
+            <h1>{detail.title}</h1>
+            <span className="reader-count">{nf(total)} 句 · {detail.segments.length} 章</span>
+          </div>
+          <div className="reader-nav">
+            {prev && (
+              <Link to={`/story/${prev.id}`} title={prev.title} className="nav-btn">
+                {catWord === '活动' ? '← 上个活动' : '← 上话'}
+              </Link>
+            )}
+            {next && (
+              <Link to={`/story/${next.id}`} title={next.title} className="nav-btn">
+                {catWord === '活动' ? '下个活动 →' : '下话 →'}
+              </Link>
+            )}
+          </div>
+        </div>
+
+        <div className="reader-body chapters">
+          {detail.segments.map((seg, i) => {
+            const preview = seg.l[0]?.[2]?.replace(/\n/g, ' ') || ''
+            return (
+              <Link key={seg.g + i} to={`/story/${detail.id}?ch=${i}`} className="chapter-row">
+                <span className="chapter-no">{String(i + 1).padStart(2, '0')}</span>
+                <span className="chapter-main">
+                  <span className="chapter-name">{seg.t || `第 ${i + 1} 章`}</span>
+                  {preview && <span className="chapter-preview">{preview}</span>}
+                </span>
+                <span className="chapter-meta">{nf(seg.l.length)} 句</span>
+                <span className="chapter-arrow">→</span>
+              </Link>
+            )
+          })}
+        </div>
+
+        <div className="reader-foot">
+          <Link to={backTo} className="btn">← 返回目录</Link>
+          {next && (
+            <Link to={`/story/${next.id}`} className="btn primary">
+              {catWord === '活动' ? '下个活动：' : '下一话：'}{next.title} →
+            </Link>
+          )}
+        </div>
+        </div>
+      </>
+    )
+  }
 
   return (
-    <div className={`reader ${hasCg ? 'has-cg' : ''}`}>
+    <>
+      <ReaderNav
+        open={navOpen}
+        onOpen={() => rememberNav(true)}
+        onClose={() => rememberNav(false)}
+        index={index}
+        detail={detail}
+        panelCat={panelCat || detail.cat}
+        setPanelCat={setPanelCat}
+        chapterIndex={chapterIndex}
+        backTo={backTo}
+      />
+    <div className={`reader ${chapterHasCg ? 'has-cg' : ''}`}>
       {/* 背景层：透明度跟随滚动进度，动态 CG 直接播实时模型，点击进入二级查看页 */}
-      {hasCg && (
+      {chapterHasCg && (
         <StoryCgBg
+          key={chapterIndex ?? 'all'}
           frames={frames}
           onOpen={(cgName) => navigate(`/cg/${encodeURIComponent(cgName)}`)}
         />
       )}
 
       <div className="reader-head">
-        <Link to="/story" className="reader-back">← 剧情目录</Link>
+        <Link to={chapterIndex !== null ? `/story/${detail.id}` : '/story'} className="reader-back">
+          {chapterIndex !== null ? '← 章节列表' : '← 剧情目录'}
+        </Link>
         <div className="reader-title">
           <span className="reader-cat">{detail.label}</span>
-          <h1>{detail.title}</h1>
-          <span className="reader-count">{nf(total)} 句</span>
+          <h1>{chapterIndex !== null ? chapterTitle : detail.title}</h1>
+          <span className="reader-count">{nf(shownTotal)} 句</span>
         </div>
+        {chapterIndex !== null && <div className="reader-sub">{detail.title}</div>}
         <div className="reader-nav">
-          {prev && <Link to={`/story/${prev.id}`} title={prev.title} className="nav-btn">← 上话</Link>}
-          {next && <Link to={`/story/${next.id}`} title={next.title} className="nav-btn">下话 →</Link>}
+          {chapterIndex !== null ? (
+            <>
+              {prevCh !== null && <Link to={`/story/${detail.id}?ch=${prevCh}`} className="nav-btn">← 上一章</Link>}
+              {nextCh !== null && <Link to={`/story/${detail.id}?ch=${nextCh}`} className="nav-btn">下一章 →</Link>}
+            </>
+          ) : (
+            <>
+              {prev && <Link to={`/story/${prev.id}`} title={prev.title} className="nav-btn">← 上话</Link>}
+              {next && <Link to={`/story/${next.id}`} title={next.title} className="nav-btn">下话 →</Link>}
+            </>
+          )}
         </div>
       </div>
 
       <div className="reader-body">
-        {blocks.map((seg, si) => (
+        {shownBlocks.map((seg, si) => (
           <section key={seg.g + si} className="seg" data-g={seg.g}>
-            {seg.t && <h2 className="seg-title">{seg.t}</h2>}
+            {seg.t && chapterIndex === null && <h2 className="seg-title">{seg.t}</h2>}
             {seg.lines.map((ln, li) => {
               const ch = speakerMap[ln.spid]
               const isNarr = !ln.sp
@@ -376,13 +650,27 @@ export default function StoryReader() {
       </div>
 
       <div className="reader-foot">
-        <Link to="/story" className="btn">← 返回目录</Link>
-        {next && (
-          <Link to={`/story/${next.id}`} className="btn primary">
-            下一话：{next.title} →
-          </Link>
+        {chapterIndex !== null ? (
+          <>
+            <Link to={`/story/${detail.id}`} className="btn">← 返回章节列表</Link>
+            {nextCh !== null && (
+              <Link to={`/story/${detail.id}?ch=${nextCh}`} className="btn primary">
+                下一章：{detail.segments[nextCh].t || `第 ${nextCh + 1} 章`} →
+              </Link>
+            )}
+          </>
+        ) : (
+          <>
+            <Link to={backTo} className="btn">← 返回目录</Link>
+            {next && (
+              <Link to={`/story/${next.id}`} className="btn primary">
+                下一话：{next.title} →
+              </Link>
+            )}
+          </>
         )}
       </div>
     </div>
+    </>
   )
 }

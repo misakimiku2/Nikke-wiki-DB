@@ -156,6 +156,8 @@ export async function loadCharSkills(): Promise<CharSkillsData> {
 
 /* 角色好感剧情 / 咨询 映射（行数据本体按需走 loadStoryUnit） */
 
+export type CharStoryChapter = { t: string; n: number }
+
 export type CharStoryRec = {
   id: number
   t: string
@@ -165,6 +167,8 @@ export type CharStoryRec = {
   sessions?: number
   /** 皮肤名（皮肤专属剧情/咨询） */
   skin?: string
+  /** 个人剧情的章节名与句数（咨询没有） */
+  chapters?: CharStoryChapter[]
 }
 
 export type CharStoriesData = Record<string, { stories: CharStoryRec[]; counsel: CharStoryRec[] }>
@@ -320,6 +324,8 @@ export type StoryUnit = {
   segments: number
   lines: number
   source: string
+  /** 卡片封面：该剧情第一张静态 CG 的图片 hash；没有 CG 时为 null */
+  cover?: string | null
 }
 
 /** [说话人, 说话人ID, 文本] */

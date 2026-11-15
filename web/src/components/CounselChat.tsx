@@ -32,6 +32,7 @@ export default function CounselChat({
   const [flowMap, setFlowMap] = useState<Record<string, CounselFlow>>({})
   const [picks, setPicks] = useState<Record<string, number>>({})
   const feedRef = useRef<HTMLDivElement>(null)
+  const firstMount = useRef(true)
 
   const unit = units[Math.min(ui, units.length - 1)]
 
@@ -100,7 +101,13 @@ export default function CounselChat({
   }, [seg, flow, picks, unit.id, si, K])
 
   useEffect(() => {
-    feedRef.current?.scrollTo({ top: 0 })
+    // 切会话/切咨询卷后回到对话开头。对话没有内部滚动，所以直接滚页面；
+    // 首次挂载不跳，避免刚打开角色页就被拽到剧情区。
+    if (firstMount.current) { firstMount.current = false; return }
+    const el = feedRef.current
+    if (!el) return
+    const y = el.getBoundingClientRect().top + window.scrollY - 150
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' })
   }, [si, unit.id])
 
   const pickCount = units.length > 1
