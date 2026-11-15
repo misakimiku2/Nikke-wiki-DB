@@ -34,8 +34,11 @@ export type SpineController = {
 export type SpinePlayerProps = {
   /** 模型名，例如 EventScene_CherryBlossom_01 / c010_00 */
   name: string
-  /** 模型所在目录（public 下的一级目录）：CG 是 spine，角色站姿是 spine_char */
-  dir?: 'spine' | 'spine_char'
+  /**
+   * 模型所在目录（public 下的一级目录）：CG 是 spine，角色站姿是 spine_char，
+   * 角色战斗姿态（背身射击/掩体）是 spine_combat
+   */
+  dir?: 'spine' | 'spine_char' | 'spine_combat'
   className?: string
   /** 是否渲染自带控制条；二级查看页传 false，改用页面底部统一控制条 */
   controls?: boolean
@@ -272,7 +275,9 @@ export default function SpinePlayer({
           skeleton.updateWorldTransform()
           emit(true)
         }
-        const idleFirst = animNames.find((a) => /^idle/i.test(a)) || animNames[0] || ''
+        // 默认动画：站姿是 idle，战斗模型是 aim_idle / cover_idle，统一按
+        // 「以 idle 结尾或就叫 idle」匹配，匹配不到再落第一个
+        const idleFirst = animNames.find((a) => /(^|_)idle$/i.test(a)) || animNames[0] || ''
         setAnim(idleFirst)
 
         // 相机 / 视图

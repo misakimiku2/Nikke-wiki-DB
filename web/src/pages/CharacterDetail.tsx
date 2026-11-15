@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  accentFor, artLabel, charArt, charThumb, EXPR_LABEL, loadCharArt, loadCharImages, loadCharMi,
-  loadCharSkills, loadCharStories, loadCharSpine, loadCharacters, mainBase, nf, tintFor, variantsOf,
+  accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
+  loadCharImages, loadCharMi, loadCharSkills, loadCharStories, loadCharSpine, loadCharacters,
+  mainBase, nf, tintFor, variantsOf,
   type CharArtMap, type CharImages, type Character, type CharSkill, type CharSkillsData, type CharStoriesData,
 } from '../data'
 import CounselChat from '../components/CounselChat'
@@ -27,6 +28,15 @@ const CHIP_DEFS: Array<{ re: RegExp; label: string }> = [
   { re: /^shy/, label: '害羞' },
   { re: /^think/, label: '思考' },
   { re: /^action|^battle/, label: '动作' },
+]
+
+/** 战斗姿态（aim / cover）的动作 chips；to_aim / to_cover 是过渡，不进按钮 */
+const COMBAT_CHIP_DEFS: Array<{ re: RegExp; label: string }> = [
+  { re: /_idle$/, label: '待机' },
+  { re: /_fire$/, label: '射击' },
+  { re: /_reload$/, label: '换弹' },
+  { re: /_hit$/, label: '受击' },
+  { re: /_stun$/, label: '眩晕' },
 ]
 
 function animLabel(a: string): string {
@@ -105,9 +115,9 @@ function SkillRow({ skill, lv, accent, onWord }: {
   )
 }
 
-function pickChips(anims: string[]): { label: string; anim: string }[] {
+function pickChips(anims: string[], defs = CHIP_DEFS): { label: string; anim: string }[] {
   const out: { label: string; anim: string }[] = []
-  for (const d of CHIP_DEFS) {
+  for (const d of defs) {
     const hit = anims.find((a) => d.re.test(a))
     if (hit) out.push({ label: d.label, anim: hit })
   }
@@ -120,6 +130,9 @@ export default function CharacterDetail() {
   const [imgs, setImgs] = useState<CharImages>({})
   const [mi, setMi] = useState<Set<string>>(new Set())
   const [spine, setSpine] = useState<Set<string>>(new Set())
+  const [combat, setCombat] = useState<Set<string>>(new Set())
+  /** 舞台姿态：stand 立绘（站姿模型/静态图），aim 背身射击，cover 掩体 */
+  const [pose, setPose] = useState<'stand' | 'aim' | 'cover'>('stand')
   const [pick, setPick] = useState<string | null>(null)
   const [status, setStatus] = useState<SpineStatus>(EMPTY)
   const [modelReady, setModelReady] = useState(false)
@@ -141,6 +154,7 @@ export default function CharacterDetail() {
     loadCharImages().then(setImgs).catch(() => {})
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
+    loadCharCombat().then(setCombat).catch(() => {})
     loadCharSkills().then(setSkillData).catch(() => {})
     loadCharStories().then(setStoriesMap).catch(() => {})
     loadCharArt().then(setArt).catch(() => {})
@@ -148,17 +162,18 @@ export default function CharacterDetail() {
 
   useEffect(() => {
     setPick(null)
+    setPose('stand')
     setStatus(EMPTY)
     setModelReady(false)
     setModelError(false)
   }, [id])
 
-  // 换皮肤时也要把状态归零，否则控制条会短暂显示上一套模型的表情与时长
+  // 换皮肤 / 切姿态时也要把状态归零，否则控制条会短暂显示上一套模型的动作与时长
   useEffect(() => {
     setStatus(EMPTY)
     setModelReady(false)
     setModelError(false)
-  }, [pick])
+  }, [pick, pose])
 
   const c = list?.find((x) => String(x.id) === id) || null
   // 旧版立绘（例如 c010_01 Rapi_old）不是当前皮肤，混在切换条里会让人以为是错图
@@ -168,6 +183,18 @@ export default function CharacterDetail() {
   const currentLabel = !artName ? '' : (c && !artName.startsWith(c.name) ? `${c.name} · ${artName}` : artName)
   const staticSrc = current ? charArt(current) : ''
   const hasModel = !!current && spine.has(current) && !modelError
+  /** 当前皮肤可用的战斗姿态模型（c010_00 → c010_aim_00 / c010_cover_00） */
+  const combatAvail = useMemo(() => ({
+    aim: current ? combatModelName(current, 'aim', combat) : null,
+    cover: current ? combatModelName(current, 'cover', combat) : null,
+  }), [current, combat])
+  // 切了皮肤后当前战斗姿态不存在（比如该皮肤没出战斗模型）就退回立绘
+  useEffect(() => {
+    if (pose !== 'stand' && !combatAvail[pose]) setPose('stand')
+  }, [combatAvail, pose])
+  const combatName = pose === 'stand' ? null : combatAvail[pose]
+  /** 舞台挂的是不是实时模型（立绘站姿或战斗姿态都算） */
+  const stageLive = pose === 'stand' ? hasModel : !!combatName
   const skills = id ? skillData.items[String(id)] : null
   const rel = id ? storiesMap[String(id)] : null
   const relStories = rel?.stories ?? []
@@ -177,12 +204,17 @@ export default function CharacterDetail() {
     setRelTab((t) => (t === 'counsel' && !relCounsel.length ? 'stories' : t))
   }, [id])
   // 口型（talk_*）是配合台词的 0 时长姿态；bg_* 只驱动背景（有的模型里这两类
-  // 动画根本没有可见部件，选中会只剩空舞台），都不列出来
+  // 动画根本没有可见部件，选中会只剩空舞台）；战斗模式的 to_aim/to_cover 是
+  // 姿态间过渡，都不列出来
   const anims = useMemo(
-    () => status.anims.filter((a) => !a.startsWith('talk') && !a.startsWith('bg_')),
-    [status.anims],
+    () => status.anims.filter((a) => !a.startsWith('talk') && !a.startsWith('bg_')
+      && !(pose !== 'stand' && a.startsWith('to_'))),
+    [status.anims, pose],
   )
-  const chips = useMemo(() => pickChips(anims), [anims])
+  const chips = useMemo(
+    () => pickChips(anims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS),
+    [anims, pose],
+  )
   const extras = useMemo(() => {
     const used = new Set(chips.map((c) => c.anim))
     return anims.filter((a) => !used.has(a))
@@ -195,8 +227,9 @@ export default function CharacterDetail() {
   const toggle = useCallback(() => spineRef.current?.toggle(), [])
   const resetView = useCallback(() => spineRef.current?.resetView(), [])
   const saveFrame = useCallback(() => {
-    spineRef.current?.saveFrame(`${current}_${status.anim}_${status.time.toFixed(2)}.png`)
-  }, [current, status.anim, status.time])
+    const nm = pose === 'stand' ? current : combatName || current
+    spineRef.current?.saveFrame(`${nm}_${status.anim}_${status.time.toFixed(2)}.png`)
+  }, [current, combatName, pose, status.anim, status.time])
 
   // ---- 时间轴（与 CG 查看器同一套交互：拖动时暂停、松手续播、交还焦点）----
   const canSeek = hasModel && modelReady && status.duration > 0
@@ -262,40 +295,69 @@ export default function CharacterDetail() {
       <div className="detail">
         <div className="detail-visual" style={{ ['--tint' as string]: palette }}>
           {/* 模型就绪前不铺旧静态图：那帧的姿势/取景和实时模型对不上，看着像渲染错误 */}
-          <div className={`stage char-stage ${hasModel ? 'is-live' : ''} ${modelReady ? 'is-ready' : ''}`}>
-            {hasModel ? (
+          <div className={`stage char-stage ${stageLive ? 'is-live' : ''} ${modelReady ? 'is-ready' : ''}`}>
+            {pose === 'stand' ? (
+              hasModel ? (
+                <SpinePlayer
+                  name={current}
+                  dir="spine_char"
+                  controls={false}
+                  controllerRef={spineRef}
+                  onTick={setStatus}
+                  onReady={() => setModelReady(true)}
+                  onError={() => setModelError(true)}
+                />
+              ) : current ? (
+                <ImageViewer
+                  key={current}
+                  src={staticSrc}
+                  alt={c.name}
+                  max={4}
+                  extra={(
+                    <a
+                      className="iv-btn"
+                      href={staticSrc}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="在新标签页查看原图"
+                    >↗</a>
+                  )}
+                />
+              ) : (
+                <div className="char-empty-mark">{c.name.slice(0, 1)}</div>
+              )
+            ) : combatName ? (
               <SpinePlayer
-                name={current}
-                dir="spine_char"
+                name={combatName}
+                dir="spine_combat"
                 controls={false}
                 controllerRef={spineRef}
                 onTick={setStatus}
                 onReady={() => setModelReady(true)}
-                onError={() => setModelError(true)}
+                onError={() => { if (pose !== 'stand') setPose('stand') }}
               />
-            ) : current ? (
-              <ImageViewer
-                key={current}
-                src={staticSrc}
-                alt={c.name}
-                max={4}
-                extra={(
-                  <a
-                    className="iv-btn"
-                    href={staticSrc}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="在新标签页查看原图"
-                  >↗</a>
-                )}
-              />
-            ) : (
-              <div className="char-empty-mark">{c.name.slice(0, 1)}</div>
-            )}
-            {hasModel && !modelReady && (
+            ) : null}
+            {stageLive && !modelReady && (
               <div className="char-loading"><span className="cv-spin" />加载实时模型…</div>
             )}
-            {hasModel && (
+            {/* 有战斗姿态时徽标换成姿态切换；否则维持原来的实时徽标 */}
+            {(combatAvail.aim || combatAvail.cover) ? (
+              <div className="char-modes">
+                <button className={pose === 'stand' ? 'on' : ''} onClick={() => setPose('stand')}>
+                  立绘
+                </button>
+                {combatAvail.aim && (
+                  <button className={pose === 'aim' ? 'on' : ''} onClick={() => setPose('aim')}>
+                    射击
+                  </button>
+                )}
+                {combatAvail.cover && (
+                  <button className={pose === 'cover' ? 'on' : ''} onClick={() => setPose('cover')}>
+                    掩体
+                  </button>
+                )}
+              </div>
+            ) : (
               <div className={`char-live ${modelReady ? 'on' : ''}`}>
                 <i />{modelReady ? '实时模型' : '模型加载中'}
               </div>
@@ -328,7 +390,11 @@ export default function CharacterDetail() {
           {hasModel && (
             <div className="char-bar">
               <div className="char-anims">
-                {chips.length === 0 && <span className="char-anims-hint">表情动画载入中…</span>}
+                {chips.length === 0 && (
+                  <span className="char-anims-hint">
+                    {pose === 'stand' ? '表情动画载入中…' : '战斗动作载入中…'}
+                  </span>
+                )}
                 {chips.map((c2) => (
                   <button
                     key={c2.anim}
@@ -344,9 +410,9 @@ export default function CharacterDetail() {
                     className={`char-more ${onChip ? '' : 'on'}`}
                     value={onChip ? '' : status.anim}
                     onChange={(e) => e.target.value && spineRef.current?.setAnim(e.target.value)}
-                    title="更多表情"
+                    title={pose === 'stand' ? '更多表情' : '更多动作'}
                   >
-                    <option value="">更多表情</option>
+                    <option value="">{pose === 'stand' ? '更多表情' : '更多动作'}</option>
                     {extras.map((a) => <option key={a} value={a}>{animLabel(a)}</option>)}
                   </select>
                 )}
@@ -461,11 +527,11 @@ export default function CharacterDetail() {
           )}
 
           <div className="detail-slots">
-            <div className={`slot ${hasModel ? 'on' : ''}`}>
+            <div className={`slot ${stageLive ? 'on' : ''}`}>
               <span>动态立绘</span>
               <em>
-                {hasModel
-                  ? (modelReady ? `${anims.length} 段表情动画` : '读取模型中…')
+                {stageLive
+                  ? (modelReady ? `${anims.length} 段动画` : '读取模型中…')
                   : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
               </em>
             </div>

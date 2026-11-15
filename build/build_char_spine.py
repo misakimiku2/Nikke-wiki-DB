@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-角色 Spine 站姿模型 → 网页可实时播放的四件套
+角色 Spine 模型 → 网页可实时播放的四件套
 
-输入：nikke_extract/staging/spine_stand/<name>/<name>.atlas | .skel | <name>.png [| <name>_2.png]
-输出：public/spine_char/<name>/<name>.atlas | .skel | <name>.webp [| <name>_2.webp]
-      public/data/char_spine.json   {"total": n, "items": [name, ...]}
+--kind stand（默认）：站姿立绘模型
+输入：nikke_extract/staging/spine_stand/<name>/...
+输出：public/spine_char/<name>/...  public/data/char_spine.json
+--kind combat：战斗姿态模型（aim 背身射击 / cover 掩体，名字自带姿态段）
+输入：nikke_extract/staging/spine_combat/<name>/...
+输出：public/spine_combat/<name>/...  public/data/char_spine_combat.json
 
 和 CG 的 build_spine_models.py 同一条路子，三点差异：
   1. 角色 atlases 有 BOM（23 个），必须用 utf-8-sig 读，否则贴图页名带 \\ufeff，
      浏览器 fetch 会 404；写回时也不带 BOM。
-  2. 17 个模型是双页图集（<name>.png + <name>_2.png），每页都要转、都要改名。
-  3. 图集页可以整体降采样（--size），PNG 2048² 转无损 WebP 约 2.1 MB，
-     567 个模型全量约 1.2 GB；降到 1024 体积约 1/2.4。
+  2. 部分模型是双页图集（<name>.png + <name>_2.png），每页都要转、都要改名。
+  3. 图集页可以整体降采样（--size），PNG 2048² 转无损 WebP 约 2.1 MB。
 
 图集头 pma:true —— 贴图 RGB 已经乘过 alpha，绝不能再次预乘。
 只把 alpha=0 的像素 RGB 清零（PMA 混合下残留色会直接叠加成灰斑/白线），
 并用 lossless + exact=True 保存，防止编码器往全透明像素里塞填充色。
 
   python build/build_char_spine.py                 # 增量，2048 原尺寸
+  python build/build_char_spine.py --kind combat   # 战斗姿态模型
   python build/build_char_spine.py --size 1024     # 降采样
   python build/build_char_spine.py --force
   python build/build_char_spine.py --limit 8       # 先试几个
@@ -35,9 +38,20 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC = os.path.join(os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract"), "staging", "spine_stand")
-OUT = os.path.join(ROOT, "public", "spine_char")
-META = os.path.join(ROOT, "public", "data", "char_spine.json")
+SRC_ROOT = os.path.join(os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract"), "staging")
+KINDS = {
+    "stand": ("spine_stand", "spine_char", "char_spine.json", "角色站姿模型"),
+    "combat": ("spine_combat", "spine_combat", "char_spine_combat.json", "角色战斗姿态模型"),
+}
+
+def paths_for(kind):
+    src_name, out_name, meta_name, label = KINDS[kind]
+    return (
+        os.path.join(SRC_ROOT, src_name),
+        os.path.join(ROOT, "public", out_name),
+        os.path.join(ROOT, "public", "data", meta_name),
+        label,
+    )
 
 
 def atlas_pages(text):
@@ -53,8 +67,8 @@ def atlas_pages(text):
 def convert(job, force=False, size=0):
     from PIL import Image
 
-    name, folder_src = job
-    folder = os.path.join(OUT, name)
+    name, folder_src, out_root = job
+    folder = os.path.join(out_root, name)
     os.makedirs(folder, exist_ok=True)
     dst_atlas = os.path.join(folder, name + ".atlas")
     dst_skel = os.path.join(folder, name + ".skel")
@@ -114,12 +128,14 @@ def convert(job, force=False, size=0):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--kind", default="stand", choices=sorted(KINDS))
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--size", type=int, default=0,
                     help="图集页统一缩放到这个边长（0 = 保持原样 2048）")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
 
+    SRC, OUT, META, label = paths_for(args.kind)
     if not os.path.isdir(SRC):
         print(f"! 源目录不存在：{SRC}")
         sys.exit(1)
@@ -131,13 +147,15 @@ def main():
         d = os.path.join(SRC, name)
         if not os.path.isdir(d):
             continue
+        if name.startswith("dummy"):
+            continue  # 资源池里的测试模型，不进网页
         if not (os.path.exists(os.path.join(d, name + ".atlas"))
                 and os.path.exists(os.path.join(d, name + ".skel"))):
             continue
-        jobs.append((name, d))
+        jobs.append((name, d, OUT))
     if args.limit:
         jobs = jobs[:args.limit]
-    print(f"待处理 {len(jobs)} 个角色站姿模型")
+    print(f"待处理 {len(jobs)} 个{label}")
 
     ok, errors = [], []
     t0 = time.time()

@@ -240,6 +240,29 @@ export async function loadCharSpine(): Promise<Set<string>> {
   return cacheCharSpine
 }
 
+/* 角色战斗姿态模型（aim 背身射击 / cover 掩体），名字形如 c010_aim_00 */
+
+let cacheCharCombat: Set<string> | null = null
+
+export async function loadCharCombat(): Promise<Set<string>> {
+  if (cacheCharCombat) return cacheCharCombat
+  try {
+    const d = await getJSON<{ items: string[] }>('/data/char_spine_combat.json')
+    cacheCharCombat = new Set(d.items)
+  } catch {
+    cacheCharCombat = new Set()
+  }
+  return cacheCharCombat
+}
+
+/** 站姿皮肤名 c010_00 → 某姿态的战斗模型名；皮肤无该姿态时返回 null */
+export function combatModelName(current: string, pose: 'aim' | 'cover', have: Set<string>): string | null {
+  const m = current.match(/^(.+)_(\d+)$/)
+  if (!m) return null
+  const name = `${m[1]}_${pose}_${m[2]}`
+  return have.has(name) ? name : null
+}
+
 /** 表情动画的中文名；未收录的原样显示（talk_* 是口型，放在下拉里） */
 export const EXPR_LABEL: Record<string, string> = {
   idle: '待机',

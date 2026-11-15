@@ -549,6 +549,23 @@ img { display: block; }
 .char-live.on { color: var(--text); }
 .char-live.on i { background: var(--red); box-shadow: 0 0 0 3px rgba(255,45,85,.16); }
 
+/* 战斗姿态切换（立绘 / 射击 / 掩体）：与实时徽标同位，皮肤有战斗模型时取而代之 */
+.char-modes {
+  position: absolute; left: 16px; top: 14px; z-index: 3;
+  display: inline-flex;
+  background: var(--tag-bg); border: 1px solid var(--line);
+}
+.char-modes button {
+  padding: 5px 11px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .14em;
+  color: var(--dim); background: transparent; border: 0;
+  transition: color .15s, background .15s;
+}
+.char-modes button + button { border-left: 1px solid var(--line); }
+.char-modes button:hover { color: var(--text); }
+.char-modes button.on { background: var(--red); color: #fff; }
+
 .detail-code {
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
   letter-spacing: .2em; color: var(--red); margin-bottom: 14px;
