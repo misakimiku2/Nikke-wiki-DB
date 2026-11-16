@@ -386,7 +386,6 @@ img { display: block; }
   font-size: 9.5px; letter-spacing: .07em; color: var(--dim-2);
 }
 .char-card .meta .lines { color: var(--dim); }
-[data-theme="light"] .char-card .meta .lines { filter: saturate(1.35) brightness(.72); }
 .char-card .badge {
   position: absolute; top: 9px; left: 9px; z-index: 2;
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9px;
@@ -447,6 +446,10 @@ img { display: block; }
 .detail-visual .variant-caption {
   padding: 0 12px 12px; text-align: center;
   font-size: 12px; letter-spacing: .04em; color: var(--dim-2);
+}
+/* 皮肤获取方式附注：跟在选中皮肤名后面，比本行更弱一档 */
+.detail-visual .variant-caption-desc {
+  color: var(--dim-2); opacity: .72; letter-spacing: 0;
 }
 /* 皮肤名并入皮肤条：width:100% 让它在 flex 换行里独占一行，
    落在渐变的实色区，与下方控制栏无缝衔接 */
@@ -601,20 +604,56 @@ img { display: block; }
   margin-top: 40px; border: 1px solid var(--line);
   display: grid; grid-template-columns: repeat(auto-fit, minmax(122px,1fr));
   transition: border-color .35s;
+  position: relative;
 }
 .spec div {
   padding: 16px 16px; border-right: 1px solid var(--line);
   border-bottom: 1px solid transparent;
 }
 .spec div:last-child { border-right: none; }
-.spec span {
+.spec div > span {
   display: block; font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9.5px;
   letter-spacing: .15em; color: var(--dim-2); margin-bottom: 8px;
 }
 .spec b {
   font-size: 19px; font-weight: 800; letter-spacing: -.01em;
 }
-[data-theme="light"] .spec b[style] { filter: saturate(1.35) brightness(.74); }
+
+/* 展开行：点击右下角箭头后浮现 */
+.spec-extra { animation: spec-in .28s ease both; }
+@keyframes spec-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 可点击的字段格：悬浮提示有说明弹窗 */
+.spec div.spec-click { cursor: pointer; transition: background .2s, border-color .2s; }
+.spec div.spec-click:hover { background: var(--surface); }
+
+/* 右下角展开箭头：小三角，悬浮微亮 */
+.spec-toggle {
+  position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; cursor: pointer; padding: 0;
+  color: var(--dim-2); transition: color .2s;
+}
+.spec-toggle:hover { color: var(--text); }
+.spec-toggle-arrow {
+  display: block; width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 6px solid currentColor;
+  transition: transform .25s ease;
+}
+.spec-open .spec-toggle-arrow { transform: rotate(180deg); }
+
+/* 概览卡图标：白色 sprite 用 mask 染 currentColor（--icn 由 JSX 传入），双主题自适应 */
+.spec-weapon { display: inline-flex; align-items: center; gap: 7px; }
+.spec-icn {
+  display: inline-block; width: 17px; height: 17px; flex: none;
+  background: currentColor;
+  -webkit-mask: var(--icn) center / contain no-repeat;
+  mask: var(--icn) center / contain no-repeat;
+}
 
 /* ================= 角色技能说明 ================= */
 .skillbox {
@@ -1535,7 +1574,6 @@ img { display: block; }
 }
 
 /* 亮色主题细节校正 */
-[data-theme="light"] .line .spk { filter: saturate(1.15) brightness(.6); }
 [data-theme="light"] .line.narr p { color: #55523f; }
 [data-theme="light"] .story-no { color: var(--dim-2); }
 [data-theme="light"] .story-card:hover .story-no { color: var(--red); }
@@ -1872,7 +1910,9 @@ img { display: block; }
 }
 .lb-stage .spine-player { position: absolute; inset: 0; }
 .spine-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
-.spine-stage canvas { position: relative; z-index: 1; display: block; width: 100%; height: 100%; }
+/* 触屏手势：不让浏览器把画布上的滑动/捏合当成页面滚动或网页缩放，
+   否则 pointer 事件会被 cancel，单指拖拽与双指捏合全部失效 */
+.spine-stage canvas { position: relative; z-index: 1; display: block; width: 100%; height: 100%; touch-action: none; }
 /* 场景背景层（大招 cut-in）：世界坐标里的方图场景板，按骨架内容范围绘制，
    由播放器按相机逐帧换算屏幕位置——不铺满舞台，与模型共用取景/缩放/拖拽。
    后一条是 detail 页专用覆盖：压过 .detail-page .detail-visual img 的
@@ -1900,6 +1940,8 @@ img { display: block; }
   border: 1px solid rgba(255,255,255,.28);
 }
 .sp-btn:hover { background: var(--red); border-color: var(--red); color: #fff; }
+/* 播放/暂停：SVG 图标与文字并排，替代渲染成 emoji 的 ⏸ / ▶ */
+.sp-btn-pause { display: inline-flex; align-items: center; gap: 6px; }
 .spine-bar select {
   font: inherit; padding: 3px 6px; cursor: pointer;
   background: #14141c; color: #e9e7f2; border: 1px solid rgba(255,255,255,.22);

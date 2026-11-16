@@ -1,5 +1,5 @@
 /**
- * 角色页截图 —— node shot_char.cjs <charId> [variantName] [outPrefix]
+ * 角色页截图 —— node shot_char.cjs <charId> [variantName] [outPrefix] [light|dark] [滚动目标选择器]
  * 默认 10 / c010_00 / char
  */
 const puppeteer = require('puppeteer-core')
@@ -9,6 +9,8 @@ const OUT = '../.shots'
 const id = process.argv[2] || '10'
 const variant = process.argv[3] || ''
 const prefix = process.argv[4] || 'char'
+const theme = process.argv[5] === 'light' || process.argv[5] === 'dark' ? process.argv[5] : ''
+const scrollTo = process.argv[6] || ''
 
 ;(async () => {
   const b = await puppeteer.launch({
@@ -22,7 +24,8 @@ const prefix = process.argv[4] || 'char'
   p.on('console', (m) => { if (m.type() === 'error') logs.push(m.text()) })
   p.on('pageerror', (e) => logs.push('PAGEERROR ' + e.message))
 
-  await p.goto(`${BASE}/#/characters/${id}`, { waitUntil: 'networkidle2' })
+  // 注意 hash 前不能多一个 /，否则 search 会变成 "?theme=dark/"，get('theme') 拿到 'dark/'
+  await p.goto(`${BASE}/${theme ? `?theme=${theme}` : ''}#/characters/${id}`, { waitUntil: 'networkidle2' })
   await new Promise((r) => setTimeout(r, 1200))
 
   if (variant) {
@@ -37,6 +40,17 @@ const prefix = process.argv[4] || 'char'
     await new Promise((r) => setTimeout(r, 3500))
   } else {
     await new Promise((r) => setTimeout(r, 3000))
+  }
+
+  if (scrollTo) {
+    const ok = await p.evaluate((sel) => {
+      const el = document.querySelector(sel)
+      if (!el) return false
+      el.scrollIntoView({ block: 'start' })
+      return true
+    }, scrollTo)
+    if (!ok) logs.push('scroll target not found: ' + scrollTo)
+    await new Promise((r) => setTimeout(r, 800))
   }
 
   await p.screenshot({ path: `${OUT}/${prefix}-${id}${variant ? '-' + variant : ''}.png` })

@@ -5,6 +5,7 @@ import {
   SkeletonBinary, TextureAtlas, Vector2, VertexAttachment,
 } from '@esotericsoftware/spine-webgl'
 import { loadSpineOverrides, type SpineOverride, type ViewTransform } from '../data'
+import PlayPauseIcon from './PlayPauseIcon'
 
 /** 播放器的实时状态，供外部时间轴 / 按钮区读取 */
 export type SpineStatus = {
@@ -1338,15 +1339,73 @@ export default function SpinePlayer({
         canvas.addEventListener('wheel', onWheel, { passive: false })
         cleanups.push(() => canvas.removeEventListener('wheel', onWheel))
 
+        // ---- 触屏手势：单指拖拽平移、双指捏合缩放（以两指中点为锚点）----
+        // 用 pointer events 统一鼠标 / 触摸；pointers 记录当前按下的所有指针。
+        const pointers = new Map<number, { x: number; y: number }>()
         let dragging: 'view' | 'bg' | null = null
         let lx = 0
         let ly = 0
+        /** 捏合起点：初始两指间距 + 当时缩放 + 中点对应的世界坐标 */
+        let pinch: { dist: number; zoom: number; wx: number; wy: number } | null = null
+        /** 双击复位：最近一次落点的时间/坐标（触屏 dblclick 不一定可靠，自己判定） */
+        let lastTap = 0
+        let lastTapX = 0
+        let lastTapY = 0
+        let downX = 0
+        let downY = 0
+        /** 本次手势出现过两指（捏合），抬起时不做双击判定 */
+        let multiTouch = false
+
+        const midOf = () => {
+          let x = 0, y = 0
+          pointers.forEach((p) => { x += p.x; y += p.y })
+          return { x: x / Math.max(1, pointers.size), y: y / Math.max(1, pointers.size) }
+        }
+        const distOf = () => {
+          const it = pointers.values()
+          const a = it.next().value!
+          const b = it.next().value!
+          return Math.hypot(a.x - b.x, a.y - b.y)
+        }
+        /** 屏幕坐标（相对画布中心）→ 世界坐标 */
+        const screenToWorld = (clientX: number, clientY: number) => {
+          const rect = canvas.getBoundingClientRect()
+          const mx = clientX - rect.left - rect.width / 2
+          const my = clientY - rect.top - rect.height / 2
+          const w = worldPerPx()
+          return { mx, my, wx: view.cx + mx * w, wy: view.cy - my * w }
+        }
+
         const onDown = (e: PointerEvent) => {
           if (e.button !== 0) return
           // 运镜开启时锁定取景：不接受拖拽（仅大招 cut-in，calib 调试除外）
           if (cinemaLock() && !calibOnRef.current) return
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+          try { canvas.setPointerCapture(e.pointerId) } catch { /* ignore */ }
+          downX = e.clientX
+          downY = e.clientY
+
+          if (pointers.size === 2) {
+            // 进入捏合：记下起始间距 / 缩放 / 中点世界坐标，取消单指拖拽与相机跟拍
+            multiTouch = true
+            const mid = midOf()
+            const anchor = screenToWorld(mid.x, mid.y)
+            pinch = {
+              dist: Math.max(1, distOf()),
+              zoom: view.zoom,
+              wx: anchor.wx,
+              wy: anchor.wy,
+            }
+            dragging = null
+            follow = false
+            canvas.style.cursor = 'grabbing'
+            return
+          }
+          if (pointers.size > 2) return
+
+          // 单指：与原来相同的拖拽逻辑（含 calib 背景板）
           dragging = 'view'
-          follow = false // 拖拽接管视图
+          follow = false
           // 校准模式：按在「当前显示的背景板」上时，拖拽改为移动背景板
           //（其余区域仍是移动视角）
           if (calibOnRef.current) {
@@ -1358,10 +1417,32 @@ export default function SpinePlayer({
           }
           lx = e.clientX
           ly = e.clientY
-          canvas.setPointerCapture(e.pointerId)
           canvas.style.cursor = 'grabbing'
         }
+
         const onMove = (e: PointerEvent) => {
+          if (!pointers.has(e.pointerId)) return
+          pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+          // 双指捏合：缩放 + 中点拖动。始终保持捏合开始时中点下的世界坐标
+          // 落在当前中点，于是缩放围绕两指中心、同时支持双指整体平移。
+          if (pointers.size >= 2 && pinch) {
+            const dist = distOf()
+            const mid = midOf()
+            const rect = canvas.getBoundingClientRect()
+            const mx = mid.x - rect.left - rect.width / 2
+            const my = mid.y - rect.top - rect.height / 2
+            const next = Math.min(6, Math.max(0.5, pinch.zoom * (dist / pinch.dist)))
+            view.zoom = next
+            const w1 = 1 / (fitScale * view.zoom)
+            view.cx = pinch.wx - mx * w1
+            view.cy = pinch.wy + my * w1
+            zoom = next
+            emit(true)
+            apply()
+            return
+          }
+
           if (!dragging) return
           if (dragging === 'bg') {
             // 拖背景板：像素位移 → 世界位移 → side0 的百分比（与滑杆同一套数值）
@@ -1393,10 +1474,35 @@ export default function SpinePlayer({
           ly = e.clientY
           apply()
         }
+
         const onUp = (e: PointerEvent) => {
-          dragging = null
+          pointers.delete(e.pointerId)
           try { canvas.releasePointerCapture(e.pointerId) } catch { /* ignore */ }
-          canvas.style.cursor = 'grab'
+          if (pointers.size < 2) pinch = null
+          if (pointers.size === 1) {
+            // 捏合退回单指：把拖拽基点重置到剩余手指，避免视图跳变
+            const p = pointers.values().next().value!
+            lx = p.x
+            ly = p.y
+            dragging = 'view'
+          } else if (pointers.size === 0) {
+            dragging = null
+          }
+          // 触屏双击复位（鼠标走原生 dblclick）：需是一次没怎么移动的轻点、且非捏合手势
+          if (e.type === 'pointerup' && e.pointerType !== 'mouse' && !multiTouch &&
+              Math.hypot(e.clientX - downX, e.clientY - downY) < 24) {
+            const now = performance.now()
+            if (now - lastTap < 320 && Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < 32) {
+              fit(true)
+              lastTap = 0
+            } else {
+              lastTap = now
+              lastTapX = e.clientX
+              lastTapY = e.clientY
+            }
+          }
+          if (pointers.size === 0) multiTouch = false
+          canvas.style.cursor = cinemaLock() && !calibOnRef.current ? 'default' : 'grab'
         }
         canvas.addEventListener('pointerdown', onDown)
         canvas.addEventListener('pointermove', onMove)
@@ -1590,7 +1696,7 @@ export default function SpinePlayer({
           <img className="spine-scene-bg" ref={sceneBg2Ref} src={sceneBg2} alt="" draggable={false} />
         )}
         <canvas ref={canvasRef} />
-        {controls && <div className="spine-hint">滚轮缩放 · 拖拽平移 · 双击复位 · 空格播放/暂停</div>}
+        {controls && <div className="spine-hint">滚轮 / 捏合缩放 · 拖拽平移 · 双击复位 · 空格播放/暂停</div>}
       </div>
       {calib && sceneBg && (
         <div
@@ -1677,8 +1783,11 @@ export default function SpinePlayer({
       )}
       {controls && (
         <div className="spine-bar">
-          <button className="sp-btn" onClick={() => localCtrl.current?.toggle()}>
-            {ui.paused ? '▶ 播放' : '⏸ 暂停'}
+          <button className="sp-btn" onClick={() => localCtrl.current?.toggle()} title="播放 / 暂停（空格）">
+            <span className="sp-btn-pause">
+              <PlayPauseIcon playing={!ui.paused} size="11" />
+              {ui.paused ? '播放' : '暂停'}
+            </span>
           </button>
           {ui.anims.length > 1 && (
             <select value={ui.current} onChange={(e) => localCtrl.current?.setAnim(e.target.value)}>

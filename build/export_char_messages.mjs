@@ -52,6 +52,37 @@ const ROOM_ALIAS = {
   vestitactical: 94,     // 贝斯蒂：战术升级
 }
 
+// 手工兜底：发言人 slug → 角色。这些是聊天里的化名账号，按英文名/常规路径解析不到本人：
+// - 「玫瑰」(rose) 是罗珊娜的假名——聊天原文自己就点破了
+//   （"是我，罗珊娜" / "上面怎么写着玫瑰？" / "那是假名"），按英文名会撞上蔷花(Rose)
+// - 「黑玫瑰」(blackrose) 是梅登的外号（吉萝婷剧情里的暗中活动身份）
+// - 「BOOM GUY」(boomguy) 是伊莱格在指挥官室事件里用的化名档案（npc_399）
+// - 「蓝色EZS」(blueezs) 是海伦——"我是海伦"（黄金海盗活动）
+// - 「见义勇为的侠客」(loyalfighter) 是牡丹——"是牡丹吗？""嗯，是我…不想被舒格发现"
+// - 「求生专家？」(survivor) 是托比——"我是托比，呵呵呵-_-||"
+// - 「丘比特娜嘉/丘比特蒂亚」(cupidnaga/cupidtia) 是娜嘉/蒂亚——成员表 icon 就指向
+//   本人立绘（si_c450_00_s / si_c451_00_s）
+// - 「未知」(noname) 是尼罗——猫咪群聊里猫爪打字 "ni'罗"
+// - 「玛丽安」(marian) 本体就是神罚（序章后遇袭改造）；成员表 icon 本来就是
+//   si_c260_00_s（神罚立绘）。反击部队群聊里的玛丽安消息归到神罚名下
+const SENDER_ALIAS = {
+  rose: 280,
+  blackrose: 181,
+  boomguy: 500,
+  blueezs: 352,
+  loyalfighter: 281,
+  survivor: 192,
+  cupidnaga: 450,
+  cupidtia: 451,
+  noname: 380,
+  marian: 260,
+}
+
+// 化名「账号」：游戏里以这个账号直接开聊的（纯化名发言人房间按化名私聊呈现）。
+// marian 只是身份重定向——反击部队群聊是真群聊，marian_P 私聊房的标题
+// 由房间表（ROOM_ALIAS marianp）决定，都不走化名私聊分支
+const ALIAS_CHAT_SLUGS = new Set(['rose', 'blackrose', 'boomguy'])
+
 // ---------- 通用 MPK 记录读取 ----------
 
 function makeReader(buf, start = 0) {
@@ -218,6 +249,7 @@ function main() {
   /** slug → characters.json 的角色 id */
   function charOfSlug(slug) {
     if (!slug) return null
+    if (SENDER_ALIAS[slug] && charById.has(SENDER_ALIAS[slug])) return SENDER_ALIAS[slug]
     const mem = memberBySlug.get(slug)
     if (mem) {
       const key = mem.nameKey.split(':')[1] || ''
@@ -303,6 +335,8 @@ function main() {
   const outItems = {}
   const skipped = []
   const warnings = []
+  /** 化名账号聊天（玫瑰/黑玫瑰这类）：排序时放在角色自己的私聊后面 */
+  const aliasRooms = new Set()
 
   for (const [roomId, list] of byRoom) {
     const group = list[0].group
@@ -315,14 +349,32 @@ function main() {
     let title = null
     let memberSlugs = null
 
+    // 化名账号聊天：整个房间只有化名在发言。游戏里这段会话直接以「玫瑰」这样的
+    // 化名显示（罗珊娜用假名跟指挥官聊），不挂在群聊名目下——按私聊呈现：
+    // 标题 = 化名，成员 = 本人。不新建角色实体，发言人/头像都归到本人名下
+    // （化名在成员表里的 icon 本来就指向本人立绘，如 rose 是 si_c280_01_s）
+    const senderSlugs = [...new Set(list.map((r) => r.sender).filter(Boolean))]
+    const aliasOnly = senderSlugs.length > 0
+      && senderSlugs.every((s) => ALIAS_CHAT_SLUGS.has(s))
+    if (aliasOnly) {
+      for (const s of senderSlugs) ids.add(SENDER_ALIAS[s])
+      title = characterName(localeDb, memberBySlug.get(senderSlugs[0])?.nameKey)
+        || charById.get(SENDER_ALIAS[senderSlugs[0]])?.name || null
+      aliasRooms.add(roomId)
+    }
+
     // 顺序：房间表精确匹配 → 精确角色名（皮肤私聊）→ 群组表精确匹配 →
     // 前缀房间 → 宽松角色名前缀。`claymore` 这类群聊 slug 以角色英文名开头，
     // 不能让宽松前缀抢先把它判成私聊。
-    const exactRoom = roomById.get(key)
+    // 先试带后缀的完整房间 id（boomsday_01 这类在房间表里有自己的记录），
+    // 再退回剥掉序号后的 key（killthelord 这类群聊房间）
+    const exactRoom = aliasOnly
+      ? undefined
+      : roomById.get(roomId.replace(/^m_(?:ex|mainafter)_/, '')) || roomById.get(key)
     if (exactRoom) {
       memberSlugs = exactRoom.members
       title = characterName(localeDb, exactRoom.nameKey)
-    } else {
+    } else if (!aliasOnly) {
       const directId = charOfRoomKey(key, false)
       if (directId) {
         ids.add(directId)
@@ -331,21 +383,21 @@ function main() {
       }
     }
 
-    if (!direct && !memberSlugs) {
+    if (!aliasOnly && !direct && !memberSlugs) {
       const groupRoom = roomById.get(group)
       if (groupRoom) {
         memberSlugs = groupRoom.members
         title = characterName(localeDb, groupRoom.nameKey)
       }
     }
-    if (!direct && !memberSlugs) {
+    if (!aliasOnly && !direct && !memberSlugs) {
       const prefixRooms = rooms.filter((r) => r.id.startsWith(key + '_'))
       if (prefixRooms.length) {
         memberSlugs = [...new Set(prefixRooms.flatMap((r) => r.members))]
         title = prefixRooms.map((r) => characterName(localeDb, r.nameKey)).find(Boolean) || null
       }
     }
-    if (!direct && !memberSlugs) {
+    if (!aliasOnly && !direct && !memberSlugs) {
       const directId = charOfRoomKey(key, true)
       if (directId) {
         ids.add(directId)
@@ -442,13 +494,14 @@ function main() {
     if (!title) warnings.push(`房间 ${roomId} 没有标题（群组 ${group}）`)
   }
 
-  // 每个角色的房间排序：私聊 → 群聊；巴拉 → 主线；按房间号
+  // 每个角色的房间排序：私聊 → 化名私聊 → 群聊；巴拉 → 主线；按房间号
   const rank = (id) => {
     const r = outRooms[id]
     const num = Number(id.match(/_(\d+)$/)?.[1] || 0)
     return [
       r.c === 'main' ? 1 : 0,
       r.m.length > 1 ? 1 : 0,
+      aliasRooms.has(id) ? 1 : 0,
       num,
       id,
     ]

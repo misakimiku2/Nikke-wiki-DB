@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink, Route, Routes } from 'react-router-dom'
+import { Link, NavLink, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import Home from './pages/Home'
 import Characters from './pages/Characters'
 import CharacterDetail from './pages/CharacterDetail'
@@ -10,6 +10,21 @@ import CgGallery from './pages/CgGallery'
 import CgView from './pages/CgView'
 import { applyTheme, getInitialTheme, type Theme } from './theme'
 
+/**
+ * 点进新页面回到顶部。之前没有这一步，从列表页深处点进角色页会保留列表的
+ * 滚动位置，直接落在页面中段（马士丁这类短页面正好是巴拉短信区）。
+ * 浏览器前进/后退（POP）不抢，保留原位置。
+ */
+function ScrollToTop() {
+  const { pathname } = useLocation()
+  const navType = useNavigationType()
+  useEffect(() => {
+    if (navType === 'POP') return
+    window.scrollTo(0, 0)
+  }, [pathname, navType])
+  return null
+}
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
 
@@ -19,6 +34,7 @@ export default function App() {
 
   return (
     <>
+      <ScrollToTop />
       <header className="topbar">
         <div className="topbar-in">
           <Link to="/" className="brand">

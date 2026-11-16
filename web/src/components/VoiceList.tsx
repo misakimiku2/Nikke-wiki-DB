@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import PlayPauseIcon from './PlayPauseIcon'
 import type { CharVoice, CharVoiceCat, CharVoiceData } from '../data'
 
 /**
@@ -313,7 +314,7 @@ export default function VoiceList({
                 style={on ? { color: accent, borderColor: accent } : undefined}
                 aria-label={on && playing ? '暂停' : '播放'}
               >
-                {on && playing ? '⏸' : '▶'}
+                <PlayPauseIcon playing={on && playing} size="12" />
               </button>
               <div className="voice-main">
                 <div className="voice-title">

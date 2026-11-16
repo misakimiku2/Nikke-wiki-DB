@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import ImageViewer, { type ImageViewerApi } from '../components/ImageViewer'
+import PlayPauseIcon from '../components/PlayPauseIcon'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
   loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, nf, whereOf,
@@ -324,7 +325,7 @@ export default function CgView() {
             <div className="cv-error">模型加载失败，已保留静态合成图 · {modelError}</div>
           )}
           {toast && <div className="cv-toast">{toast}</div>}
-          <div className="cv-hint">滚轮缩放 · 左键拖拽 · 双击复位</div>
+          <div className="cv-hint">滚轮 / 双指捏合缩放 · 拖拽平移 · 双击复位</div>
         </div>
 
         <div className="cv-controls">
@@ -335,7 +336,7 @@ export default function CgView() {
               disabled={!isSpine || !modelReady}
               title="播放 / 暂停（空格）"
             >
-              {canAnimate && status.playing ? '⏸' : '▶'}
+              <PlayPauseIcon playing={canAnimate && status.playing} size="15" />
             </button>
             <span className="cv-time">{fmtTime(status.time)}</span>
             <input

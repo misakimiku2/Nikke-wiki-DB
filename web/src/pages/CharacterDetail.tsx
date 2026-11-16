@@ -2,13 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
-  loadCharImages, loadCharMessages, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories, loadCharSpine,
-  loadCharVoices, loadCharacters, mainBase, nf, pickBurstAnim, skillcutModelName, tintFor, variantsOf,
-  type CharArtMap, type CharImages, type Character, type CharMessagesData, type CharSkill, type CharSkillsData,
-  type CharStoriesData, type CharVoiceData, type SkillcutIndex,
+  loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
+  loadCharSpine, loadCharVoices, loadCharacters, loadCostumeTexts, loadSpecTexts, mainBase, nf, pickBurstAnim,
+  skillcutModelName, tintFor, variantsOf,
+  type CharArtMap, type CharImages, type CharMetaMap, type Character, type CharMessagesData, type CharSkill,
+  type CharSkillsData, type CharStoriesData, type CharVoiceData, type CostumeTextMap, type SkillcutIndex,
+  type SpecTexts,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
+import PlayPauseIcon from '../components/PlayPauseIcon'
 import MessageChat from '../components/MessageChat'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import VoiceList from '../components/VoiceList'
@@ -50,6 +53,45 @@ function pickBurstChips(anims: string[]): { label: string; anim: string }[] {
   const idle = anims.find((a) => /(^|_)idle/i.test(a))
   if (idle && idle !== burst) out.push({ label: '待机', anim: idle })
   return out
+}
+
+/** 概览卡的枚举显示名（char_meta.json 的数值枚举 → 官方中文名） */
+const SPEC_CORP: Record<number, string> = {
+  1: '极乐净土', 2: '米西利斯', 3: '泰特拉', 4: '朝圣者', 7: '联动',
+}
+/** 各枚举对应的游戏图标（public/metaicon/，白色 sprite，前端 mask 染色） */
+const SPEC_CORP_ICN: Record<number, string> = {
+  1: 'corp_icn_1', 2: 'corp_icn_2', 3: 'corp_icn_3', 4: 'corp_icn_4',
+}
+const SPEC_CLS: Record<number, string> = { 1: '火力型', 2: '防御型', 3: '辅助型' }
+const SPEC_CLS_ICN: Record<number, string> = {
+  1: 'cls_attacker', 2: 'cls_defender', 3: 'cls_supporter',
+}
+const SPEC_WEAPON: Record<string, string> = {
+  ar: '步枪', smg: '冲锋枪', sg: '霰弹枪', rl: '发射器', sr: '狙击步枪', mg: '机枪',
+}
+/** 每种武器在游戏里就是一个专属准心图标（icn_weapon_ar/smg/...） */
+const SPEC_BURST: Record<number, string> = { 1: 'Ⅰ', 2: 'Ⅱ', 3: 'Ⅲ', 5: 'Ⅰ·Ⅱ·Ⅲ' }
+
+/** 企业弹窗文案：游戏内无官方说明，人工撰写（与社区共识一致） */
+const SPEC_CORP_DESC: Record<number, string[]> = {
+  1: ['三大军工企业之一，倾向稳健持久的战斗风格，擅长防御与续航。'],
+  2: ['三大军工企业之一，倾向激进的高火力路线，热衷尖端科技。'],
+  3: ['三大军工企业之一，擅长特殊效果与辅助玩法，业务遍及娱乐产业。'],
+  4: ['游离于人类编制之外的传奇妮姬，行踪神秘，实力超群。'],
+  7: ['与外部作品联动登场的特别角色，无所属企业。'],
+}
+/** 爆裂弹窗文案：游戏内无独立的阶段说明文本，按战斗机制人工撰写 */
+const SPEC_BURST_DESC: Record<number, string[]> = {
+  1: ['爆裂循环第一档发动的爆裂技能。战斗中爆裂按 Ⅰ → Ⅱ → Ⅲ 的顺序循环推进。'],
+  2: ['爆裂循环第二档发动的爆裂技能。战斗中爆裂按 Ⅰ → Ⅱ → Ⅲ 的顺序循环推进。'],
+  3: ['爆裂循环第三档发动的爆裂技能。战斗中爆裂按 Ⅰ → Ⅱ → Ⅲ 的顺序循环推进。'],
+  5: ['可在 Ⅰ / Ⅱ / Ⅲ 任意档位发动的爆裂技能。'],
+}
+
+/** 概览卡图标：白色 sprite 走 mask 染 currentColor（--icn 传图片地址，双主题自适应） */
+function SpecIcon({ icn }: { icn: string }) {
+  return <i className="spec-icn" style={{ ['--icn' as string]: `url(/metaicon/${icn}.webp)` }} aria-hidden />
 }
 
 function animLabel(a: string): string {
@@ -159,6 +201,16 @@ export default function CharacterDetail() {
   const [voiceMap, setVoiceMap] = useState<Record<string, CharVoiceData>>({})
   const [msgData, setMsgData] = useState<CharMessagesData | null>(null)
   const [art, setArt] = useState<CharArtMap>({})
+  /** 皮肤文案：名字 / 获取方式 / 专属档案介绍（换肤后介绍会变的来源） */
+  const [costumeTexts, setCostumeTexts] = useState<CostumeTextMap>({})
+  /** 游戏元数据：部队 / 企业 / 武器 / 爆裂 / 兵种 */
+  const [charMeta, setCharMeta] = useState<CharMetaMap>({})
+  /** 概览卡字段的官方说明文本（武器/兵种），企业/爆裂/部队由前端生成 */
+  const [specTexts, setSpecTexts] = useState<SpecTexts>({ weapon: {}, cls: {}, element: {}, corp: {}, squad: {} })
+  /** 概览卡展开态：默认 6 项，右下角箭头展开其余 */
+  const [specOpen, setSpecOpen] = useState(false)
+  /** 概览卡字段说明弹窗（与技能词条弹窗同款样式） */
+  const [specPopup, setSpecPopup] = useState<{ title: string; lines: string[] } | null>(null)
   const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
@@ -180,6 +232,9 @@ export default function CharacterDetail() {
     loadCharVoices().then(setVoiceMap).catch(() => {})
     loadCharMessages().then(setMsgData).catch(() => {})
     loadCharArt().then(setArt).catch(() => {})
+    loadCostumeTexts().then(setCostumeTexts).catch(() => {})
+    loadCharMeta().then(setCharMeta).catch(() => {})
+    loadSpecTexts().then(setSpecTexts).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -188,6 +243,7 @@ export default function CharacterDetail() {
     setStatus(EMPTY)
     setModelReady(false)
     setModelError(false)
+    setSpecOpen(false)
   }, [id])
 
   // 换皮肤 / 切姿态时也要把状态归零，否则控制条会短暂显示上一套模型的动作与时长
@@ -200,9 +256,12 @@ export default function CharacterDetail() {
   }, [pick, pose])
 
   const c = list?.find((x) => String(x.id) === id) || null
-  // 旧版立绘（例如 c010_01 Rapi_old）不是当前皮肤，混在切换条里会让人以为是错图
+  // 旧版渲染图（art 表里 old: true）不是皮肤，混在切换条里会让人以为是错图；
+  // c010_01 这类曾被误标的，已按 ScenarioCharacterSettingTable / 皮肤表核实后恢复
   const vars = (c ? variantsOf(imgs, c.id) : []).filter((v) => !art[v]?.old)
   const current = pick || (c ? mainBase(imgs, c.id) : null) || ''
+  /** 选中皮肤的文案；基础皮没有条目，介绍回退到角色默认（c.intro） */
+  const ct = costumeTexts[current]
   const artName = current ? artLabel(art, current) : ''
   const currentLabel = !artName ? '' : (c && !artName.startsWith(c.name) ? `${c.name} · ${artName}` : artName)
   const staticSrc = current ? charArt(current) : ''
@@ -334,17 +393,119 @@ export default function CharacterDetail() {
   /** 校准模式：URL hash 带 calib=1 时在大招视图显示背景板微调面板（人工对齐采数） */
   const calibMode = /[?&]calib=1/.test(window.location.hash)
 
+  /** 概览卡条目：游戏元数据（部队/企业/武器/爆裂/兵种）优先，缺失的自动跳过；popup = 点击弹窗内容 */
+  const meta = charMeta[String(c.id)]
+  const specItems: { key: string; label: string; node: ReactNode; style?: CSSProperties; popup?: { title: string; lines: string[] } }[] = []
+  if (meta?.squad) {
+    // 同部队妮姬：从全站元数据里捞同 squad 的角色名
+    const mates = Object.keys(charMeta)
+      .filter((id) => id !== String(c.id) && charMeta[id]?.squad === meta.squad)
+      .map((id) => list.find((x) => String(x.id) === id)?.name)
+      .filter(Boolean)
+    // 部队官方世界观介绍（游戏内部队档案原文），后面附同部队成员
+    const lore = specTexts.squad[meta.squad]?.split('\n') ?? ['该妮姬在游戏档案中的所属部队。']
+    specItems.push({
+      key: 'squad', label: '部队', node: meta.squad, style: { fontSize: 15 },
+      popup: {
+        title: `关于【部队 · ${meta.squad}】`,
+        lines: [
+          ...lore,
+          mates.length ? `同部队的妮姬：${mates.join('、')}` : '目前站内暂无其他收录的同部队妮姬。',
+        ],
+      },
+    })
+  }
+  if (meta?.corp && SPEC_CORP[meta.corp]) {
+    // 企业官方世界观介绍（回收研究所文本）；联动(7)无官方文本，回退自拟
+    const corpLines = specTexts.corp[String(meta.corp)]?.desc?.split('\n') ?? SPEC_CORP_DESC[meta.corp]
+    specItems.push({
+      key: 'corp', label: '企业', style: { fontSize: 15 },
+      node: (
+        <span className="spec-weapon">
+          {SPEC_CORP_ICN[meta.corp] && <SpecIcon icn={SPEC_CORP_ICN[meta.corp]} />}
+          {SPEC_CORP[meta.corp]}
+        </span>
+      ),
+      popup: { title: `关于【企业 · ${SPEC_CORP[meta.corp]}】`, lines: corpLines },
+    })
+  }
+  if (meta?.weapon && SPEC_WEAPON[meta.weapon]) {
+    const wt = specTexts.weapon[meta.weapon]
+    specItems.push({
+      key: 'weapon', label: '武器', style: { fontSize: 15 },
+      node: (
+        <span className="spec-weapon">
+          <SpecIcon icn={`weapon_${meta.weapon}`} />
+          {SPEC_WEAPON[meta.weapon]}
+        </span>
+      ),
+      popup: wt?.desc ? { title: `关于【武器 · ${wt.name || SPEC_WEAPON[meta.weapon]}】`, lines: [wt.desc] } : undefined,
+    })
+  }
+  if (meta?.burst && SPEC_BURST[meta.burst]) {
+    specItems.push({
+      key: 'burst', label: '爆裂',
+      // 爆裂徽章用游戏原图标；5 = 全爆裂（小红帽），并列显示 Ⅰ Ⅱ Ⅲ 三枚
+      node: meta.burst <= 3 ? (
+        <SpecIcon icn={`burst_${meta.burst}`} />
+      ) : (
+        <span className="spec-weapon">
+          {[1, 2, 3].map((b) => <SpecIcon key={b} icn={`burst_${b}`} />)}
+        </span>
+      ),
+      popup: { title: `关于【爆裂 · ${SPEC_BURST[meta.burst]}】`, lines: SPEC_BURST_DESC[meta.burst] },
+    })
+  }
+  if (meta?.cls && SPEC_CLS[meta.cls]) {
+    const ct = specTexts.cls[String(meta.cls)]
+    specItems.push({
+      key: 'cls', label: '兵种', style: { fontSize: 15 },
+      node: (
+        <span className="spec-weapon">
+          {SPEC_CLS_ICN[meta.cls] && <SpecIcon icn={SPEC_CLS_ICN[meta.cls]} />}
+          {SPEC_CLS[meta.cls]}
+        </span>
+      ),
+      popup: ct?.desc ? { title: `关于【兵种 · ${ct.name || SPEC_CLS[meta.cls]}】`, lines: [ct.desc] } : undefined,
+    })
+  }
+  specItems.push(
+    { key: 'lines', label: '剧情台词', node: c.lines > 0 ? nf(c.lines) : '—' },
+    { key: 'cv', label: '声优', node: c.cv || '未收录', style: { fontSize: 15 } },
+    { key: 'arts', label: '立绘', node: vars.length || '—' },
+    { key: 'gid', label: 'GAME ID', node: c.id, style: { fontSize: 15 } },
+    { key: 'ja', label: '日文名', node: c.names.ja || '—', style: { fontSize: 15 } },
+    { key: 'ko', label: '韩文名', node: c.names.ko || '—', style: { fontSize: 15 } },
+  )
+  /** 默认显示 6 个（与旧版一致），其余收进箭头展开；展开后再点收回 */
+  const SPEC_DEFAULT = 6
+  const specShown = specOpen ? specItems : specItems.slice(0, SPEC_DEFAULT)
+  const specHidden = specItems.length - SPEC_DEFAULT
+  /** 首项带角色高亮色（不少 NPC 没有部队，高亮固定在部队字段会落空） */
+  if (specItems.length > 0) {
+    specItems[0].style = { ...specItems[0].style, color: accentFor(c.id) }
+  }
+
+  /** 弹窗：技能词条弹窗与概览卡说明弹窗共用同一套样式 */
+  const popup = termPopup
+    ? { title: `关于【${termPopup.term}】`, lines: skillData.terms[termPopup.gid] || [] }
+    : specPopup
+  const closePopup = () => {
+    setTermPopup(null)
+    setSpecPopup(null)
+  }
+
   return (
     <div className="detail-page">
-      {termPopup && (
-        <div className="word-modal" onClick={() => setTermPopup(null)}>
+      {popup && (
+        <div className="word-modal" onClick={closePopup}>
           <div className="word-card" onClick={(e) => e.stopPropagation()}>
-            <button className="word-close" onClick={() => setTermPopup(null)} aria-label="关闭">×</button>
-            <div className="word-title">关于【{termPopup.term}】</div>
-            {(skillData.terms[termPopup.gid] || []).map((line, i) => (
+            <button className="word-close" onClick={closePopup} aria-label="关闭">×</button>
+            <div className="word-title">{popup.title}</div>
+            {popup.lines.map((line, i) => (
               <div className="word-line" key={i}><i>◇</i><span>{line}</span></div>
             ))}
-            {(skillData.terms[termPopup.gid] || []).length === 0 && (
+            {popup.lines.length === 0 && (
               <div className="word-line"><i>◇</i><span>暂无这个词组的解释文本。</span></div>
             )}
           </div>
@@ -452,14 +613,19 @@ export default function CharacterDetail() {
                     key={v}
                     className={v === current ? 'on' : ''}
                     onClick={() => setPick(v)}
-                    title={spine.has(v) ? `${label} · 可动` : label}
+                    title={`${spine.has(v) ? `${label} · 可动` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
                   >
                     <img src={charThumb(v, mi)} alt={label} loading="lazy" />
                     {spine.has(v) && <i className="vt-live" />}
                   </button>
                 )
               })}
-              <div className="variant-caption">{currentLabel}</div>
+              <div className="variant-caption">
+                {currentLabel}
+                {ct?.desc && (
+                  <span className="variant-caption-desc"> · {ct.desc.replace(/\n/g, ' ')}</span>
+                )}
+              </div>
             </div>
           )}
 
@@ -519,7 +685,7 @@ export default function CharacterDetail() {
               </div>
               <div className="char-bar-row">
                 <button className="cb-play" onClick={toggle} disabled={!modelReady} title="播放 / 暂停（空格）">
-                  {status.playing ? '⏸' : '▶'}
+                  <PlayPauseIcon playing={status.playing} size="15" />
                 </button>
                 <label className="cb-speed">
                   <select
@@ -565,7 +731,9 @@ export default function CharacterDetail() {
           <h1 className="detail-title">{c.name}</h1>
           <div className="detail-latin">{c.names.en || '—'}</div>
 
-          {c.intro && <div className="detail-quote">「{c.intro}」</div>}
+          {(ct?.intro || c.intro) && (
+            <div className="detail-quote">「{ct?.intro || c.intro}」</div>
+          )}
 
           <div className="detail-desc">
             {desc.length > 0 ? (
@@ -576,31 +744,29 @@ export default function CharacterDetail() {
             {c.descEn && <div className="en">{c.descEn}</div>}
           </div>
 
-          <div className="spec">
-            <div>
-              <span>剧情台词</span>
-              <b style={{ color: accentFor(c.id) }}>{c.lines > 0 ? nf(c.lines) : '—'}</b>
-            </div>
-            <div>
-              <span>立绘</span>
-              <b>{vars.length || '—'}</b>
-            </div>
-            <div>
-              <span>声优</span>
-              <b style={{ fontSize: 15 }}>{c.cv || '未收录'}</b>
-            </div>
-            <div>
-              <span>GAME ID</span>
-              <b className="mono" style={{ fontSize: 15 }}>{c.id}</b>
-            </div>
-            <div>
-              <span>日文名</span>
-              <b style={{ fontSize: 15 }}>{c.names.ja || '—'}</b>
-            </div>
-            <div>
-              <span>韩文名</span>
-              <b style={{ fontSize: 15 }}>{c.names.ko || '—'}</b>
-            </div>
+          <div className={`spec ${specItems.length > SPEC_DEFAULT ? 'spec-has-more' : ''} ${specOpen ? 'spec-open' : ''}`}>
+            {specShown.map((it, i) => (
+              <div
+                key={it.key}
+                className={`${i >= SPEC_DEFAULT ? 'spec-extra' : ''} ${it.popup ? 'spec-click' : ''}`}
+                onClick={it.popup ? () => setSpecPopup(it.popup!) : undefined}
+                title={it.popup ? '点击查看说明' : undefined}
+                role={it.popup ? 'button' : undefined}
+              >
+                <span>{it.label}</span>
+                <b className={it.key === 'gid' ? 'mono' : ''} style={it.style}>{it.node}</b>
+              </div>
+            ))}
+            {specHidden > 0 && (
+              <button
+                className="spec-toggle"
+                onClick={() => setSpecOpen((v) => !v)}
+                aria-expanded={specOpen}
+                title={specOpen ? '收起' : `展开其余 ${specHidden} 项`}
+              >
+                <i className="spec-toggle-arrow" aria-hidden />
+              </button>
+            )}
           </div>
 
           {skills && skills.length > 0 && (

@@ -36,9 +36,49 @@ export function tintFor(id: number): string {
   return `hsl(${h}, 55%, 26%)`
 }
 
+/* ---------- 角色副色调（accent） ---------- */
+
+/** WCAG 相对亮度（0–1），输入 sRGB 0–255 */
+function relLum(r: number, g: number, b: number): number {
+  const lin = (v: number) => {
+    const x = v / 255
+    return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+function hslRgb(h: number, s: number, l: number): [number, number, number] {
+  const a = (s / 100) * Math.min(l / 100, 1 - l / 100)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    return l / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+  }
+  return [f(0) * 255, f(8) * 255, f(4) * 255]
+}
+
+/** 浅色主题底色 --bg: #f4f1e8 */
+const LIGHT_BG_LUM = relLum(244, 241, 232)
+
+/**
+ * 浅色主题用的角色色。黄（伊莱格 60°）/ 黄绿（拉普拉斯 100°）/ 绿（马士丁 126°）
+ * 这类色相 62% 明度在白底上几乎看不见，蓝紫则本来就没问题——
+ * 所以不做色相分段，直接从 62% 往下压明度，压到对浅色底对比度 ≥ 3.2 为止。
+ */
+function readableAccent(h: number): string {
+  for (let l = 62; l >= 28; l--) {
+    if ((LIGHT_BG_LUM + 0.05) / (relLum(...hslRgb(h, 80, l)) + 0.05) >= 3.2)
+      return `hsl(${h}, 80%, ${l}%)`
+  }
+  return `hsl(${h}, 80%, 28%)`
+}
+
+/**
+ * 角色副色调，按当前 color-scheme 自动适配两种主题：
+ * 深色主题保持 62% 亮色（暗底上很清楚），浅色主题用 readableAccent 压暗版。
+ */
 export function accentFor(id: number): string {
   const h = (id * 53 + 200) % 360
-  return `hsl(${h}, 80%, 62%)`
+  return `light-dark(${readableAccent(h)}, hsl(${h}, 80%, 62%))`
 }
 
 async function getJSON<T>(path: string): Promise<T> {
@@ -141,6 +181,76 @@ export async function loadCharArt(): Promise<CharArtMap> {
 
 export function artLabel(art: CharArtMap, base: string): string {
   return art[base]?.n || base
+}
+
+/** 皮肤文案（来自 Locale_CharacterCostume + Locale_Character 的 {id}_{variant}_intro） */
+export type CostumeText = { name?: string; desc?: string; intro?: string }
+export type CostumeTextMap = Record<string, CostumeText>
+
+let cacheCostumeTexts: CostumeTextMap | null = null
+
+export async function loadCostumeTexts(): Promise<CostumeTextMap> {
+  if (cacheCostumeTexts) return cacheCostumeTexts
+  try {
+    cacheCostumeTexts = await getJSON<CostumeTextMap>('/data/costume_texts.json')
+  } catch {
+    cacheCostumeTexts = {}
+  }
+  return cacheCostumeTexts
+}
+
+/**
+ * 角色元数据（来自游戏静态表，export_char_meta.mjs 导出）：
+ * 兵种 cls（1 火力 / 2 防御 / 3 辅助）、企业 corp（1 极乐净土 / 2 米西利斯 / 3 泰特拉 / 4 朝圣者 / 7 联动）、
+ * 武器 weapon（ar/sg/rl/smg/sr/mg，由攻击技能射击表反查）、爆裂阶段 burst（1/2/3，5=全爆裂）、
+ * 部队 squad（群聊标题与官方部队名匹配，部分角色缺失）。
+ * 属性 element 字段待后续人工整理后并入。
+ */
+export type CharMeta = {
+  burst?: number | null
+  corp?: number | null
+  cls?: number | null
+  weapon?: string | null
+  squad?: string | null
+}
+export type CharMetaMap = Record<string, CharMeta>
+
+let cacheCharMeta: CharMetaMap | null = null
+
+export async function loadCharMeta(): Promise<CharMetaMap> {
+  if (cacheCharMeta) return cacheCharMeta
+  try {
+    cacheCharMeta = await getJSON<CharMetaMap>('/data/char_meta.json')
+  } catch {
+    cacheCharMeta = {}
+  }
+  return cacheCharMeta
+}
+
+/**
+ * 概览卡弹窗的官方说明文本（export_char_meta.mjs 导出）：
+ * 枪械类型/兵种/企业带官方名称与描述；squad 为部队世界观介绍（Locale_Character 的 squad_*_info）；
+ * 属性 desc 待人工属性表并入后使用。企业/部队均为游戏内原文（换行分段）。
+ */
+export type SpecTextEntry = { name?: string; desc?: string }
+export type SpecTexts = {
+  weapon: Record<string, SpecTextEntry>
+  cls: Record<string, SpecTextEntry>
+  element: Record<string, SpecTextEntry>
+  corp: Record<string, SpecTextEntry>
+  squad: Record<string, string>
+}
+
+let cacheSpecTexts: SpecTexts | null = null
+
+export async function loadSpecTexts(): Promise<SpecTexts> {
+  if (cacheSpecTexts) return cacheSpecTexts
+  try {
+    cacheSpecTexts = await getJSON<SpecTexts>('/data/spec_texts.json')
+  } catch {
+    cacheSpecTexts = { weapon: {}, cls: {}, element: {}, corp: {}, squad: {} }
+  }
+  return cacheSpecTexts
 }
 
 /* 角色技能说明（desc 模板里的 {description_value_NN} 由前端按等级填充） */
