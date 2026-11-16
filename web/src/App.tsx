@@ -39,7 +39,7 @@ export default function App() {
         <div className="topbar-in">
           <Link to="/" className="brand">
             <span className="brand-mark" />
-            NIKKE.DB
+            <span className="brand-text">NIKKE.DB</span>
           </Link>
           <nav className="nav">
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'on' : '')}>

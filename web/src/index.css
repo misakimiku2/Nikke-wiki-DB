@@ -2529,3 +2529,29 @@ img { display: block; }
   .cv-info { order: 3; border-left: 0; border-top: 1px solid var(--line); }
   .cv-dir-list { max-height: 190px; }
 }
+
+/* ================= 移动端顶栏适配 =================
+   顶栏原本没有断点：390px 下品牌 + 5 个导航 + 主题按钮需要 ~550px，
+   导航被压到换行（中文竖排两行），整页宽度撑到 480px，
+   移动端浏览器再把整页缩小 → 姿态按钮等全被挤在一起。
+   这里压缩尺寸 + 禁止导航换行；极窄屏只留六边形 logo。 */
+@media (max-width: 620px) {
+  .topbar-in { padding: 0 12px; gap: 10px; }
+  .brand { gap: 7px; font-size: 12px; letter-spacing: .06em; }
+  .brand-mark { width: 19px; height: 19px; }
+  .nav { gap: 2px; }
+  .nav a {
+    padding: 6px 7px; font-size: 11px; letter-spacing: .02em;
+    white-space: nowrap;
+  }
+  .theme-toggle { width: 32px; height: 32px; }
+}
+@media (max-width: 360px) {
+  .brand-text { display: none; }
+}
+
+/* 姿态切换按钮在 390px 上文字不能换行（避免立绘/射击/掩体/大招被挤成竖排） */
+.char-modes button { white-space: nowrap; }
+@media (max-width: 620px) {
+  .char-modes button { padding: 5px 9px; letter-spacing: .06em; }
+}
