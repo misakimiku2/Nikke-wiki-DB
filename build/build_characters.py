@@ -31,6 +31,13 @@ DB_PATH = os.path.join(ROOT, "data", "nikke.db")
 
 LANGS = ["zh-CN", "en", "ja", "ko", "zh-TW"]
 
+
+def clean_cv(s):
+    """Locale 里的声优值是「CV：石川由依」，去掉前缀只留名字。"""
+    if not s:
+        return None
+    return re.sub(r"^\s*CV\s*[:：]\s*", "", s, flags=re.I).strip() or None
+
 # NPC 的 Locale id 与立绘资源代号不一致时，显示用的 code 以实际立绘为准
 CODE_FIX = {
     909: "c914",   # 伯宁姆 Burningum
@@ -155,7 +162,7 @@ def build_characters(con_target):
     # 收集角色 ID
     ids = set()
     for key in data:
-        m = re.match(r"^(\d+)_(name|intro|cv)$", key)
+        m = re.match(r"^(\d+)_(name|intro|cv(?:_(?:ja|en|ko))?)$", key)
         if m:
             ids.add(int(m.group(1)))
     log(f"  角色 ID：{len(ids)} 个")
@@ -187,7 +194,7 @@ def build_characters(con_target):
             d.get("en"),
             d.get("ja"),
             g(f"{cid}_intro"),
-            g(f"{cid}_cv"),
+            clean_cv(g(f"{cid}_cv_ja")),
             1 if d.get("zh-CN") else 0,
         ))
 

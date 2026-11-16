@@ -862,6 +862,13 @@ img { display: block; }
   font-size: 10.5px; letter-spacing: .04em; color: var(--dim-2);
 }
 .voice-hint.err { color: #d97b72; }
+.voice-cv {
+  display: flex; flex-wrap: wrap; gap: 4px 16px;
+  padding: 7px 16px; border-bottom: 1px dashed var(--line);
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .04em; color: var(--dim);
+}
+.voice-cv b { font-weight: 600; color: var(--text-2); }
 
 .voice-list { display: flex; flex-direction: column; }
 .voice-row {

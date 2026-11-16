@@ -243,6 +243,10 @@ export type CharVoiceData = {
   n: number
   /** 中文语音条数 */
   zc?: number
+  /** 日配声优 */
+  cvj?: string
+  /** 中配声优 */
+  cvz?: string
   cats: CharVoiceCat[]
 }
 

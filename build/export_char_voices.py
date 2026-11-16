@@ -82,6 +82,14 @@ import zstandard as zstd  # noqa: E402
 
 TOKEN = re.compile(rb"[ -~]{4,}")
 VOICE_RE = re.compile(r"^(c\d+(?:_\d+)?)_(.+)$")
+CV_RE = re.compile(r"^\s*CV\s*[:：]\s*", re.I)
+
+
+def clean_cv(s: str | None) -> str | None:
+    if not s:
+        return None
+    return CV_RE.sub("", s).strip() or None
+
 
 CATS = [
     ("lobby", "大厅"),
@@ -594,6 +602,16 @@ def main():
         print(f"  中文语音覆盖 {n_zh} 条，{sum(1 for v in payload.values() if v.get('fz'))} 个角色")
     elif not args.no_cn:
         print(f"  ! 未找到国服语音目录，跳过中文：{CN_AB}")
+
+    # 声优：日配取国际服 {id}_cv_ja，中配取国服 {id}_cv_zh_cn
+    for cid, item in payload.items():
+        n = int(cid)
+        ja = clean_cv((lines.get(f"{n}_cv_ja") or {}).get("zh"))
+        cn = clean_cv(cn_lines.get(f"{n}_cv_zh_cn"))
+        if ja:
+            item["cvj"] = ja
+        if cn:
+            item["cvz"] = cn
 
     # --only / --limit 调试时不要冲掉其余角色的索引
     merged: dict[str, dict] = {}

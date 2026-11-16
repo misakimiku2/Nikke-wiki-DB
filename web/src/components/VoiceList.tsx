@@ -278,6 +278,12 @@ export default function VoiceList({
           </button>
         </div>
       </div>
+      {(data.cvj || data.cvz) && (
+        <div className="voice-cv">
+          {data.cvj && <span>日配 CV <b>{data.cvj}</b></span>}
+          {data.cvz && <span>中配 CV <b>{data.cvz}</b></span>}
+        </div>
+      )}
       {!hasZh && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
       {lang === 'zh' && missingZh > 0 && (
         <div className="voice-hint">国服缺少 {missingZh} 条中文语音，可切到日配查看。</div>
