@@ -817,6 +817,88 @@ img { display: block; }
 }
 .story-ep:hover .story-ep-go { color: var(--acc); transform: translateX(2px); }
 
+/* --- 角色语音（音频雪碧图 + 分段播放） --- */
+.voice { display: flex; flex-direction: column; }
+.voice-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px dashed var(--line);
+}
+.voice-cats { display: flex; flex-wrap: wrap; gap: 6px; }
+.voice-cats button {
+  padding: 5px 10px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .04em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+  transition: color .15s, background .15s, border-color .15s;
+}
+.voice-cats button b { margin-left: 4px; font-weight: 700; }
+.voice-cats button:hover { color: var(--text); border-color: var(--line-2); }
+.voice-cats button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.voice-ja {
+  flex: 0 0 auto; padding: 5px 9px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .06em;
+  background: transparent; color: var(--dim-2); border: 1px dashed var(--line-2);
+  transition: color .15s, border-color .15s;
+}
+.voice-ja:hover { color: var(--text); }
+.voice-ja.on { color: var(--acc); border-color: var(--acc); }
+.voice-hint {
+  padding: 6px 16px; border-bottom: 1px dashed var(--line);
+  font-size: 10.5px; letter-spacing: .04em; color: var(--dim-2);
+}
+.voice-hint.err { color: #d97b72; }
+
+.voice-list { display: flex; flex-direction: column; }
+.voice-row {
+  position: relative; cursor: pointer;
+  display: grid; grid-template-columns: 28px 1fr auto; gap: 10px;
+  align-items: start; padding: 11px 16px 12px;
+  border-bottom: 1px dashed var(--line);
+  transition: background .15s;
+}
+.voice-list .voice-row:last-child { border-bottom: none; }
+.voice-row:hover { background: var(--bg-2); }
+.voice-row.on { background: rgba(255, 255, 255, .035); }
+[data-theme="light"] .voice-row.on { background: rgba(0, 0, 0, .035); }
+.voice-play {
+  width: 28px; height: 28px; padding: 0; cursor: pointer;
+  display: grid; place-items: center;
+  background: transparent; color: var(--dim); border: 1px solid var(--line-2);
+  font-family: inherit; font-size: 10px; line-height: 1;
+  transition: color .15s, border-color .15s;
+}
+.voice-row:hover .voice-play { color: var(--text); }
+.voice-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.voice-title {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .06em; color: var(--dim);
+}
+.voice-row.on .voice-title { color: var(--acc); }
+.voice-skin {
+  font-style: normal; padding: 1px 5px; font-size: 9.5px;
+  color: var(--dim-2); border: 1px solid var(--line-2);
+}
+.voice-text {
+  font-size: 13px; line-height: 1.72; color: var(--text-2);
+  white-space: pre-line; overflow-wrap: anywhere;
+}
+.voice-ja-text {
+  font-size: 11.5px; line-height: 1.7; color: var(--dim-2);
+  white-space: pre-line; overflow-wrap: anywhere;
+}
+.voice-time {
+  flex: 0 0 auto; padding-top: 4px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; color: var(--dim-2);
+}
+.voice-progress {
+  position: absolute; left: 0; bottom: -1px; height: 2px;
+  background: var(--acc); transition: width .06s linear;
+}
+.voice-empty { padding: 28px 16px; text-align: center; color: var(--dim-2); font-size: 12px; }
+
 /* --- 咨询查看器 --- */
 .cc-units { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; }
 .cc-units button {

@@ -207,6 +207,42 @@ export async function loadCharStories(): Promise<CharStoriesData> {
   return cacheStories
 }
 
+/* 角色语音（当前只有日语）。
+
+   每个角色一条 OGG 雪碧图，按 start/end 播放其中一段；避免为 1 万多条语音
+   各生成一个文件（静态托管有文件数上限）。 */
+
+export type CharVoice = {
+  id: string
+  /** 语音说明（在大厅点击时I / 礼物II …） */
+  t: string
+  /** 中文台词 */
+  x: string
+  /** 日文原文 */
+  j?: string
+  /** 雪碧图中的起止秒数 */
+  s: number
+  e: number
+  /** 同一角色有多套皮肤语音时，标注来自哪套皮肤 */
+  g?: string
+}
+
+export type CharVoiceCat = { k: string; n: string; v: CharVoice[] }
+export type CharVoiceData = { f: string; n: number; cats: CharVoiceCat[] }
+
+let cacheVoices: Record<string, CharVoiceData> | null = null
+
+export async function loadCharVoices(): Promise<Record<string, CharVoiceData>> {
+  if (cacheVoices) return cacheVoices
+  try {
+    const d = await getJSON<{ items: Record<string, CharVoiceData> }>('/data/char_voices.json')
+    cacheVoices = d.items || {}
+  } catch {
+    cacheVoices = {}
+  }
+  return cacheVoices
+}
+
 /* 咨询分支流（export_counsel_flow.py，来自引擎脚本表）：
    next = 显式跳转（缺省 next(x)=x+1），choices = 选项组（1-based 行号） */
 

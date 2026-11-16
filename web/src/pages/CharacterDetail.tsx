@@ -3,13 +3,14 @@ import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
   loadCharImages, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories, loadCharSpine,
-  loadCharacters, mainBase, nf, pickBurstAnim, skillcutModelName, tintFor, variantsOf,
+  loadCharVoices, loadCharacters, mainBase, nf, pickBurstAnim, skillcutModelName, tintFor, variantsOf,
   type CharArtMap, type CharImages, type Character, type CharSkill, type CharSkillsData,
-  type CharStoriesData, type SkillcutIndex,
+  type CharStoriesData, type CharVoiceData, type SkillcutIndex,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
+import VoiceList from '../components/VoiceList'
 
 const EMPTY: SpineStatus = {
   ready: false, playing: true, time: 0, duration: 0, speed: 1, zoom: 1, anim: '', anims: [],
@@ -154,8 +155,9 @@ export default function CharacterDetail() {
   const [skillData, setSkillData] = useState<CharSkillsData>({ items: {}, terms: {} })
   const [skillLv, setSkillLv] = useState(10)
   const [storiesMap, setStoriesMap] = useState<CharStoriesData>({})
+  const [voiceMap, setVoiceMap] = useState<Record<string, CharVoiceData>>({})
   const [art, setArt] = useState<CharArtMap>({})
-  const [relTab, setRelTab] = useState<'stories' | 'counsel'>('stories')
+  const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
   /** 大招镜头运镜开关：默认开启（自动跟拍 + 锁定取景），关闭后可手动拖拽/缩放 */
@@ -173,6 +175,7 @@ export default function CharacterDetail() {
     loadCharSkillcut().then(setSkillcut).catch(() => {})
     loadCharSkills().then(setSkillData).catch(() => {})
     loadCharStories().then(setStoriesMap).catch(() => {})
+    loadCharVoices().then(setVoiceMap).catch(() => {})
     loadCharArt().then(setArt).catch(() => {})
   }, [])
 
@@ -224,10 +227,24 @@ export default function CharacterDetail() {
   const rel = id ? storiesMap[String(id)] : null
   const relStories = rel?.stories ?? []
   const relCounsel = rel?.counsel ?? []
+  const voice = id ? voiceMap[String(id)] : null
+  const hasVoices = !!voice && voice.n > 0
+  const hasRel = relStories.length > 0 || relCounsel.length > 0 || hasVoices
   /** 切角色时把 tab 复位到有内容的那一边 */
   useEffect(() => {
-    setRelTab((t) => (t === 'counsel' && !relCounsel.length ? 'stories' : t))
-  }, [id])
+    setRelTab((t) => {
+      const has = {
+        stories: relStories.length > 0,
+        counsel: relCounsel.length > 0,
+        voices: hasVoices,
+      }
+      if (has[t]) return t
+      if (has.stories) return 'stories'
+      if (has.counsel) return 'counsel'
+      if (has.voices) return 'voices'
+      return 'stories'
+    })
+  }, [id, hasVoices, relStories.length, relCounsel.length])
   // 口型（talk_*）是配合台词的 0 时长姿态；bg_* 只驱动背景（有的模型里这两类
   // 动画根本没有可见部件，选中会只剩空舞台）；战斗模式的 to_aim/to_cover 是
   // 姿态间过渡，都不列出来
@@ -604,29 +621,33 @@ export default function CharacterDetail() {
                   : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
               </em>
             </div>
-            {(relStories.length > 0 || relCounsel.length > 0) && (
+            {hasRel && (
               <button
                 className="slot slot-btn"
                 onClick={() => {
                   document.getElementById('storybox')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
                 }}
-                title="跳到好感剧情"
+                title="跳到剧情与语音"
               >
-                <span>好感剧情</span>
+                <span>{relStories.length || relCounsel.length ? (hasVoices ? '剧情与语音' : '好感剧情') : '角色语音'}</span>
                 <em>
                   {[
                     relStories.length ? `${relStories.length} 卷剧情` : '',
                     relCounsel.length ? `${relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)} 次咨询` : '',
+                    hasVoices ? `${voice.n} 条语音` : '',
                   ].filter(Boolean).join(' · ') || '暂无收录'}
                 </em>
               </button>
             )}
           </div>
 
-          {(relStories.length > 0 || relCounsel.length > 0) && (
+          {hasRel && (
             <section className="storybox" id="storybox" style={{ ['--acc' as string]: accentFor(c.id) }}>
               <div className="storybox-head">
-                <span className="storybox-title">好感剧情 <i>STORIES</i></span>
+                <span className="storybox-title">
+                  {relStories.length || relCounsel.length ? '好感剧情' : '角色语音'}
+                  {' '}<i>{relStories.length || relCounsel.length ? 'STORIES' : 'VOICE'}</i>
+                </span>
                 <div className="story-tabs">
                   {relStories.length > 0 && (
                     <button className={relTab === 'stories' ? 'on' : ''} onClick={() => setRelTab('stories')}>
@@ -636,6 +657,11 @@ export default function CharacterDetail() {
                   {relCounsel.length > 0 && (
                     <button className={relTab === 'counsel' ? 'on' : ''} onClick={() => setRelTab('counsel')}>
                       咨询 <b>{relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)}</b>
+                    </button>
+                  )}
+                  {hasVoices && (
+                    <button className={relTab === 'voices' ? 'on' : ''} onClick={() => setRelTab('voices')}>
+                      语音 <b>{voice.n}</b>
                     </button>
                   )}
                 </div>
@@ -670,7 +696,7 @@ export default function CharacterDetail() {
                     </div>
                   ))}
                 </div>
-              ) : (
+              ) : relTab === 'counsel' && relCounsel.length > 0 ? (
                 <CounselChat
                   units={relCounsel}
                   accent={accentFor(c.id)}
@@ -680,7 +706,9 @@ export default function CharacterDetail() {
                   })()}
                   charName={c.name}
                 />
-              )}
+              ) : relTab === 'voices' && voice ? (
+                <VoiceList key={c.id} data={voice} accent={accentFor(c.id)} />
+              ) : null}
             </section>
           )}
 
