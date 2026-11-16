@@ -12,6 +12,7 @@ import {
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
 import PlayPauseIcon from '../components/PlayPauseIcon'
+import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Immersive'
 import MessageChat from '../components/MessageChat'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import VoiceList from '../components/VoiceList'
@@ -219,6 +220,8 @@ export default function CharacterDetail() {
   /** 拖时间轴时先暂停，松手后按拖前的状态继续（与 CG 查看器同一套交互） */
   const wasPlaying = useRef(false)
   const seeking = useRef(false)
+  /** 沉浸全屏：隐藏顶栏与页面其它元素，只留模型舞台 */
+  const immersive = useImmersive()
 
   useEffect(() => {
     loadCharacters().then(setList).catch(() => setList([]))
@@ -497,6 +500,7 @@ export default function CharacterDetail() {
 
   return (
     <div className="detail-page">
+      {immersive.active && <ImmersiveExitButton onClick={immersive.exit} />}
       {popup && (
         <div className="word-modal" onClick={closePopup}>
           <div className="word-card" onClick={(e) => e.stopPropagation()}>
@@ -718,7 +722,9 @@ export default function CharacterDetail() {
                   ⟲ {status.zoom.toFixed(1)}×
                 </button>
                 <button className="cb-btn" onClick={saveFrame} title="保存当前帧为 PNG">⤓</button>
-                <a className="cb-btn" href={staticSrc} target="_blank" rel="noreferrer" title="打开静态立绘原图">↗</a>
+                <button className="cb-btn" onClick={immersive.toggle} title="全屏查看模型（Esc 退出）">
+                  <ExpandIcon />
+                </button>
               </div>
             </div>
           )}

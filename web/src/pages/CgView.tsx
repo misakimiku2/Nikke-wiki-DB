@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import ImageViewer, { type ImageViewerApi } from '../components/ImageViewer'
 import PlayPauseIcon from '../components/PlayPauseIcon'
+import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Immersive'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
   loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, nf, whereOf,
@@ -42,6 +43,8 @@ export default function CgView() {
   const [toast, setToast] = useState<string | null>(null)
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
+  /** 沉浸全屏：隐藏顶栏与页面其它元素，只留舞台 */
+  const immersive = useImmersive()
 
   const spineRef = useRef<SpineController | null>(null)
   const stillRef = useRef<ImageViewerApi | null>(null)
@@ -173,6 +176,7 @@ export default function CgView() {
       const typing = t?.isContentEditable || tag === 'SELECT' || tag === 'TEXTAREA'
         || (tag === 'INPUT' && (t as HTMLInputElement).type !== 'range')
       if (typing) return
+      if (immersive.active) return // 全屏时 ESC 只负责退出全屏（见 useImmersive）
       if (e.code === 'Space') { e.preventDefault(); togglePlay() }
       else if (e.key === 'Escape') navigate('/cg')
       else if (e.key === 'ArrowRight' && tag !== 'INPUT') go(1)
@@ -184,7 +188,7 @@ export default function CgView() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePlay, navigate, go, resetView, saveFrame])
+  }, [togglePlay, navigate, go, resetView, saveFrame, immersive.active])
 
   const onSeekStart = () => {
     if (!canAnimate) return
@@ -224,6 +228,7 @@ export default function CgView() {
 
   return (
     <div className={`cv-shell ${leftOpen ? '' : 'cv-left-off'} ${rightOpen ? '' : 'cv-right-off'}`}>
+      {immersive.active && <ImmersiveExitButton onClick={immersive.exit} />}
       {/* ---------- 左：目录 ---------- */}
       <aside className="cv-dir">
         <div className="cv-dir-head">
@@ -392,9 +397,9 @@ export default function CgView() {
                 {showModel ? '▣ 看静态合成' : '▶ 看实时模型'}
               </button>
             )}
-            <a className="cv-btn" href={`/img/l/${cur.h}.webp`} target="_blank" rel="noreferrer">
-              ↗ 原图
-            </a>
+            <button className="cv-btn" onClick={immersive.toggle} title="全屏查看（Esc 退出）">
+              <ExpandIcon />
+            </button>
           </div>
         </div>
       </main>

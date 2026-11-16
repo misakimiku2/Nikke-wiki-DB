@@ -2555,3 +2555,45 @@ img { display: block; }
 @media (max-width: 620px) {
   .char-modes button { padding: 5px 9px; letter-spacing: .06em; }
 }
+
+/* ================= 沉浸全屏查看 =================
+   顶栏在 App.tsx、舞台在页面组件里，用 body 类让两侧同时响应。
+   进入后只留模型/舞台铺满视口，其余元素全部隐藏；
+   退出靠右上角悬浮按钮或 Esc。舞台的 ResizeObserver 会自动重算画布尺寸。 */
+body.immersive-mode { overflow: hidden; }
+body.immersive-mode .topbar { display: none; }
+
+.immersive-exit {
+  position: fixed; top: 16px; right: 16px; z-index: 1100;
+  width: 40px; height: 40px; display: grid; place-items: center;
+  background: rgba(7,7,10,.78); border: 1px solid rgba(255,255,255,.3);
+  color: #e9e7f2; cursor: pointer;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.immersive-exit:hover { background: var(--red); border-color: var(--red); color: #fff; }
+
+/* —— 角色详情页 —— */
+body.immersive-mode .detail-page .detail-info,
+body.immersive-mode .detail-page .variants,
+body.immersive-mode .detail-page .char-bar,
+body.immersive-mode .detail-page .char-modes,
+body.immersive-mode .detail-page .char-live { display: none !important; }
+body.immersive-mode .detail-page .detail-visual {
+  position: fixed; inset: 0; z-index: 1000;
+  width: 100vw; height: 100vh; height: 100dvh;
+  background: #050508; border: 0; clip-path: none;
+}
+body.immersive-mode .detail-page .detail-visual .stage { height: 100%; }
+
+/* —— CG 查看器 —— */
+body.immersive-mode .cv-shell { display: block; }
+body.immersive-mode .cv-shell .cv-dir,
+body.immersive-mode .cv-shell .cv-info,
+body.immersive-mode .cv-shell .cv-controls,
+body.immersive-mode .cv-shell .cv-stage-top,
+body.immersive-mode .cv-shell .cv-hint { display: none !important; }
+body.immersive-mode .cv-shell .cv-main {
+  position: fixed; inset: 0; z-index: 1000;
+  width: 100vw; height: 100vh; height: 100dvh;
+}
