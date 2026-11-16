@@ -95,6 +95,20 @@ function SpecIcon({ icn }: { icn: string }) {
   return <i className="spec-icn" style={{ ['--icn' as string]: `url(/metaicon/${icn}.webp)` }} aria-hidden />
 }
 
+/** 展开/收起的箭头图标（内联 SVG，随 currentColor） */
+function FoldIcon({ dir }: { dir: 'left' | 'right' | 'up' | 'down' }) {
+  const d = dir === 'left' ? 'M15 5l-7 7 7 7'
+    : dir === 'right' ? 'M9 5l7 7-7 7'
+    : dir === 'up' ? 'M5 15l7-7 7 7'
+    : 'M5 9l7 7 7-7'
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2.4" strokeLinecap="square" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  )
+}
+
 function animLabel(a: string): string {
   if (EXPR_LABEL[a]) return EXPR_LABEL[a]
   const base = a.replace(/(?:_0?\d+|_alt|_blue)+$/, '')
@@ -222,6 +236,9 @@ export default function CharacterDetail() {
   const seeking = useRef(false)
   /** 沉浸全屏：隐藏顶栏与页面其它元素，只留模型舞台 */
   const immersive = useImmersive()
+  /** 姿态标签 / 皮肤切换区的收起状态 */
+  const [poseFolded, setPoseFolded] = useState(false)
+  const [skinFolded, setSkinFolded] = useState(false)
 
   useEffect(() => {
     loadCharacters().then(setList).catch(() => setList([]))
@@ -579,24 +596,41 @@ export default function CharacterDetail() {
             )}
             {/* 有战斗/大招模型时徽标换成姿态切换；否则维持原来的实时徽标 */}
             {(combatAvail.aim || combatAvail.cover || burstName) ? (
-              <div className="char-modes">
-                <button className={pose === 'stand' ? 'on' : ''} onClick={() => setPose('stand')}>
-                  立绘
-                </button>
-                {combatAvail.aim && (
-                  <button className={pose === 'aim' ? 'on' : ''} onClick={() => setPose('aim')}>
-                    射击
+              <div className={`char-modes ${poseFolded ? 'folded' : ''}`}>
+                {poseFolded ? (
+                  <button
+                    className="cm-fold-open"
+                    onClick={() => setPoseFolded(false)}
+                    title="展开姿态切换（立绘 / 射击 / 掩体 / 大招）"
+                    aria-label="展开姿态切换"
+                  >
+                    <FoldIcon dir="right" />
                   </button>
-                )}
-                {combatAvail.cover && (
-                  <button className={pose === 'cover' ? 'on' : ''} onClick={() => setPose('cover')}>
-                    掩体
-                  </button>
-                )}
-                {burstName && (
-                  <button className={pose === 'burst' ? 'on' : ''} onClick={() => setPose('burst')}>
-                    大招
-                  </button>
+                ) : (
+                  <>
+                    <button className="cm-fold" onClick={() => setPoseFolded(true)}
+                      title="收起姿态标签" aria-label="收起姿态标签">
+                      <FoldIcon dir="left" />
+                    </button>
+                    <button className={pose === 'stand' ? 'on' : ''} onClick={() => setPose('stand')}>
+                      立绘
+                    </button>
+                    {combatAvail.aim && (
+                      <button className={pose === 'aim' ? 'on' : ''} onClick={() => setPose('aim')}>
+                        射击
+                      </button>
+                    )}
+                    {combatAvail.cover && (
+                      <button className={pose === 'cover' ? 'on' : ''} onClick={() => setPose('cover')}>
+                        掩体
+                      </button>
+                    )}
+                    {burstName && (
+                      <button className={pose === 'burst' ? 'on' : ''} onClick={() => setPose('burst')}>
+                        大招
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             ) : (
@@ -609,26 +643,38 @@ export default function CharacterDetail() {
           {/* 皮肤切换条：骑在舞台下缘，皮肤名并入条内落渐变实色区，
               下沿直接衔接按钮区、中间不留独立行 */}
           {vars.length > 1 && (
-            <div className="variants">
-              {vars.map((v) => {
-                const label = artLabel(art, v)
-                return (
-                  <button
-                    key={v}
-                    className={v === current ? 'on' : ''}
-                    onClick={() => setPick(v)}
-                    title={`${spine.has(v) ? `${label} · 可动` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
-                  >
-                    <img src={charThumb(v, mi)} alt={label} loading="lazy" />
-                    {spine.has(v) && <i className="vt-live" />}
-                  </button>
-                )
-              })}
-              <div className="variant-caption">
-                {currentLabel}
-                {ct?.desc && (
-                  <span className="variant-caption-desc"> · {ct.desc.replace(/\n/g, ' ')}</span>
-                )}
+            <div className={`variants ${skinFolded ? 'folded' : ''}`}>
+              <button
+                className="vf-toggle"
+                onClick={() => setSkinFolded((v) => !v)}
+                title={skinFolded ? '展开皮肤切换' : '收起皮肤切换'}
+                aria-label={skinFolded ? '展开皮肤切换' : '收起皮肤切换'}
+              >
+                <FoldIcon dir={skinFolded ? 'up' : 'down'} />
+                <span>皮肤</span>
+                {skinFolded && <b>{currentLabel}</b>}
+              </button>
+              <div className="variant-body">
+                {vars.map((v) => {
+                  const label = artLabel(art, v)
+                  return (
+                    <button
+                      key={v}
+                      className={v === current ? 'on' : ''}
+                      onClick={() => setPick(v)}
+                      title={`${spine.has(v) ? `${label} · 可动` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
+                    >
+                      <img src={charThumb(v, mi)} alt={label} loading="lazy" />
+                      {spine.has(v) && <i className="vt-live" />}
+                    </button>
+                  )
+                })}
+                <div className="variant-caption">
+                  {currentLabel}
+                  {ct?.desc && (
+                    <span className="variant-caption-desc"> · {ct.desc.replace(/\n/g, ' ')}</span>
+                  )}
+                </div>
               </div>
             </div>
           )}

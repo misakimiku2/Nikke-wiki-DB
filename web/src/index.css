@@ -2597,3 +2597,49 @@ body.immersive-mode .cv-shell .cv-main {
   position: fixed; inset: 0; z-index: 1000;
   width: 100vw; height: 100vh; height: 100dvh;
 }
+
+/* ================= 姿态标签 / 皮肤区 收起按钮 ================= */
+/* 姿态标签：向左收起，只留一个向右箭头的小按钮 */
+.char-modes .cm-fold,
+.char-modes .cm-fold-open {
+  padding: 5px 8px; color: var(--dim); background: transparent;
+  border: 0; cursor: pointer; display: grid; place-items: center;
+  transition: color .15s, background .15s;
+}
+.char-modes .cm-fold + button { border-left: 1px solid var(--line); }
+.char-modes .cm-fold:hover,
+.char-modes .cm-fold-open:hover { color: var(--text); background: var(--surface); }
+.char-modes.folded { background: transparent; border-color: transparent; }
+
+/* 皮肤切换区：向下收起。收起后顶部留一条窄条显示「皮肤 + 当前皮肤名」 */
+.detail-page .detail-visual .variants .vf-toggle {
+  width: auto; height: auto; padding: 3px 9px; margin: 0 auto 6px;
+  display: flex; align-items: center; gap: 6px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .06em; color: var(--dim-2);
+  background: transparent; border: 1px solid var(--line); border-radius: 2px;
+  cursor: pointer; transition: color .15s, border-color .15s, background .15s;
+}
+.detail-page .detail-visual .variants .vf-toggle:hover {
+  color: var(--text); border-color: var(--line-2); background: var(--surface-2);
+}
+.detail-page .detail-visual .variants .vf-toggle b {
+  color: var(--text-2); font-weight: 700; max-width: 160px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 缩略图 + 名称整体作为可收起主体；max-height 过渡实现「向下收起」 */
+.detail-page .detail-visual .variants .variant-body {
+  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+  max-height: 600px; overflow: hidden;
+  transition: max-height .3s ease, opacity .2s ease;
+}
+.detail-page .detail-visual .variants.folded .variant-body {
+  max-height: 0; opacity: 0; pointer-events: none;
+}
+/* 收起时不再需要那么高的渐变留白，避免舞台下缘空出一大块 */
+.detail-page .detail-visual .variants.folded {
+  padding-top: 10px; margin-top: -10px;
+}
+@media (max-width: 620px) {
+  .detail-page .detail-visual .variants.folded { padding-top: 8px; margin-top: -8px; }
+}
