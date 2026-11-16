@@ -289,8 +289,8 @@ export default function VoiceList({
       {lang === 'zh' && missingVoices.length > 0 && (
         <div className="voice-hint">
           {missingLove === missingVoices.length
-            ? `国服语音包未收录好感度大厅语音（${missingLove} 条），可切到日配查看。`
-            : `国服缺少 ${missingVoices.length} 条中文语音${missingLove ? `（其中好感度大厅 ${missingLove} 条）` : ''}，可切到日配查看。`}
+            ? `这 ${missingLove} 条好感度大厅语音尚未下载到本机（在游戏内播放一次该角色语音后会下载），可切到日配查看。`
+            : `国服缺少 ${missingVoices.length} 条中文语音${missingLove ? `（其中 ${missingLove} 条好感度大厅语音尚未下载到本机）` : ''}，可切到日配查看。`}
         </div>
       )}
       {(loading || error) && (
