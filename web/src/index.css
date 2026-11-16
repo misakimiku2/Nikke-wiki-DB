@@ -844,6 +844,7 @@ img { display: block; }
   transition: color .15s, background .15s;
 }
 .voice-langs button + button { border-left: 1px solid var(--line); }
+.voice-langs button b { margin-left: 3px; font-weight: 700; opacity: .72; }
 .voice-langs button:hover:not(:disabled) { color: var(--text); }
 .voice-langs button.on { background: var(--text); color: var(--bg); }
 .voice-langs button:disabled { color: var(--dim-2); cursor: not-allowed; text-decoration: line-through; }
@@ -892,10 +893,6 @@ img { display: block; }
 .voice-skin {
   font-style: normal; padding: 1px 5px; font-size: 9.5px;
   color: var(--dim-2); border: 1px solid var(--line-2);
-}
-.voice-nozh {
-  font-style: normal; padding: 1px 5px; font-size: 9.5px;
-  color: var(--dim-2); border: 1px dashed var(--line-2);
 }
 .voice-text {
   font-size: 13px; line-height: 1.72; color: var(--text-2);

@@ -123,8 +123,8 @@ cd web && npm run build                   # → dist/
   `public/voice/<id>.zh.ogg`），前端按 `char_voices.json` 里的 start/end
   用 Web Audio 分段播放；这样 1 万多条语音只生成 300 多个文件，不会顶爆静态
   托管的文件数上限。每条语音之间留 0.4s 静音。国服版本落后，中文覆盖不全：
-  某条缺中文时回退日语并标注「中配缺失」，整个角色没有中文时只显示日配。
-  皮肤有独立语音时会标注皮肤名。
+  中配列表只显示确实有中文音频的条目，日配列表保留全套；中配模式下会提示
+  国服缺少多少条，整个角色没有中文时只显示日配。皮肤有独立语音时会标注皮肤名。
 - **技能说明**：`public/data/char_skills.json`（`export_char_skills.py`）。
   技能 ID（Locale_Skill 的 5 位数字键）= 类型前缀(1=伤害系 / 2=增益系) + 角色号(3 位) + 槽位，
   名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的

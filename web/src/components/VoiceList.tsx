@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CharVoice, CharVoiceData } from '../data'
+import type { CharVoice, CharVoiceCat, CharVoiceData } from '../data'
 
 /**
  * 角色语音区（日配 + 国服中配）。
@@ -41,6 +41,9 @@ function cacheBuffer(key: string, buf: AudioBuffer) {
   }
 }
 
+const hasZhClip = (v: CharVoice) => v.zs != null && v.ze != null
+const cnCatCount = (c: CharVoiceCat) => c.v.reduce((a, v) => a + (hasZhClip(v) ? 1 : 0), 0)
+
 export default function VoiceList({
   data,
   accent,
@@ -68,10 +71,13 @@ export default function VoiceList({
   const playToken = useRef(0)
   const loadCount = useRef(0)
 
+  const missingZh = hasZh ? data.n - (data.zc ?? 0) : 0
+
   const voices = useMemo(() => {
-    if (cat === 'all') return data.cats.flatMap((c) => c.v)
-    return data.cats.find((c) => c.k === cat)?.v ?? []
-  }, [data, cat])
+    const pick = (list: CharVoice[]) => (lang === 'zh' ? list.filter(hasZhClip) : list)
+    if (cat === 'all') return pick(data.cats.flatMap((c) => c.v))
+    return pick(data.cats.find((c) => c.k === cat)?.v ?? [])
+  }, [data, cat, lang])
 
   const clipOf = (v: CharVoice, l: 'zh' | 'ja'): Clip => {
     if (l === 'zh' && data.fz && v.zs != null && v.ze != null) {
@@ -203,6 +209,7 @@ export default function VoiceList({
     if (l === lang) return
     if (l === 'zh' && !hasZh) return
     stop()
+    setCat('all')
     setLang(l)
   }
 
@@ -230,17 +237,19 @@ export default function VoiceList({
       <div className="voice-bar">
         <div className="voice-cats">
           <button className={cat === 'all' ? 'on' : ''} onClick={() => { setCat('all'); stop() }}>
-            全部 <b>{data.n}</b>
+            全部 <b>{lang === 'zh' ? (data.zc ?? 0) : data.n}</b>
           </button>
-          {data.cats.map((c) => (
-            <button
-              key={c.k}
-              className={cat === c.k ? 'on' : ''}
-              onClick={() => { setCat(c.k); stop() }}
-            >
-              {c.n} <b>{c.v.length}</b>
-            </button>
-          ))}
+          {data.cats
+            .filter((c) => lang === 'ja' || cnCatCount(c) > 0)
+            .map((c) => (
+              <button
+                key={c.k}
+                className={cat === c.k ? 'on' : ''}
+                onClick={() => { setCat(c.k); stop() }}
+              >
+                {c.n} <b>{lang === 'zh' ? cnCatCount(c) : c.v.length}</b>
+              </button>
+            ))}
         </div>
         <div className="voice-opts">
           <div className="voice-langs">
@@ -250,14 +259,14 @@ export default function VoiceList({
               onClick={() => changeLang('zh')}
               title={hasZh ? `中文配音（${data.zc ?? 0}/${data.n} 条）` : '国服暂无该角色中文语音'}
             >
-              中配
+              中配 <b>{data.zc ?? 0}</b>
             </button>
             <button
               className={lang === 'ja' ? 'on' : ''}
               onClick={() => changeLang('ja')}
               title="日语配音"
             >
-              日配
+              日配 <b>{data.n}</b>
             </button>
           </div>
           <button
@@ -270,6 +279,9 @@ export default function VoiceList({
         </div>
       </div>
       {!hasZh && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
+      {lang === 'zh' && missingZh > 0 && (
+        <div className="voice-hint">国服缺少 {missingZh} 条中文语音，可切到日配查看。</div>
+      )}
       {(loading || error) && (
         <div className={`voice-hint ${error ? 'err' : ''}`}>
           {error ? '语音加载失败，请刷新重试' : '音频解码中…'}
@@ -279,14 +291,12 @@ export default function VoiceList({
       <div className="voice-list">
         {voices.map((v) => {
           const on = active?.id === v.id
-          const missingZh = lang === 'zh' && hasZh && (v.zs == null || v.ze == null)
           const dur = lang === 'zh' && v.zs != null && v.ze != null ? v.ze - v.zs : v.e - v.s
           return (
             <div
               key={v.id}
               className={`voice-row ${on ? 'on' : ''}`}
               onClick={() => toggle(v)}
-              title={missingZh ? '国服暂无此条中文语音，播放日语' : undefined}
             >
               <button
                 className="voice-play"
@@ -299,7 +309,6 @@ export default function VoiceList({
                 <div className="voice-title">
                   {v.t}
                   {v.g && <span className="voice-skin">{v.g}</span>}
-                  {missingZh && <span className="voice-nozh">中配缺失</span>}
                 </div>
                 <div className="voice-text">{v.x || v.j || '（无台词文本）'}</div>
                 {showJa && v.j && v.j !== v.x && <div className="voice-ja-text">{v.j}</div>}
