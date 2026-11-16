@@ -310,7 +310,9 @@ export default function VoiceList({
                   {v.t}
                   {v.g && <span className="voice-skin">{v.g}</span>}
                 </div>
-                <div className="voice-text">{v.x || v.j || '（无台词文本）'}</div>
+                <div className="voice-text">
+                  {(lang === 'zh' && v.xz ? v.xz : v.x) || v.j || '（无台词文本）'}
+                </div>
                 {showJa && v.j && v.j !== v.x && <div className="voice-ja-text">{v.j}</div>}
               </div>
               <span className="voice-time">{dur.toFixed(1)}s</span>

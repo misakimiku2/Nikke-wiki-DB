@@ -116,9 +116,11 @@ cd web && npm run build                   # → dist/
   `export_story.py` 依赖本映射改阅读器标题，须先于它运行。
 - **角色语音**：详情页「好感剧情」区的第三个 tab。语音清单来自
   `staticdata/CharacterVoiceGroupTable.mpk`（说明 key / 语音 ID / 台词 key 三连），
-  台词取 `Locale_Character` 的中文与日文。日语音频取国际服 `ja` 池；中文音频取
-  国服客户端 `runtime_data/saus/zh_cn/ab/*.nab`（默认路径可用环境变量
-  `NIKKE_CN_ROOT` 覆盖），按语音 ID 能对上多少提取多少。
+  日文/国际服中文台词取 `Locale_Character`，国服中文台词取国服客户端自己的
+  `runtime_data/saus/saus/lss/Locale_Character.lss`（国服翻译与国际服 zh-CN
+  可能不同，中配列表显示国服文本、日配列表显示国际服文本）。日语音频取国际服
+  `ja` 池；中文音频取国服客户端 `runtime_data/saus/zh_cn/ab/*.nab`（默认路径可用
+  环境变量 `NIKKE_CN_ROOT` 覆盖），按语音 ID 能对上多少提取多少。
   每个角色每种语言拼成一条 OGG 雪碧图（`public/voice/<id>.ogg`、
   `public/voice/<id>.zh.ogg`），前端按 `char_voices.json` 里的 start/end
   用 Web Audio 分段播放；这样 1 万多条语音只生成 300 多个文件，不会顶爆静态

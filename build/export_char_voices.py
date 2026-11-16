@@ -72,6 +72,8 @@ CN_ROOT = Path(os.environ.get(
     r"C:/Program Files/GAME/胜利女神：新的希望(2002017)/nikke_Data/runtime_data/saus/zh_cn",
 ))
 CN_AB = CN_ROOT / "ab"
+# 国服自己的翻译，和语音一起使用（国际服的 zh-CN 文本与国服配音可能不一致）
+CN_LOCALE = CN_ROOT.parent / "saus" / "lss" / "Locale_Character.lss"
 
 sys.path.insert(0, str(SRC / "scripts"))
 import export_cg_v2 as v2  # noqa: E402
@@ -345,6 +347,8 @@ def encode_char(char_id: str, clips: list[dict], raw_paths: dict[str, Path],
             }
             if c.get("group"):
                 vo["g"] = c["group"]
+            if c.get("cn") and c["cn"] != c["zh"]:
+                vo["xz"] = c["cn"]
             vs.append(vo)
         cats.append({"k": k, "n": name, "v": vs})
     return char_id, {"f": f"/voice/{char_id}.ogg?v={ver}", "n": len(clips), "cats": cats}
@@ -410,10 +414,21 @@ def main():
     idx = locale_index()
     lines = load_locale(idx, "Locale_Character")
     sysdesc = load_locale(idx, "Locale_System")
+    cn_lines: dict[str, str] = {}
+    if CN_LOCALE.exists():
+        try:
+            cc = sqlite3.connect(f"file:{CN_LOCALE}?mode=ro", uri=True)
+            cn_lines = {k: (zh or "") for k, zh in
+                        cc.execute('SELECT Key, "zh-CN" FROM Locale_Character')}
+            cc.close()
+            print(f"  国服文本 {len(cn_lines)} 条")
+        except Exception as e:
+            print(f"  ! 国服文本读取失败：{e}")
     for r in recs:
         txt = lines.get(r["loc"], {})
         r["zh"] = txt.get("zh", "")
         r["ja"] = txt.get("ja", "")
+        r["cn"] = cn_lines.get(r["loc"], "")
         d = sysdesc.get(r["desc"], {})
         r["title"] = d.get("zh") or r["desc"].replace("voice_description_", "")
 

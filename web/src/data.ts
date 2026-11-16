@@ -217,8 +217,10 @@ export type CharVoice = {
   id: string
   /** 语音说明（在大厅点击时I / 礼物II …） */
   t: string
-  /** 中文台词 */
+  /** 中文台词（国际服 zh-CN） */
   x: string
+  /** 国服中文台词；与语音一致，和国际服文本可能不同 */
+  xz?: string
   /** 日文原文 */
   j?: string
   /** 日语雪碧图中的起止秒数 */
