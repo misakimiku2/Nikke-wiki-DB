@@ -71,14 +71,8 @@ export default function VoiceList({
   const playToken = useRef(0)
   const loadCount = useRef(0)
 
-  const allClips = data.cats.flatMap((c) => c.v)
-  const missingVoices = allClips.filter((v) => !hasZhClip(v))
+  const missingVoices = data.cats.flatMap((c) => c.v).filter((v) => !hasZhClip(v))
   const missingLove = missingVoices.filter((v) => /_Lobby_(?:Touch|Stay)_Love_/.test(v.id)).length
-  // 已经有中文的皮肤组；只有这些组里的 Love 缺失才是「本机尚未下载」
-  const zhGroups = new Set(allClips.filter(hasZhClip).map((v) => v.g ?? ''))
-  const pendingLove = missingVoices.filter(
-    (v) => /_Lobby_(?:Touch|Stay)_Love_/.test(v.id) && zhGroups.has(v.g ?? ''),
-  ).length
   const currentCv = lang === 'zh' ? data.cvz : data.cvj
 
   const voices = useMemo(() => {
@@ -294,9 +288,8 @@ export default function VoiceList({
       {!hasZh && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
       {lang === 'zh' && missingVoices.length > 0 && (
         <div className="voice-hint">
-          {missingLove === missingVoices.length && pendingLove === missingLove
-            ? `这 ${missingLove} 条好感度大厅语音尚未下载到本机（在游戏内播放一次该角色语音后会下载），可切到日配查看。`
-            : `国服缺少 ${missingVoices.length} 条中文语音${missingLove ? `（含好感度大厅 ${missingLove} 条）` : ''}，可切到日配查看。${pendingLove > 0 ? ' 好感度大厅语音需在游戏内播放一次该角色语音后才会下载到本机。' : ''}`}
+          国服缺少 {missingVoices.length} 条中文语音
+          {missingLove ? `（含好感度大厅 ${missingLove} 条）` : ''}，可切到日配查看。
         </div>
       )}
       {(loading || error) && (
