@@ -68,7 +68,7 @@ python build/export_char_images.py        # → public/data/char_images.json
 python build/export_char_skills.py        # → public/data/char_skills.json  技能说明
 python build/export_skill_icons.py        # → public/skillicon/             技能图标（502 张）
 python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
-python build/export_char_voices.py        # → public/voice + public/data/char_voices.json 角色语音（日语）
+python build/export_char_voices.py        # → public/voice + public/data/char_voices.json 角色语音（日语+国服中文）
 
 # 3. CG
 python build/build_images.py              # → public/img         三档转码
@@ -116,11 +116,15 @@ cd web && npm run build                   # → dist/
   `export_story.py` 依赖本映射改阅读器标题，须先于它运行。
 - **角色语音**：详情页「好感剧情」区的第三个 tab。语音清单来自
   `staticdata/CharacterVoiceGroupTable.mpk`（说明 key / 语音 ID / 台词 key 三连），
-  台词取 `Locale_Character` 的中文与日文，音频取日语资源包（`ja` 池）。
-  每个角色把全部语音按表内顺序拼成一条 OGG 雪碧图 `public/voice/<id>.ogg`，
-  前端按 `char_voices.json` 里的 start/end 分段播放；这样 1 万多条语音只生成
-  200 多个文件，不会顶爆静态托管的文件数上限。每条语音之间留 0.4s 静音，
-  避免播放器在结尾越界时直接播进下一条语音。皮肤有独立语音时会标注皮肤名。
+  台词取 `Locale_Character` 的中文与日文。日语音频取国际服 `ja` 池；中文音频取
+  国服客户端 `runtime_data/saus/zh_cn/ab/*.nab`（默认路径可用环境变量
+  `NIKKE_CN_ROOT` 覆盖），按语音 ID 能对上多少提取多少。
+  每个角色每种语言拼成一条 OGG 雪碧图（`public/voice/<id>.ogg`、
+  `public/voice/<id>.zh.ogg`），前端按 `char_voices.json` 里的 start/end
+  用 Web Audio 分段播放；这样 1 万多条语音只生成 300 多个文件，不会顶爆静态
+  托管的文件数上限。每条语音之间留 0.4s 静音。国服版本落后，中文覆盖不全：
+  某条缺中文时回退日语并标注「中配缺失」，整个角色没有中文时只显示日配。
+  皮肤有独立语音时会标注皮肤名。
 - **技能说明**：`public/data/char_skills.json`（`export_char_skills.py`）。
   技能 ID（Locale_Skill 的 5 位数字键）= 类型前缀(1=伤害系 / 2=增益系) + 角色号(3 位) + 槽位，
   名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的

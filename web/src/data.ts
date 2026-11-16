@@ -207,10 +207,11 @@ export async function loadCharStories(): Promise<CharStoriesData> {
   return cacheStories
 }
 
-/* 角色语音（当前只有日语）。
+/* 角色语音（日语 + 国服中文）。
 
-   每个角色一条 OGG 雪碧图，按 start/end 播放其中一段；避免为 1 万多条语音
-   各生成一个文件（静态托管有文件数上限）。 */
+   每个角色每种语言一条 OGG 雪碧图，按 start/end 播放其中一段；避免为 1 万多条
+   语音各生成一个文件（静态托管有文件数上限）。国服版本较旧，部分角色/台词没有
+   中文语音，因此中文片段是可选的，前端会回退到日语。 */
 
 export type CharVoice = {
   id: string
@@ -220,15 +221,28 @@ export type CharVoice = {
   x: string
   /** 日文原文 */
   j?: string
-  /** 雪碧图中的起止秒数 */
+  /** 日语雪碧图中的起止秒数 */
   s: number
   e: number
+  /** 中文雪碧图中的起止秒数；国服缺失时没有 */
+  zs?: number
+  ze?: number
   /** 同一角色有多套皮肤语音时，标注来自哪套皮肤 */
   g?: string
 }
 
 export type CharVoiceCat = { k: string; n: string; v: CharVoice[] }
-export type CharVoiceData = { f: string; n: number; cats: CharVoiceCat[] }
+export type CharVoiceData = {
+  /** 日语雪碧图 */
+  f: string
+  /** 中文雪碧图（国服没有该角色语音时没有） */
+  fz?: string
+  /** 语音总数 */
+  n: number
+  /** 中文语音条数 */
+  zc?: number
+  cats: CharVoiceCat[]
+}
 
 let cacheVoices: Record<string, CharVoiceData> | null = null
 

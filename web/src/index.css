@@ -834,6 +834,19 @@ img { display: block; }
 .voice-cats button b { margin-left: 4px; font-weight: 700; }
 .voice-cats button:hover { color: var(--text); border-color: var(--line-2); }
 .voice-cats button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.voice-opts { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.voice-langs { display: flex; border: 1px solid var(--line); }
+.voice-langs button {
+  padding: 5px 8px; cursor: pointer; border: 0;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .05em;
+  background: transparent; color: var(--dim);
+  transition: color .15s, background .15s;
+}
+.voice-langs button + button { border-left: 1px solid var(--line); }
+.voice-langs button:hover:not(:disabled) { color: var(--text); }
+.voice-langs button.on { background: var(--text); color: var(--bg); }
+.voice-langs button:disabled { color: var(--dim-2); cursor: not-allowed; text-decoration: line-through; }
 .voice-ja {
   flex: 0 0 auto; padding: 5px 9px; cursor: pointer;
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
@@ -879,6 +892,10 @@ img { display: block; }
 .voice-skin {
   font-style: normal; padding: 1px 5px; font-size: 9.5px;
   color: var(--dim-2); border: 1px solid var(--line-2);
+}
+.voice-nozh {
+  font-style: normal; padding: 1px 5px; font-size: 9.5px;
+  color: var(--dim-2); border: 1px dashed var(--line-2);
 }
 .voice-text {
   font-size: 13px; line-height: 1.72; color: var(--text-2);

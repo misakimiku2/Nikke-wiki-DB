@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-提取角色语音（当前只有日语资源）
+提取角色语音（日语 + 国服中文）
 
 数据源：
   staticdata/CharacterVoiceGroupTable.mpk
@@ -14,21 +14,27 @@
       Locale_System 提供分类说明（「在大厅点击时I」等）。
   <patch>/ja/chunk/store.cdb
       日语语音包。AudioClip 名字就是语音 ID，用 catalog 的 chunk 表还原 bundle。
+  国服客户端 runtime_data/saus/zh_cn/ab/*.nab
+      国服中文语音包。版本落后于国际服，部分角色/台词没有中文语音，
+      按语音 ID 能对上多少就提取多少；前端缺中文时回退日语。
 
 输出：
   public/voice/<角色 id>.ogg
-      每个角色（含皮肤）一条音频雪碧图（按表内顺序拼接），前端按
+  public/voice/<角色 id>.zh.ogg
+      每个角色每种语言一条音频雪碧图（按表内顺序拼接），前端按
       start/end 时间点播放，避免生成上万个小文件。
   public/data/char_voices.json
-      { "items": { "102": { "f": "/voice/102.ogg", "n": 41,
+      { "items": { "102": { "f": "/voice/102.ogg", "fz": "/voice/102.zh.ogg",
+          "n": 42, "zc": 38,
           "cats": [ { "k": "lobby", "n": "大厅", "v": [
             { "id": "...", "t": "在大厅点击时I", "x": "中文", "j": "日文",
-              "s": 0.0, "e": 2.25 } ] } ] } } }
+              "s": 0.0, "e": 2.25, "zs": 0.0, "ze": 2.1 } ] } ] } } }
 
 用法：
   set FFMPEG=E:\\test\\ffmpeg\\...\\bin\\ffmpeg.exe
   python build/export_char_voices.py --only 102,352
   python build/export_char_voices.py
+  python build/export_char_voices.py --no-cn
 """
 from __future__ import annotations
 
@@ -59,6 +65,12 @@ OUT_AUDIO = ROOT / "public" / "voice"
 OUT_JSON = ROOT / "public" / "data" / "char_voices.json"
 CHAR_IMAGES = ROOT / "public" / "data" / "char_images.json"
 CHAR_ART = ROOT / "public" / "data" / "char_art.json"
+# 国服客户端的中文语音池；可用 NIKKE_CN_ROOT 覆盖
+CN_ROOT = Path(os.environ.get(
+    "NIKKE_CN_ROOT",
+    r"C:/Program Files/GAME/胜利女神：新的希望(2002017)/nikke_Data/runtime_data/saus/zh_cn",
+))
+CN_AB = CN_ROOT / "ab"
 
 sys.path.insert(0, str(SRC / "scripts"))
 import export_cg_v2 as v2  # noqa: E402
@@ -210,6 +222,31 @@ def scan_audio(voice_ids: set[str]) -> dict[str, tuple[str, int]]:
     return found
 
 
+def scan_audio_cn(voice_ids: set[str]) -> dict[str, tuple[str, int]]:
+    """国服中文语音 ID -> (nab 路径, AudioClip path_id)。"""
+    files = sorted(CN_AB.glob("*.nab")) if CN_AB.exists() else []
+    found: dict[str, tuple[str, int]] = {}
+    t0 = time.time()
+    for n, p in enumerate(files, 1):
+        try:
+            env = UnityPy.load(str(p))
+        except Exception:
+            continue
+        for o in env.objects:
+            if o.type.name != "AudioClip":
+                continue
+            try:
+                nm = o.peek_name()
+            except Exception:
+                continue
+            if nm in voice_ids:
+                found.setdefault(nm, (str(p), o.path_id))
+        if n % 40 == 0:
+            print(f"  扫描国服语音包 {n}/{len(files)}，命中 {len(found)}，{time.time()-t0:.0f}s", flush=True)
+    print(f"  国服语音包扫描完成：{len(found)}/{len(voice_ids)}，{time.time()-t0:.0f}s", flush=True)
+    return found
+
+
 def ffmpeg_exe() -> str:
     p = os.environ.get("FFMPEG") or shutil.which("ffmpeg")
     if not p:
@@ -217,25 +254,29 @@ def ffmpeg_exe() -> str:
     return p
 
 
-def encode_char(char_id: str, clips: list[dict], raw_paths: dict[str, Path],
-                ffmpeg: str, tmp: Path) -> tuple[str, dict | None]:
-    """把一个角色的全部语音拼成一条 OGG 雪碧图，返回 (char_id, json 项)。"""
-    total = sum(c["dur"] for c in clips)
-    if total <= 0:
-        return char_id, None
-    concat = tmp / f"concat_{char_id}.txt"
-    lines = []
+def stable_ver(suffix: str, clips: list[dict]) -> str:
+    """用语音 ID + 时长生成稳定版本号，重跑不会让所有客户端重新下载。"""
+    raw = suffix + "|" + "|".join(f"{c['id']}:{c['dur']:.3f}" for c in clips) + f"|gap{GAP:.2f}"
+    return hashlib.md5(raw.encode("utf-8")).hexdigest()[:8]
+
+
+def encode_sprite(char_id: str, suffix: str, clips: list[dict], raw_paths: dict[str, Path],
+                  ffmpeg: str, tmp: Path) -> str | None:
+    """把一组语音拼成 OGG 雪碧图，返回版本 hash；失败返回 None。"""
     valid = [c for c in clips if raw_paths.get(c["id"])]
+    total = sum(c["dur"] for c in valid)
+    if total <= 0:
+        return None
+    concat = tmp / f"concat_{char_id}{suffix}.txt"
+    lines = []
     silence = tmp / "silence.wav"
     for i, c in enumerate(valid):
         p = raw_paths[c["id"]]
         lines.append("file '" + p.as_posix().replace("'", "'\\''") + "'")
         if i < len(valid) - 1:
             lines.append("file '" + silence.as_posix() + "'")
-    if not lines:
-        return char_id, None
     concat.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    out = OUT_AUDIO / f"{char_id}.ogg"
+    out = OUT_AUDIO / f"{char_id}{suffix}.ogg"
     cmd = [
         ffmpeg, "-y", "-hide_banner", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", str(concat),
@@ -244,7 +285,16 @@ def encode_char(char_id: str, clips: list[dict], raw_paths: dict[str, Path],
     ]
     p = subprocess.run(cmd, capture_output=True, text=True)
     if p.returncode != 0 or not out.exists() or out.stat().st_size == 0:
-        print(f"  ! {char_id} 编码失败：{p.stderr.strip()[:160]}", flush=True)
+        print(f"  ! {char_id}{suffix} 编码失败：{p.stderr.strip()[:160]}", flush=True)
+        return None
+    return stable_ver(suffix, valid)
+
+
+def encode_char(char_id: str, clips: list[dict], raw_paths: dict[str, Path],
+                ffmpeg: str, tmp: Path) -> tuple[str, dict | None]:
+    """把一个角色的全部语音拼成一条 OGG 雪碧图，返回 (char_id, json 项)。"""
+    ver = encode_sprite(char_id, "", clips, raw_paths, ffmpeg, tmp)
+    if not ver:
         return char_id, None
 
     by_cat: dict[str, list[dict]] = {}
@@ -265,16 +315,54 @@ def encode_char(char_id: str, clips: list[dict], raw_paths: dict[str, Path],
                 vo["g"] = c["group"]
             vs.append(vo)
         cats.append({"k": k, "n": name, "v": vs})
-    # clips 已按表内顺序排好；start 在调用前算好，这里只负责输出
-    # 文件名不变，用内容 hash 做 query，避免 CDN/浏览器继续用旧雪碧图
-    ver = hashlib.md5(out.read_bytes()).hexdigest()[:8]
     return char_id, {"f": f"/voice/{char_id}.ogg?v={ver}", "n": len(clips), "cats": cats}
+
+
+def extract_cn_wavs(records: list[dict], cn_audio: dict[str, tuple[str, int]],
+                    tmp: Path) -> tuple[dict[str, Path], dict[str, float]]:
+    """从国服 nab 中导出中文 WAV，返回 (id -> wav, id -> 秒数)。"""
+    raw_paths: dict[str, Path] = {}
+    durs: dict[str, float] = {}
+    by_file: dict[str, list[dict]] = {}
+    for r in records:
+        info = cn_audio.get(r["id"])
+        if info:
+            by_file.setdefault(info[0], []).append(r)
+    t0 = time.time()
+    for n, (path, rs) in enumerate(by_file.items(), 1):
+        try:
+            env = UnityPy.load(path)
+        except Exception:
+            continue
+        by_pid = {o.path_id: o for o in env.objects if o.type.name == "AudioClip"}
+        for r in rs:
+            o = by_pid.get(cn_audio[r["id"]][1])
+            if o is None:
+                continue
+            try:
+                d = o.read()
+                samples = d.samples
+                if not samples:
+                    continue
+                raw = next(iter(samples.values()))
+                safe = re.sub(r"[^\w.-]+", "_", r["id"])
+                p = tmp / f"cn_{safe}.wav"
+                p.write_bytes(raw)
+                raw_paths[r["id"]] = p
+                durs[r["id"]] = float(d.m_Length or 0.0)
+            except Exception:
+                continue
+        if n % 40 == 0:
+            print(f"  解包国服 {n}/{len(by_file)} 个包，{time.time()-t0:.0f}s", flush=True)
+    print(f"  写出 {len(raw_paths)} 个中文 WAV，{time.time()-t0:.0f}s", flush=True)
+    return raw_paths, durs
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", default="", help="只处理这些角色 id，逗号分隔，例如 102,352")
     ap.add_argument("--limit", type=int, default=0, help="只处理前 N 个角色（调试）")
+    ap.add_argument("--no-cn", action="store_true", help="跳过国服中文语音")
     ap.add_argument("--keep-temp", action="store_true")
     args = ap.parse_args()
 
@@ -406,6 +494,58 @@ def main():
             if item:
                 payload[cid] = item
 
+    # 国服中文语音：能对上多少提取多少，缺的角色保持纯日语
+    if not args.no_cn and CN_AB.exists():
+        print("\n附加：扫描国服中文语音包…")
+        cn_audio = scan_audio_cn({r["id"] for r in usable})
+        cn_records = [r for r in usable if r["id"] in cn_audio]
+        cn_wavs, cn_durs = extract_cn_wavs(cn_records, cn_audio, tmp)
+        cn_grouped: dict[int, list[dict]] = {}
+        for r in usable:
+            if r["id"] not in cn_wavs or cn_durs.get(r["id"], 0) <= 0:
+                continue
+            cid = resolve(r["prefix"])
+            if cid is None or str(cid) not in payload:
+                continue
+            cn_grouped.setdefault(cid, []).append(r)
+
+        def encode_zh(cid: int, rs: list[dict]):
+            rs = sorted(rs, key=lambda x: x["order"])
+            cs = []
+            for r in rs:
+                c = dict(r)
+                c["dur"] = cn_durs[r["id"]]
+                cs.append(c)
+            t = 0.0
+            last = len(cs) - 1
+            for i, c in enumerate(cs):
+                c["zstart"] = t
+                t += c["dur"] + (GAP if i < last else 0.0)
+            ver = encode_sprite(str(cid), ".zh", cs, cn_wavs, ffmpeg, tmp)
+            return cid, cs, ver
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            jobs = [pool.submit(encode_zh, cid, rs) for cid, rs in cn_grouped.items()]
+            for f in as_completed(jobs):
+                cid, cs, ver = f.result()
+                if not ver:
+                    continue
+                item = payload.get(str(cid))
+                if not item:
+                    continue
+                by_id = {it["id"]: it for cat in item["cats"] for it in cat["v"]}
+                for c in cs:
+                    it = by_id.get(c["id"])
+                    if it is not None:
+                        it["zs"] = round(c["zstart"], 3)
+                        it["ze"] = round(c["zstart"] + c["dur"], 3)
+                item["zc"] = sum(1 for c in cs if c["id"] in by_id)
+                item["fz"] = f"/voice/{cid}.zh.ogg?v={ver}"
+        n_zh = sum(v.get("zc", 0) for v in payload.values())
+        print(f"  中文语音覆盖 {n_zh} 条，{sum(1 for v in payload.values() if v.get('fz'))} 个角色")
+    elif not args.no_cn:
+        print(f"  ! 未找到国服语音目录，跳过中文：{CN_AB}")
+
     # --only / --limit 调试时不要冲掉其余角色的索引
     merged: dict[str, dict] = {}
     if (args.only or args.limit) and OUT_JSON.exists():
@@ -416,8 +556,10 @@ def main():
     merged.update(payload)
 
     if not args.only and not args.limit:
+        expected = {f"{k}.ogg" for k in payload}
+        expected |= {f"{k}.zh.ogg" for k, v in payload.items() if v.get("fz")}
         for p in OUT_AUDIO.glob("*.ogg"):
-            if p.stem not in payload:
+            if p.name not in expected:
                 p.unlink()
 
     OUT_JSON.write_text(
@@ -429,8 +571,12 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
 
     n_voice = sum(v["n"] for v in payload.values())
+    n_zh = sum(v.get("zc", 0) for v in payload.values())
     size_mb = sum((OUT_AUDIO / f"{k}.ogg").stat().st_size for k in payload) / 1048576
-    print(f"\n完成：{len(payload)} 个角色，{n_voice} 条语音，音频 {size_mb:.1f} MB")
+    size_zh = sum((OUT_AUDIO / f"{k}.zh.ogg").stat().st_size
+                  for k, v in payload.items() if v.get("fz")) / 1048576
+    print(f"\n完成：{len(payload)} 个角色，{n_voice} 条语音（中配 {n_zh} 条），"
+          f"音频 {size_mb:.1f} + {size_zh:.1f} MB")
     print(f"  音频目录 {OUT_AUDIO}")
     print(f"  索引 {OUT_JSON}  {OUT_JSON.stat().st_size/1024:.0f} KB")
 
