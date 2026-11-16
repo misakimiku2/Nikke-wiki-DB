@@ -39,6 +39,7 @@
 from __future__ import annotations
 
 import argparse
+import audioop
 import hashlib
 import io
 import json
@@ -100,6 +101,37 @@ def write_silence(path: Path, seconds: float = GAP, rate: int = 48000):
         w.setsampwidth(2)
         w.setframerate(rate)
         w.writeframes(b"\x00\x00" * int(rate * seconds))
+
+
+def normalize_wav(raw: bytes) -> tuple[bytes, float]:
+    """把 AudioClip 的 WAV 统一成 48kHz / 单声道 / 16bit，返回 (wav, 秒数)。
+
+    国服语音混用 44.1k 与 48k；ffmpeg 的 concat demuxer 不会逐段重采样，
+    混采样率会把后面所有分段的时间轴推歪，表现为开头带上一句、尾音被掐。
+    另外时长按实际采样数计算，不依赖 AudioClip.m_Length。
+    """
+    with wave.open(io.BytesIO(raw)) as w:
+        rate = w.getframerate()
+        ch = w.getnchannels()
+        sw = w.getsampwidth()
+        pcm = w.readframes(w.getnframes())
+    if ch != 1:
+        pcm = audioop.tomono(pcm, sw, 0.5, 0.5)
+        ch = 1
+    if sw != 2:
+        pcm = audioop.lin2lin(pcm, sw, 2)
+        sw = 2
+    if rate != 48000:
+        pcm, _ = audioop.ratecv(pcm, 2, 1, rate, 48000, None)
+        rate = 48000
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(48000)
+        w.writeframes(pcm)
+    seconds = len(pcm) / (48000 * 2)
+    return out.getvalue(), seconds
 
 
 def cat_of(desc: str) -> str:
@@ -345,11 +377,12 @@ def extract_cn_wavs(records: list[dict], cn_audio: dict[str, tuple[str, int]],
                 if not samples:
                     continue
                 raw = next(iter(samples.values()))
+                raw, dur = normalize_wav(raw)
                 safe = re.sub(r"[^\w.-]+", "_", r["id"])
                 p = tmp / f"cn_{safe}.wav"
                 p.write_bytes(raw)
                 raw_paths[r["id"]] = p
-                durs[r["id"]] = float(d.m_Length or 0.0)
+                durs[r["id"]] = dur or float(d.m_Length or 0.0)
             except Exception:
                 continue
         if n % 40 == 0:
@@ -438,11 +471,12 @@ def main():
                 if not samples:
                     continue
                 raw = next(iter(samples.values()))
+                raw, dur = normalize_wav(raw)
                 safe = re.sub(r"[^\w.-]+", "_", r["id"])
                 p = tmp / f"{safe}.wav"
                 p.write_bytes(raw)
                 raw_paths[r["id"]] = p
-                r["dur"] = float(d.m_Length or 0.0)
+                r["dur"] = dur or float(d.m_Length or 0.0)
             except Exception:
                 continue
         done += 1
