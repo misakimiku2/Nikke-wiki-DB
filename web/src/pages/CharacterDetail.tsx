@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link, useParams } from 'react-router-dom'
 import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
-  loadCharImages, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories, loadCharSpine,
+  loadCharImages, loadCharMessages, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories, loadCharSpine,
   loadCharVoices, loadCharacters, mainBase, nf, pickBurstAnim, skillcutModelName, tintFor, variantsOf,
-  type CharArtMap, type CharImages, type Character, type CharSkill, type CharSkillsData,
+  type CharArtMap, type CharImages, type Character, type CharMessagesData, type CharSkill, type CharSkillsData,
   type CharStoriesData, type CharVoiceData, type SkillcutIndex,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
+import MessageChat from '../components/MessageChat'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import VoiceList from '../components/VoiceList'
 
@@ -156,6 +157,7 @@ export default function CharacterDetail() {
   const [skillLv, setSkillLv] = useState(10)
   const [storiesMap, setStoriesMap] = useState<CharStoriesData>({})
   const [voiceMap, setVoiceMap] = useState<Record<string, CharVoiceData>>({})
+  const [msgData, setMsgData] = useState<CharMessagesData | null>(null)
   const [art, setArt] = useState<CharArtMap>({})
   const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
@@ -176,6 +178,7 @@ export default function CharacterDetail() {
     loadCharSkills().then(setSkillData).catch(() => {})
     loadCharStories().then(setStoriesMap).catch(() => {})
     loadCharVoices().then(setVoiceMap).catch(() => {})
+    loadCharMessages().then(setMsgData).catch(() => {})
     loadCharArt().then(setArt).catch(() => {})
   }, [])
 
@@ -229,7 +232,10 @@ export default function CharacterDetail() {
   const relCounsel = rel?.counsel ?? []
   const voice = id ? voiceMap[String(id)] : null
   const hasVoices = !!voice && voice.n > 0
-  const hasRel = relStories.length > 0 || relCounsel.length > 0 || hasVoices
+  const msg = id ? msgData?.items[String(id)] : null
+  const msgRooms = msg?.rooms ?? []
+  const hasMsg = msgRooms.length > 0
+  const hasStoryRel = relStories.length > 0 || relCounsel.length > 0 || hasVoices
   /** 切角色时把 tab 复位到有内容的那一边 */
   useEffect(() => {
     setRelTab((t) => {
@@ -274,6 +280,12 @@ export default function CharacterDetail() {
       : pose === 'burst' ? (burstName || current) : (combatName || current)
     spineRef.current?.saveFrame(`${nm}_${status.anim}_${status.time.toFixed(2)}.png`)
   }, [current, burstName, combatName, pose, status.anim, status.time])
+
+  /** 群聊里每个发言人的官方头肩头像；没有头像的 NPC 返回 null */
+  const avatarOf = useCallback((cid: number) => {
+    const base = mainBase(imgs, cid)
+    return base && mi.has(base) ? `/charmi/${base}.webp` : null
+  }, [imgs, mi])
 
   // ---- 时间轴（与 CG 查看器同一套交互：拖动时暂停、松手续播、交还焦点）----
   const canSeek = hasModel && modelReady && status.duration > 0
@@ -621,7 +633,7 @@ export default function CharacterDetail() {
                   : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
               </em>
             </div>
-            {hasRel && (
+            {hasStoryRel && (
               <button
                 className="slot slot-btn"
                 onClick={() => {
@@ -629,7 +641,11 @@ export default function CharacterDetail() {
                 }}
                 title="跳到剧情与语音"
               >
-                <span>{relStories.length || relCounsel.length ? (hasVoices ? '剧情与语音' : '好感剧情') : '角色语音'}</span>
+                <span>
+                  {relStories.length || relCounsel.length
+                    ? (hasVoices ? '剧情与语音' : '好感剧情')
+                    : '角色语音'}
+                </span>
                 <em>
                   {[
                     relStories.length ? `${relStories.length} 卷剧情` : '',
@@ -639,9 +655,21 @@ export default function CharacterDetail() {
                 </em>
               </button>
             )}
+            {hasMsg && (
+              <button
+                className="slot slot-btn"
+                onClick={() => {
+                  document.getElementById('msgbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                title="跳到巴拉短信"
+              >
+                <span>巴拉短信</span>
+                <em>{msgRooms.length} 段 · {nf(msg?.lines ?? 0)} 条</em>
+              </button>
+            )}
           </div>
 
-          {hasRel && (
+          {hasStoryRel && (
             <section className="storybox" id="storybox" style={{ ['--acc' as string]: accentFor(c.id) }}>
               <div className="storybox-head">
                 <span className="storybox-title">
@@ -709,6 +737,23 @@ export default function CharacterDetail() {
               ) : relTab === 'voices' && voice ? (
                 <VoiceList key={c.id} data={voice} accent={accentFor(c.id)} />
               ) : null}
+            </section>
+          )}
+
+          {hasMsg && msgData && (
+            <section className="storybox msgbox" id="msgbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
+              <div className="storybox-head">
+                <span className="storybox-title">巴拉短信 <i>BLA BLA</i></span>
+                <span className="msgbox-meta">{msgRooms.length} 段 · {nf(msg?.lines ?? 0)} 条</span>
+              </div>
+              <MessageChat
+                key={c.id}
+                data={msgData}
+                rooms={msgRooms}
+                accent={accentFor(c.id)}
+                charName={c.name}
+                avatarOf={avatarOf}
+              />
             </section>
           )}
 

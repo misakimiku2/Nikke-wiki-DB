@@ -263,6 +263,50 @@ export async function loadCharVoices(): Promise<Record<string, CharVoiceData>> {
   return cacheVoices
 }
 
+/* 角色巴拉（Blabla）短信 / 主线短信。
+   房间含分支：行尾 next 是 ref 跳转目标下标（-1 = 顺序往下），choice=1 表示
+   玩家可选回复。群聊的发言人与显示名在 sn 里按 slug 查。 */
+
+export type CharMsgLine = [
+  kind: number,          // 0 角色 / 1 指挥官 / 2 系统
+  sender: string | null, // MessengerMemberTable slug
+  text: string,
+  next: number,
+  choice: number,
+]
+
+export type CharMsgRoom = {
+  /** 房间标题（私聊为角色名，群聊为群名） */
+  t: string
+  /** blabla = 巴拉聊天，main = 主线短信 */
+  c: 'blabla' | 'main'
+  /** [角色 id, 显示名] */
+  m: [number, string][]
+  /** 发言人 slug → [角色 id, 聊天显示名] */
+  sn: Record<string, [number | null, string]>
+  l: CharMsgLine[]
+}
+
+export type CharMsgItem = { rooms: string[]; lines: number }
+
+export type CharMessagesData = {
+  total: number
+  rooms: Record<string, CharMsgRoom>
+  items: Record<string, CharMsgItem>
+}
+
+let cacheMessages: CharMessagesData | null = null
+
+export async function loadCharMessages(): Promise<CharMessagesData> {
+  if (cacheMessages) return cacheMessages
+  try {
+    cacheMessages = await getJSON<CharMessagesData>('/data/char_messages.json')
+  } catch {
+    cacheMessages = { total: 0, rooms: {}, items: {} }
+  }
+  return cacheMessages
+}
+
 /* 咨询分支流（export_counsel_flow.py，来自引擎脚本表）：
    next = 显式跳转（缺省 next(x)=x+1），choices = 选项组（1-based 行号） */
 
@@ -548,6 +592,49 @@ export type StoryDetail = {
   chapter: number | null
   source: string
   segments: StorySegment[]
+}
+
+/* 剧情内短信阅读器（build/export_story_sms.mjs）：
+   剧情全文里剩下的活动 / 个人 / 支线 / 主线内嵌手机对话。 */
+
+export type StorySmsPart = [number | null, string, string | null]
+
+/** [kind, sender slug, 显示名, 文本]；kind 0 角色 / 1 指挥官 / 2 旁白系统 */
+export type StorySmsLine = [number, string | null, string | null, string]
+
+export type StorySmsGroup = {
+  g: string
+  /** 目标剧情单元 id */
+  unit: number
+  /** 插在哪个剧情段落里 */
+  anchor: string
+  /** 插在该段第 at 行之前（等于该段行数时插在段末） */
+  at: number
+  cat: string
+  label: string
+  n: number
+  t: string
+  p: string
+  parts: Record<string, StorySmsPart>
+  l: StorySmsLine[]
+}
+
+export type StorySmsData = {
+  total: number
+  cats: { k: string; n: string; c: number }[]
+  items: StorySmsGroup[]
+}
+
+let cacheStorySms: StorySmsData | null = null
+
+export async function loadStorySms(): Promise<StorySmsData> {
+  if (cacheStorySms) return cacheStorySms
+  try {
+    cacheStorySms = await getJSON<StorySmsData>('/data/story_sms.json')
+  } catch {
+    cacheStorySms = { total: 0, cats: [], items: [] }
+  }
+  return cacheStorySms
 }
 
 let cacheUnits: StoryUnit[] | null = null

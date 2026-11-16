@@ -43,7 +43,7 @@ set NIKKE_SRC=E:\test\nikke_extract
 ## 环境要求
 
 - Python 3.10+，依赖见 `requirements.txt`
-- Node 20+（前端构建）
+- Node 20+（前端构建；`export_char_messages.mjs` 用 `node:sqlite`，需要 Node 22.5+）
 - 上游 `nikke_extract` 已经跑完，`CG/`、`主线剧情/`、`其他剧情/`、`decrypted/`、`staticdata/` 齐备
 
 ```bash
@@ -81,6 +81,8 @@ python build/export_counsel_flow.py       # → public/data/counsel_flow.json �
 python build/export_story.py              # → public/data/story/ 分章 JSON（读上面的映射改标题）
 python build/export_search.py             # → public/data/search-index.json
 python build/export_web.py                # → public/data        其余聚合 JSON
+node build/export_char_messages.mjs       # → public/data/char_messages.json 角色巴拉短信（依赖 characters.json）
+node build/export_story_sms.mjs           # → public/data/story_sms.json 剧情内嵌短信映射（依赖 story/<id>.json）
 
 # 5. 自检与前端构建
 python build/verify.py                    # 校验各产物是否齐备
@@ -100,7 +102,8 @@ cd web && npm run build                   # → dist/
   （`public/char`，即 `icons-char-full(hd)`）。
 - **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
   姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
-- **好感剧情（个人剧情 + 咨询）**：详情页底部 `storybox` 区块，两个 tab。
+- **好感剧情（个人剧情 + 咨询）**：详情页底部 `storybox` 区块，按角色内容显示
+  个人剧情 / 咨询 / 语音 1–3 个 tab；巴拉短信在其下方单独成块（`#msgbox`）。
   映射来自 `public/data/char_stories.json`（`export_char_stories.py`）：bucket 后缀与角色
   英文名匹配（皮肤变体本来就是独立角色 id，如 17=阿妮斯：超级巨星），皮肤中文名从咨询
   会话标题解析。个人剧情卡点进 `/story/:id` 阅读器（标题已换成「角色名·个人剧情」）；
@@ -114,7 +117,7 @@ cd web && npm run build                   # → dist/
   哪支的后续。个别源数据把选项后续做成玩家连续台词（ade_agentbunny_06
   「不是。」→「两个都喜欢。」），指针本身表达了这个彩蛋。
   `export_story.py` 依赖本映射改阅读器标题，须先于它运行。
-- **角色语音**：详情页「好感剧情」区的第三个 tab。语音清单来自
+- **角色语音**：详情页 `storybox` 的「语音」tab。语音清单来自
   `staticdata/CharacterVoiceGroupTable.mpk`（说明 key / 语音 ID / 台词 key 三连），
   日文/国际服中文台词取 `Locale_Character`，国服中文台词取国服客户端自己的
   `runtime_data/saus/saus/lss/Locale_Character.lss`（国服翻译与国际服 zh-CN
@@ -134,6 +137,22 @@ cd web && npm run build                   # → dist/
   联动角色（2B / 千束 / Persona 等）
   国服没有中配、语音池里放的是日语原声，用国服 `cv_zh_cn` 与日配 `cv_ja` 相同
   来识别并归为仅日配。皮肤有独立语音时会标注皮肤名。
+- **巴拉短信 / 主线短信**：详情页好感剧情区块下方的独立「巴拉短信」区域。
+  「切换聊天」会打开覆盖聊天区的二级会话列表（全部 / 聊天 / 群组），
+  带搜索、头像、最后一句预览，列表不设内部滚动条；
+  数据来自 `public/data/char_messages.json`（`build/export_char_messages.mjs`，Node 脚本）。
+  消息行取 `staticdata/MessengerDialogTable.mpk`，文本取 `Locale_SuddenMessage`；
+  `m_ex_*` 归为「巴拉聊天」，`m_mainafter_*` 归为「主线短信」，测试房间不导出。
+  私聊按房间 slug 精确匹配角色 / 皮肤（`marian_P` → 神罚、`anne_miraclefairy` →
+  安妮：奇迹仙女、`rupee_wintershopper` → 露菲：冬日购物狂），群聊按
+  `MessengerRoomTable` 成员并补上实际发过言的人。表格里 `f6=2` 的连续行是玩家
+  可选回复，`ref` 是分支 / 合流跳转目标；前端沿跳转游走，支持选择与「重选」。
+  剧情全文不再单独列「剧情内短信」单元：MessengerDialogTable 里的独立巴拉房间
+  由角色页展示，剧情内嵌短信由 `build/export_story_sms.mjs` 映射回各自剧情单元，
+  在阅读器对应段落、对应台词之间直接以巴拉短信气泡呈现（优先读
+  `ScenarioDialogTable.*` / `EventScenarioDialogTable.*` 场景脚本里的真实触发点，
+  找不到才退回房间 key 前缀匹配）；「日常对话」分类只保留气泡、
+  场地、活动短对话等 7 类。
 - **技能说明**：`public/data/char_skills.json`（`export_char_skills.py`）。
   技能 ID（Locale_Skill 的 5 位数字键）= 类型前缀(1=伤害系 / 2=增益系) + 角色号(3 位) + 槽位，
   名称与描述模板取自 Locale_Skill；每级数值取自 SkillInfoTable.mpk（记录尾部的

@@ -179,7 +179,11 @@ export default function CounselChat({
           const prevIsChar = !!prev && prev.t === 'line' && kinds[prev.n - 1] === 'char'
           return (
             <div className="cc-msg" key={`m${n}`}>
-              {avatar && !prevIsChar && <img className="cc-ava" src={avatar} alt="" loading="lazy" />}
+              {!prevIsChar && (
+                avatar
+                  ? <span className="cc-ava"><img src={avatar} alt="" loading="lazy" /></span>
+                  : <span className="cc-ava cc-ava-ph" aria-hidden>{(sp || charName).slice(0, 1)}</span>
+              )}
               <div className="cc-bubble">
                 <span className="cc-name" style={{ color: accent }}>{sp || charName}</span>
                 <p>{txt}</p>

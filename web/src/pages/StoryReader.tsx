@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  accentFor, loadCharacters, loadStoryIndex, loadStoryUnit, nf,
-  type Character, type StoryCgRef, type StoryDetail, type StoryUnit,
+  accentFor, loadCharacters, loadStoryIndex, loadStorySms, loadStoryUnit, nf,
+  type Character, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
+import StorySmsInline from '../components/StorySmsInline'
 
 type Frame = {
   fg: string | null
@@ -341,7 +342,8 @@ function ReaderNav({
                 <span className="rn-title">{u.title}</span>
                 <span className="rn-meta">{nf(u.lines)}</span>
               </Link>
-              {u.id === detail.id && detail.segments.length > 1 && (
+              {u.id === detail.id && detail.segments.length > 1
+                && detail.bucket !== 'MessengerDialogTable' && (
                 <div className="rn-chapters">
                   {detail.segments.map((seg, i) => (
                     <Link
@@ -379,6 +381,7 @@ export default function StoryReader() {
   const [detail, setDetail] = useState<StoryDetail | null>(null)
   const [index, setIndex] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
+  const [smsData, setSmsData] = useState<StorySmsData | null>(null)
 
   // 左侧目录面板：展开状态记在 localStorage，窄屏默认收起
   const [navOpen, setNavOpen] = useState(() => {
@@ -403,6 +406,23 @@ export default function StoryReader() {
     loadStoryIndex().then(setIndex).catch(() => {})
     loadCharacters().then(setChars).catch(() => {})
   }, [id])
+
+  // 内嵌短信：所有剧情单元都可能带 Messenger 段，按单元/段落分组
+  useEffect(() => {
+    if (!detail || smsData) return
+    loadStorySms().then(setSmsData).catch(() => {})
+  }, [detail, smsData])
+
+  const inlineSms = useMemo(() => {
+    const map: Record<string, Record<number, StorySmsGroup[]>> = {}
+    if (!detail || !smsData) return map
+    for (const it of smsData.items) {
+      if (it.unit !== detail.id) continue
+      const seg = map[it.anchor] || (map[it.anchor] = {})
+      ;(seg[it.at] || (seg[it.at] = [])).push(it)
+    }
+    return map
+  }, [detail, smsData])
 
   const pos = useMemo(() => index.findIndex((u) => String(u.id) === id), [index, id])
   // 上/下话只在同一分类内跳，避免活动最后一个跳到主线
@@ -630,21 +650,28 @@ export default function StoryReader() {
               const isNarr = !ln.sp
               const run = seg.runs.get(li)
               return (
-                <div
-                  key={ln.no}
-                  id={`L${ln.no}`}
-                  data-run={run}
-                  className={`line ${isNarr ? 'narr' : ''}`}
-                >
-                  {ln.sp && (
-                    <span className="spk" style={{ color: ch ? accentFor(ch.id) : undefined }}>
-                      {ln.sp}
-                    </span>
-                  )}
-                  <p>{ln.txt}</p>
-                </div>
+                <Fragment key={ln.no}>
+                  {inlineSms[seg.g]?.[li]?.map((g) => (
+                    <StorySmsInline key={g.g} group={g} />
+                  ))}
+                  <div
+                    id={`L${ln.no}`}
+                    data-run={run}
+                    className={`line ${isNarr ? 'narr' : ''}`}
+                  >
+                    {ln.sp && (
+                      <span className="spk" style={{ color: ch ? accentFor(ch.id) : undefined }}>
+                        {ln.sp}
+                      </span>
+                    )}
+                    <p>{ln.txt}</p>
+                  </div>
+                </Fragment>
               )
             })}
+            {inlineSms[seg.g]?.[seg.lines.length]?.map((g) => (
+              <StorySmsInline key={g.g} group={g} />
+            ))}
           </section>
         ))}
       </div>

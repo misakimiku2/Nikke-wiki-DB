@@ -718,8 +718,14 @@ img { display: block; }
   margin-top: 40px; border: 1px solid var(--line);
   transition: border-color .35s;
 }
+/* 巴拉短信是独立区块，紧跟在好感剧情下方 */
+.msgbox { margin-top: 22px; }
+.msgbox-meta {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .08em; color: var(--dim-2);
+}
 .storybox-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
   padding: 11px 16px; border-bottom: 1px solid var(--line);
   background: var(--surface);
   transition: background .35s, border-color .35s;
@@ -732,9 +738,9 @@ img { display: block; }
   font-style: normal; font-size: 9px; letter-spacing: .22em;
   color: var(--dim-2); margin-left: 8px;
 }
-.story-tabs { display: flex; gap: 8px; }
+.story-tabs { display: flex; flex-wrap: nowrap; flex-shrink: 0; gap: 8px; }
 .story-tabs button {
-  padding: 6px 12px; cursor: pointer;
+  padding: 6px 12px; cursor: pointer; white-space: nowrap;
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
   font-size: 11px; letter-spacing: .06em;
   background: transparent; color: var(--dim); border: 1px solid var(--line);
@@ -958,9 +964,13 @@ img { display: block; }
 .cc-msg { display: flex; gap: 11px; margin-top: 15px; max-width: 86%; }
 .cc-msg.me { margin-left: auto; flex-direction: row-reverse; }
 .cc-ava {
-  flex: 0 0 auto; width: 34px; height: 46px; object-fit: cover; object-position: top;
-  border: 1px solid var(--line-2); align-self: flex-end;
+  flex: 0 0 auto; box-sizing: border-box;
+  width: 40px; height: 40px;
+  display: block; overflow: hidden;
+  background: var(--bg-2);
+  border: 1px solid var(--line-2); align-self: flex-start;
 }
+.cc-ava img { display: block; width: 100%; height: auto; margin-top: -3px; }
 .cc-bubble {
   min-width: 0; padding: 9px 13px 10px;
   background: var(--surface); border: 1px solid var(--line);
@@ -1029,6 +1039,202 @@ img { display: block; }
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
   font-size: 11px; letter-spacing: .1em; color: var(--dim-2);
 }
+/* --- 角色短信（巴拉聊天 / 主线短信） --- */
+.mc { display: flex; flex-direction: column; }
+
+/* 会话头部：头像 + 当前聊天名 + 切换聊天 / 重选 */
+.mc-top {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.mc-current { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 10px; }
+.mc-current-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mc-current-main b {
+  font-size: 14px; font-weight: 800; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc-current-main em {
+  font-style: normal;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .04em; color: var(--dim-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc-top-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+.mc-switch {
+  padding: 6px 10px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+  transition: color .15s, border-color .15s;
+}
+.mc-switch:hover { color: var(--text); border-color: var(--line-2); }
+.mc-switch i { display: inline-block; font-style: normal; margin-left: 3px; }
+.mc-reset {
+  flex: 0 0 auto; padding: 5px 9px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--dim); border: 1px dashed var(--line-2);
+}
+.mc-reset:hover { color: var(--text); border-color: var(--acc); }
+
+/* 会话头像：私聊单人，群聊右下角标成员数 */
+.mc-avatar {
+  position: relative; flex: 0 0 auto; box-sizing: border-box;
+  width: 40px; height: 40px; display: block; overflow: hidden;
+  background: var(--bg-2); border: 1px solid var(--line-2);
+  color: var(--dim); font-size: 14px; font-weight: 700;
+}
+.mc-avatar > b {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+}
+/* 用原始 1:2 头肩图按宽度缩放后裁掉下半部分。不要用 object-fit：
+   Chromium 在方形容器里 cover 这张 1:2 图时缩放质量明显更差，边缘会出锯齿。 */
+.mc-avatar img {
+  display: block; width: 100%; height: auto;
+  margin-top: -3px;
+}
+.mc-avatar.sm { width: 32px; height: 32px; font-size: 12px; }
+.mc-avatar.sm img { margin-top: -2px; }
+.mc-avatar > i {
+  position: absolute; right: -1px; bottom: -1px;
+  min-width: 14px; height: 14px; padding: 0 3px;
+  font-style: normal; font-size: 8px; line-height: 14px; text-align: center;
+  background: var(--text); color: var(--bg); border: 1px solid var(--bg);
+}
+.mc-avatar.sm > i { min-width: 12px; height: 12px; line-height: 12px; font-size: 7px; }
+
+/* 会话列表：覆盖聊天区的二级界面，搜索 + 分类 + 短信式会话列表 */
+.mc-picker { background: var(--bg); }
+.mc-picker-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.mc-back {
+  padding: 6px 10px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .04em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+}
+.mc-back:hover { color: var(--text); border-color: var(--line-2); }
+.mc-picker-title { font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.mc-picker-total {
+  margin-left: auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .06em; color: var(--dim-2);
+}
+.mc-picker-bar { padding: 12px 16px 0; }
+.mc-search {
+  width: 100%; box-sizing: border-box; padding: 8px 10px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); font: inherit; font-size: 12px; outline: none;
+}
+.mc-search:focus { border-color: var(--line-2); }
+.mc-search::placeholder { color: var(--dim-2); }
+.mc-cats { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; border-bottom: 1px dashed var(--line); }
+.mc-cats button {
+  padding: 5px 10px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .04em;
+  background: transparent; color: var(--dim); border: 1px solid var(--line);
+  transition: color .15s, background .15s, border-color .15s;
+}
+.mc-cats button b { margin-left: 4px; font-weight: 700; }
+.mc-cats button:hover { color: var(--text); border-color: var(--line-2); }
+.mc-cats button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.mc-list { max-height: 320px; overflow-y: auto; scrollbar-width: thin; }
+/* 二级界面直接铺开，不出现内部滚动条 */
+.mc-picker-full .mc-list { max-height: none; overflow: visible; }
+.mc-group-label {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 16px 6px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .14em; color: var(--dim-2);
+}
+.mc-group-label b { font-weight: 700; }
+.mc-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 16px; cursor: pointer; text-align: left;
+  background: transparent; color: inherit;
+  border: 0; border-bottom: 1px dashed var(--line);
+}
+.mc-item:last-child { border-bottom: 0; }
+.mc-item:hover { background: rgba(255, 255, 255, .03); }
+.mc-item.on { background: rgba(255, 255, 255, .05); box-shadow: inset 2px 0 var(--acc); }
+[data-theme="light"] .mc-item:hover { background: rgba(0, 0, 0, .03); }
+[data-theme="light"] .mc-item.on { background: rgba(0, 0, 0, .04); }
+.mc-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.mc-item-main b {
+  font-size: 12.5px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc-item.on .mc-item-main b { color: var(--acc); }
+.mc-item-main span {
+  font-size: 11px; color: var(--dim-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mc-item-side {
+  flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; color: var(--dim-2);
+}
+.mc-item-side em { font-style: normal; }
+.mc-item-side i { font-style: normal; padding: 1px 4px; border: 1px solid var(--line); }
+.mc-empty {
+  padding: 28px 16px; text-align: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .06em; color: var(--dim-2);
+}
+
+/* 聊天区：头像绝对定位，气泡统一留出头像宽度，连续发言也能对齐。
+   咨询和巴拉短信共用这套对话气泡。 */
+.mc-feed { margin-top: 12px; }
+.cc-feed .cc-msg:not(.me) {
+  position: relative; box-sizing: border-box; padding-left: 51px;
+}
+.cc-feed .cc-msg:not(.me) .cc-ava { position: absolute; left: 0; top: 0; }
+.cc-ava-ph {
+  display: grid; place-items: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; color: var(--dim); background: var(--bg-2);
+}
+.mc-sys {
+  margin-top: 16px; text-align: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .04em; color: var(--dim-2);
+}
+.mc-sys span { display: inline-block; padding: 3px 10px; border: 1px dashed var(--line); }
+.mc-foot { padding-top: 4px; }
+
+/* 剧情正文里的内嵌巴拉短信 */
+.story-sms-inline {
+  margin: 18px 0 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.ssi-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 9px 14px; border-bottom: 1px solid var(--line);
+}
+.ssi-badge {
+  padding: 2px 6px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9px; letter-spacing: .14em; color: var(--red);
+  border: 1px solid var(--red);
+}
+.ssi-title { font-size: 12.5px; font-weight: 700; }
+.ssi-meta {
+  margin-left: auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .04em; color: var(--dim-2);
+}
+.ssi-feed {
+  margin: 0; padding: 14px 16px 10px;
+  border: 0; background: var(--bg-2);
+}
+
 .slot-btn { cursor: pointer; text-align: left; font: inherit; color: inherit; background: transparent; }
 .slot-btn:hover { border-color: var(--line-2); border-style: solid; }
 @media (max-width: 760px) {

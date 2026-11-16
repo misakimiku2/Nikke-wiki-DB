@@ -43,7 +43,7 @@ OTHER_MODULES = [
     ("支线故事",            "支线故事_全量.json",        "side_story","支线故事",        40),
     ("外传与前哨基地日常",  "",                          "gaiden",    "外传与日常",      50),
     ("咨询对话",            "咨询对话_全量.json",        "counseling","咨询对话",        60),
-    ("短信与日常对话",      "短信与日常对话_全量.json",  "daily",     "短信与日常",      70),
+    ("短信与日常对话",      "短信与日常对话_全量.json",  "daily",     "日常对话",        70),
     ("补充剧情文本",        "补充剧情文本_全量.json",    "extra",     "补充剧情",        80),
 ]
 
@@ -221,6 +221,11 @@ def collect_story_units():
             data = json.load(open(path, encoding="utf-8"))
             if not isinstance(data, list):
                 continue
+            if subdir == "短信与日常对话":
+                # MessengerDialogTable 里的独立巴拉房间在角色页展示，剧情内嵌
+                # 短信由 build/export_story_sms.mjs 映射回各自剧情单元并在阅读器
+                # 里以内嵌气泡显示；这里不再单独建一个短信单元。
+                data = [item for item in data if item.get("bucket") != "MessengerDialogTable"]
             added = 0
             for idx, item in enumerate(data, start=1):
                 bucket = item.get("bucket") or item.get("event") or item.get("key") or f"{cat}_{idx}"
