@@ -328,8 +328,10 @@ export default function SpinePlayer({
     let animNames: string[] = []
     let currentAnim = ''
     let playing = true
-    /** 镜头运镜总开关：开 = 自动跟拍 + 禁止手动移动/缩放；关 = 不跟拍，可手动 */
+    /** 镜头运镜总开关：开 = 自动跟拍 + 禁止手动移动/缩放；关 = 不跟拍，可手动。
+        只对大招 cut-in 生效，立绘 / 战斗姿态 / CG 始终允许手动缩放和拖拽 */
     let cinemaOn = true
+    const cinemaLock = () => cinemaOn && dir === 'spine_skillcut'
     let speed = 1
     let zoom = 1
     let ready = false
@@ -1302,7 +1304,7 @@ export default function SpinePlayer({
           }
           apply()
           if (sizeChanged) drawFrame()
-          canvas.style.cursor = cinemaOn && !calibOnRef.current ? 'default' : 'grab'
+          canvas.style.cursor = cinemaLock() && !calibOnRef.current ? 'default' : 'grab'
           emit(true)
         }
         fitFn = () => fit(true)
@@ -1314,8 +1316,8 @@ export default function SpinePlayer({
 
         const onWheel = (e: WheelEvent) => {
           e.preventDefault()
-          // 运镜开启时锁定取景：不接受滚轮缩放（calib 调试除外）
-          if (cinemaOn && !calibOnRef.current) return
+          // 运镜开启时锁定取景：不接受滚轮缩放（仅大招 cut-in，calib 调试除外）
+          if (cinemaLock() && !calibOnRef.current) return
           follow = false // 用户接管视图，相机跟拍暂停（复位恢复）
           const rect = canvas.getBoundingClientRect()
           const mx = e.clientX - rect.left - rect.width / 2
@@ -1341,8 +1343,8 @@ export default function SpinePlayer({
         let ly = 0
         const onDown = (e: PointerEvent) => {
           if (e.button !== 0) return
-          // 运镜开启时锁定取景：不接受拖拽（calib 调试除外）
-          if (cinemaOn && !calibOnRef.current) return
+          // 运镜开启时锁定取景：不接受拖拽（仅大招 cut-in，calib 调试除外）
+          if (cinemaLock() && !calibOnRef.current) return
           dragging = 'view'
           follow = false // 拖拽接管视图
           // 校准模式：按在「当前显示的背景板」上时，拖拽改为移动背景板
@@ -1406,7 +1408,7 @@ export default function SpinePlayer({
           canvas.removeEventListener('pointerup', onUp)
           canvas.removeEventListener('pointercancel', onUp)
         })
-        canvas.style.cursor = 'grab'
+        canvas.style.cursor = cinemaLock() && !calibOnRef.current ? 'default' : 'grab'
         const onDbl = () => fit(true)
         canvas.addEventListener('dblclick', onDbl)
         cleanups.push(() => canvas.removeEventListener('dblclick', onDbl))
@@ -1454,7 +1456,7 @@ export default function SpinePlayer({
           resetView() { fitFn?.() },
           setCameraFollow(on) {
             cinemaOn = on
-            canvas.style.cursor = on ? 'default' : 'grab'
+            canvas.style.cursor = cinemaLock() && !calibOnRef.current ? 'default' : 'grab'
             if (on) {
               // 回到默认取景并恢复跟拍，避免保留用户之前拖出来的偏移
               fit(true)
