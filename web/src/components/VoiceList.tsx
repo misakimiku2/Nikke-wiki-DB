@@ -72,6 +72,7 @@ export default function VoiceList({
   const loadCount = useRef(0)
 
   const missingZh = hasZh ? data.n - (data.zc ?? 0) : 0
+  const currentCv = lang === 'zh' ? data.cvz : data.cvj
 
   const voices = useMemo(() => {
     const pick = (list: CharVoice[]) => (lang === 'zh' ? list.filter(hasZhClip) : list)
@@ -278,10 +279,9 @@ export default function VoiceList({
           </button>
         </div>
       </div>
-      {(data.cvj || data.cvz) && (
+      {currentCv && (
         <div className="voice-cv">
-          {data.cvj && <span>日配 CV <b>{data.cvj}</b></span>}
-          {data.cvz && <span>中配 CV <b>{data.cvz}</b></span>}
+          {lang === 'zh' ? '中配' : '日配'} CV <b>{currentCv}</b>
         </div>
       )}
       {!hasZh && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
