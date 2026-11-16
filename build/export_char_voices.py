@@ -91,6 +91,19 @@ def clean_cv(s: str | None) -> str | None:
     return CV_RE.sub("", s).strip() or None
 
 
+def is_cn_dub(cv_ja: str | None, cv_cn: str | None) -> bool:
+    """国服是否真的配了中文。
+
+    联动角色（2B / 千束 / Persona 等）国服没有中配，语音池里放的是日语原声，
+    国服的 cv_zh_cn 也会直接沿用日配声优名。声优名相同或为「暂无」时视为无中配。
+    """
+    if not cv_cn:
+        return False
+    if cv_cn.strip() in ("暂无", "UNKNOWN", "未知"):
+        return False
+    return cv_cn != cv_ja
+
+
 CATS = [
     ("lobby", "大厅"),
     ("outpost", "前哨基地"),
@@ -440,6 +453,11 @@ def main():
         d = sysdesc.get(r["desc"], {})
         r["title"] = d.get("zh") or r["desc"].replace("voice_description_", "")
 
+    def cv_pair(cid: int) -> tuple[str | None, str | None]:
+        ja = clean_cv((lines.get(f"{cid}_cv_ja") or {}).get("zh"))
+        cn = clean_cv(cn_lines.get(f"{cid}_cv_zh_cn"))
+        return ja, cn
+
     print("3/4 扫描日语语音包…")
     voice_ids = {r["id"] for r in recs}
     audio = scan_audio(voice_ids)
@@ -564,6 +582,9 @@ def main():
             cid = resolve(r["prefix"])
             if cid is None or str(cid) not in payload:
                 continue
+            ja_cv, cn_cv = cv_pair(cid)
+            if not is_cn_dub(ja_cv, cn_cv):
+                continue
             cn_grouped.setdefault(cid, []).append(r)
 
         def encode_zh(cid: int, rs: list[dict]):
@@ -605,12 +626,10 @@ def main():
 
     # 声优：日配取国际服 {id}_cv_ja，中配取国服 {id}_cv_zh_cn
     for cid, item in payload.items():
-        n = int(cid)
-        ja = clean_cv((lines.get(f"{n}_cv_ja") or {}).get("zh"))
-        cn = clean_cv(cn_lines.get(f"{n}_cv_zh_cn"))
+        ja, cn = cv_pair(int(cid))
         if ja:
             item["cvj"] = ja
-        if cn:
+        if cn and is_cn_dub(ja, cn):
             item["cvz"] = cn
 
     # --only / --limit 调试时不要冲掉其余角色的索引
