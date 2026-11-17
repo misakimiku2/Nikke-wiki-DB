@@ -850,12 +850,39 @@ export function skillcutModelName(current: string, idx: SkillcutIndex): string |
 }
 
 /**
+ * 部分大招模型的 `skillcut_1` 是纯背景层动画（只有 1 个 bg 附件、无角色部件），
+ * 角色本体在另一段里。游戏里这些段是分层同时渲染的，我们只播一段，若按通用
+ * 规则命中背景段就只剩一张背景图。这里按模型名指定「真正带角色的段」。
+ * 判定方法：逐段采样可见槽位数，背景段全程 ≤23，角色段 ≥108（离线全量扫描
+ * 233 个模型，只有下列 13 个出现错选）。key 为 spine_skillcut 目录名。
+ */
+const BURST_CHAR_SEGMENT: Record<string, string> = {
+  c073_00_skillcut: 'skillcut_2',
+  c093_skillcut: 'skillcut_0',
+  c094_00_skillcut: 'skillcut_2_OFF_MOVE_BIG',
+  c105_00_skillcut: 'skillcut_2',
+  c191_02_skillcut: 'skillcut_2',
+  c223_01_skillcut: 'skillcut_2',
+  c234_00_skillcut: 'skillcut_2',
+  c281_02_skillcut: 'skillcut_2',
+  c331_00_skillcut: 'skillcut_2',
+  c411_00_skillcut: 'skillcut_2',
+  c580_01_skillcut: 'skillcut_2',
+  c582_00_skillcut: 'skillcut_0',
+  c833_00_skillcut: 'skillcut_2',
+}
+
+/**
  * 大招 cut-in 的主动画挑选。源数据命名五花八门（全量 233 个里 30 个不带
  * skillcut_1）：skillcut_0 / skillcut_01 / skilcut_1（拼写错误）/ skillcut1 /
  * skillcut / skill_cut / skill_01 / c094 的 _OFF 三段式 / c532 的 _all 分层。
+ * 先按模型名查角色段覆盖表（见 BURST_CHAR_SEGMENT），再走通用规则：
  * 精确名优先，其余在含 skil 的动画里取编号最小的（分段式取第 1 段）。
+ * @param model 大招模型名（如 c582_00_skillcut），用于命中角色段覆盖表
  */
-export function pickBurstAnim(names: string[]): string | undefined {
+export function pickBurstAnim(names: string[], model?: string): string | undefined {
+  const fix = model && BURST_CHAR_SEGMENT[model]
+  if (fix && names.includes(fix)) return fix
   const exact = [/^skillcut_1_all$/, /^skillcut_1$/, /^skillcut$/, /^skill_cut$/]
   for (const p of exact) {
     const hit = names.find((n) => p.test(n))

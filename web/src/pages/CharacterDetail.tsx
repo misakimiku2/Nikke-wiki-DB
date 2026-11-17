@@ -273,9 +273,9 @@ const COMBAT_CHIP_DEFS: Array<{ re: RegExp; label: string }> = [
 ]
 
 /** 大招 cut-in：主动画由 pickBurstAnim 挑（命名太乱），其余 idle 当待机 */
-function pickBurstChips(anims: string[]): { label: string; anim: string }[] {
+function pickBurstChips(anims: string[], model?: string): { label: string; anim: string }[] {
   const out: { label: string; anim: string }[] = []
-  const burst = pickBurstAnim(anims)
+  const burst = pickBurstAnim(anims, model)
   if (burst) out.push({ label: '大招', anim: burst })
   const idle = anims.find((a) => /(^|_)idle/i.test(a))
   if (idle && idle !== burst) out.push({ label: '待机', anim: idle })
@@ -657,9 +657,9 @@ export default function CharacterDetail() {
     [formInfo, form, anims],
   )
   const chips = useMemo(
-    () => (pose === 'burst' ? pickBurstChips(shownAnims)
+    () => (pose === 'burst' ? pickBurstChips(shownAnims, burstName || undefined)
       : pickChips(shownAnims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS)),
-    [shownAnims, pose],
+    [shownAnims, pose, burstName],
   )
   const extras = useMemo(() => {
     const used = new Set(chips.map((c) => c.anim))

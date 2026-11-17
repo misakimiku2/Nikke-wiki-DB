@@ -121,8 +121,9 @@ export type SpinePlayerProps = {
       用于人工对齐背景与骨架并导出数据 */
   calib?: boolean
   /** 自定义默认动画挑选（模型动画列表 → 动画名）；缺省自动挑 idle
-      （站姿 idle / 战斗 aim_idle / 大招 Idle）。返回 undefined 时回落到 idle */
-  pickDefaultAnim?: (names: string[]) => string | undefined
+      （站姿 idle / 战斗 aim_idle / 大招 Idle）。返回 undefined 时回落到 idle。
+      第二参为模型名，供大招角色段覆盖表按模型命中（见 pickBurstAnim） */
+  pickDefaultAnim?: (names: string[], model?: string) => string | undefined
   /** 自带控制条右侧的额外内容 */
   extra?: ReactNode
   /**
@@ -556,7 +557,7 @@ export default function SpinePlayer({
         const isIdleName = (a: string) => /(^|_)idle$/i.test(a)
         const visibleAnims = animNames.filter((a) => !/^(bg_|talk_)/i.test(a))
         const idleFirst = visibleAnims.find(isIdleName) || visibleAnims[0] || animNames[0] || ''
-        const first = (pickDefaultAnim && pickDefaultAnim(animNames)) || idleFirst
+        const first = (pickDefaultAnim && pickDefaultAnim(animNames, name)) || idleFirst
         setAnim(first)
 
         // 相机 / 视图

@@ -149,6 +149,16 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
   三层共用相机取景、切形态时同步播同名动画。目前只有灰姑娘:琉璃波光（c515，帘子从顶部导轨
   转一圈遮挡的换装演出）配了，映射写在 `data.ts` 的 `LAYERED_MODELS`，加角色只需加一条。
   ⚠️ 这些素材不入库（`public/` 被 gitignore），换机器 / CI 重建需重新提取，方法见下方。
+- **大招 cut-in**：姿态切「大招」，播放 `public/spine_skillcut/<名>/` 的实时模型（约 233 个，
+  `bySkin`/`byChar` 两级映射在 `char_spine_skillcut.json`，构建期算好）。大招动画段命名混乱
+  （`skillcut_1` / `skillcut_0` / `skilcut_1` / `skill_cut` / `_OFF` 三段式…），由 `data.ts` 的
+  `pickBurstAnim` 统一挑选；有手绘背景图的模型额外铺 `sceneBg` 世界坐标层（跟随运镜缩放/拖拽）。
+  ⚠️ **13 个模型的 `skillcut_1` 是纯背景层**（全程只有 1 个 `bg` 附件，无角色部件），角色本体在
+  `skillcut_0` / `skillcut_2` 段——游戏里这些段分层同时渲染，我们只播一段，按通用规则会命中背景段，
+  表现为「大招只有背景图」。`BURST_CHAR_SEGMENT` 按模型名覆盖为角色段。判定方法：逐段采样
+  0/25/50/75/99% 五点的可见槽位数（切到该模型的真实 skin；背景段全程 ≤23，角色段 ≥108）。
+  资源更新后若又出现「只有背景」，用同样方法找出模型名与角色段，往表里加一条即可。
+  ⚠️ 素材不入库，重建见 `nikke_extract` 的 `export_char_cutins.py` / `build_char_spine.py --kind skillcut`。
 - **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
   姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
 - **好感剧情（个人剧情 + 咨询）**：详情页底部 `storybox` 区块，按角色内容显示
