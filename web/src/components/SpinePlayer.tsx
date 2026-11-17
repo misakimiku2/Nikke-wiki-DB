@@ -55,6 +55,11 @@ export type SpineController = {
   seek(t: number): void
   setSpeed(v: number): void
   setAnim(n: string): void
+  /**
+   * 播放一次性过渡动画，播完后自动切到 followAnim 并循环。
+   * 用于角色第二形态切换：先播 expression_0 变身动画，再停在形态②的待机。
+   */
+  playOnce(n: string, followAnim: string): void
   resetView(): void
   /** 镜头运镜开关：开=自动跟拍且禁用拖拽/缩放，关=固定/手动取景 */
   setCameraFollow?(on: boolean): void
@@ -120,6 +125,13 @@ export type SpinePlayerProps = {
   pickDefaultAnim?: (names: string[]) => string | undefined
   /** 自带控制条右侧的额外内容 */
   extra?: ReactNode
+  /**
+   * 额外的 Spine 图层（与主模型共用同一相机/取景，按 z 序叠加绘制）。
+   * 用于一个立绘拆成多层的情况，例如灰姑娘:琉璃波光 = BG 场景 + 角色 + FG 更衣帘。
+   * 各层模型放在 public/spine_layer/ 下，动画名与主模型一致时会自动同步播放
+   * （setAnim / playOnce / seek 都会广播到含该动画的层），实现三层同时变身。
+   */
+  layerNames?: { bg?: string; fg?: string }
 }
 
 async function fetchOK(url: string): Promise<Response> {
@@ -270,7 +282,7 @@ function collectSlotCenters(skeleton: any): Array<[number, number]> {
  */
 export default function SpinePlayer({
   name, dir = 'spine', className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
-  backgroundSrc, fitMode = 'contain', hideShadows, sceneBg, sceneBg2, pickDefaultAnim, extra, calib,
+  backgroundSrc, fitMode = 'contain', hideShadows, sceneBg, sceneBg2, pickDefaultAnim, extra, calib, layerNames,
 }: SpinePlayerProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -325,6 +337,14 @@ export default function SpinePlayer({
     // 所有可变播放状态放在闭包里，由 controller 直接读写，避免每帧 setState
     let state: AnimationState | null = null
     let skeleton: Skeleton | null = null
+    /** 额外图层（BG/FG）：与主模型共用相机取景，按 z 序绘制；动画同步广播 */
+    const extraLayers: Array<{
+      z: number
+      state: AnimationState
+      skeleton: Skeleton
+      premultiplied: boolean
+      animSet: Set<string>
+    }> = []
     let duration = 0
     let animNames: string[] = []
     let currentAnim = ''
@@ -339,6 +359,8 @@ export default function SpinePlayer({
     let fitFn: (() => void) | null = null
     let pendingSave: string | null = null
     let lastTick = 0
+    /** 一次性过渡动画播完后要切到的目标动画；null 表示当前不是过渡播放 */
+    let pendingFollow: string | null = null
     /** 最近一次推给背景层的变换；保存当前帧时要在导出画布里复现 */
     let bgTransform: ViewTransform = { scale: 1, tx: 0, ty: 0 }
 
@@ -379,13 +401,45 @@ export default function SpinePlayer({
         scene = new SceneRenderer(canvas, context)
         const gl = context.gl
 
+        /** 加载一个 Spine 层（atlas + 各页贴图 + skel），返回可绘制的层对象。
+            主层和 BG/FG 额外层共用这套逻辑与同一个 GL context。 */
+        const loadLayer = async (folder: string, nm: string) => {
+          const atlasText = await fetchOK(`${folder}${nm}.atlas`).then((r) => r.text())
+          const skelBuf = await fetchOK(`${folder}${nm}.skel`).then((r) => r.arrayBuffer())
+          const atlas = new TextureAtlas(atlasText)
+          // .atlas 头部的 pma:true 表示贴图 RGB 已经乘过 alpha。GLTexture 上传时会把
+          // 浏览器内部预乘的位图反预乘回文件里的值，所以 GL 纹理里就是预乘数据，
+          // drawSkeleton 必须按 pma 混合（ONE, ONE_MINUS_SRC_ALPHA）。
+          // 绝对不要在构建阶段再乘一次 alpha —— 半透明层会变灰（腮红变褐、发光变灰圆斑）。
+          const premultiplied = atlas.pages.length > 0 && atlas.pages.every((p) => p.pma)
+          const pageImgs = await Promise.all(
+            atlas.pages.map((pg) => loadImage(folder + pg.name).catch(() => null)),
+          )
+          const fallbackImg = pageImgs.find((x) => !!x) || null
+          for (let i = 0; i < atlas.pages.length; i++) {
+            const page = atlas.pages[i]
+            const img = pageImgs[i] || fallbackImg
+            if (!img) throw new Error(`page image missing: ${page.name}`)
+            const tex = new GLTexture(context, img)
+            page.setTexture(tex)
+            page.width = img.width
+            page.height = img.height
+            tex.setFilters(gl.LINEAR, gl.LINEAR)
+          }
+          const data = new SkeletonBinary(new AtlasAttachmentLoader(atlas))
+            .readSkeletonData(new Uint8Array(skelBuf))
+          const sk = new Skeleton(data)
+          if (data.defaultSkin) sk.setSkin(data.defaultSkin)
+          sk.setSlotsToSetupPose()
+          const st = new AnimationState(new AnimationStateData(data))
+          st.timeScale = speed
+          return { data, skeleton: sk, state: st, premultiplied }
+        }
+
+        // 主模型（原有逻辑不变：skeleton/state 仍是主层，status/timeline 都基于它）
+        // atlasText / skelBuf 复用上方已获取的结果
         const atlas = new TextureAtlas(atlasText)
-        // .atlas 头部的 pma:true 表示贴图 RGB 已经乘过 alpha。GLTexture 上传时会把
-        // 浏览器内部预乘的位图反预乘回文件里的值，所以 GL 纹理里就是预乘数据，
-        // drawSkeleton 必须按 pma 混合（ONE, ONE_MINUS_SRC_ALPHA）。
-        // 绝对不要在构建阶段再乘一次 alpha —— 半透明层会变灰（腮红变褐、发光变灰圆斑）。
         const premultiplied = atlas.pages.length > 0 && atlas.pages.every((p) => p.pma)
-        // 一个模型可能有多个图集页，每页都要加载自己的贴图
         const pageImgs = await Promise.all(
           atlas.pages.map((pg) => loadImage(folder + pg.name).catch(() => null)),
         )
@@ -398,7 +452,6 @@ export default function SpinePlayer({
           page.setTexture(tex)
           page.width = img.width
           page.height = img.height
-          // 图集部件紧贴排布，线性采样 + 无损贴图才没有边界细线
           tex.setFilters(gl.LINEAR, gl.LINEAR)
         }
         if (disposed) return
@@ -439,13 +492,46 @@ export default function SpinePlayer({
         animNames = data.animations.map((a: any) => a.name)
         state.timeScale = speed
 
-        const setAnim = (n: string) => {
+        // 加载额外图层（BG 在角色下方、FG 在角色上方）。加载失败不影响主模型，
+        // 只是没有分层效果——保证老角色/资源缺失时行为与单层完全一致。
+        if (layerNames) {
+          const layerFolder = '/spine_layer/'
+          const specs: Array<{ nm: string; z: number }> = []
+          if (layerNames.bg) specs.push({ nm: layerNames.bg, z: -1 })
+          if (layerNames.fg) specs.push({ nm: layerNames.fg, z: 1 })
+          const results = await Promise.all(specs.map(async (s) => {
+            try {
+              const L = await loadLayer(layerFolder + s.nm + '/', s.nm)
+              return { ...L, z: s.z, animSet: new Set(L.data.animations.map((a: any) => a.name)) }
+            } catch (e) {
+              console.warn('[SpinePlayer] 额外图层加载失败:', s.nm, e)
+              return null
+            }
+          }))
+          for (const r of results) {
+            if (r && !disposed) extraLayers.push(r)
+          }
+          extraLayers.sort((a, b) => a.z - b.z)
+        }
+
+        const setAnim = (n: string, loop = true, follow: string | null = null) => {
           if (!state || !skeleton) return
           const a: any = data.animations.find((x: any) => x.name === n)
           if (!a) return
           currentAnim = n
           duration = a.duration || 0
-          state.setAnimation(0, n, true)
+          pendingFollow = loop ? null : follow
+          state.setAnimation(0, n, loop)
+          // 广播到额外图层：只在该层确实含有同名动画时才播（分层资源往往与主模型
+          // 动画名一致，例如三层同时播 expression_0 实现帘子+换装同步）
+          for (const L of extraLayers) {
+            if (L.animSet.has(n)) {
+              L.state.setAnimation(0, n, loop)
+              L.state.update(0)
+              L.state.apply(L.skeleton)
+              L.skeleton.updateWorldTransform()
+            }
+          }
           // 大招 cut-in（c513/c852 等）的背景层在同一个骨架里，游戏用两个实例
           // 分别播 <主动画> 与 <主动画>_bg；这里用第二轨道复现同一合成
           const bgAnim = dir === 'spine_skillcut'
@@ -462,7 +548,14 @@ export default function SpinePlayer({
         // 默认动画：站姿是 idle，战斗模型是 aim_idle / cover_idle，统一按
         // 「以 idle 结尾或就叫 idle」匹配，匹配不到再落第一个；
         // pickDefaultAnim 优先（大招 cut-in 的动画命名五花八门，见 pickBurstAnim）
-        const idleFirst = animNames.find((a) => /(^|_)idle$/i.test(a)) || animNames[0] || ''
+        // 注意：不少模型的动画表按字母序把 bg_idle 排在 idle 前面，而 bg_* 是
+        // 只驱动背景的空舞台动画（没有角色可见部件）。旧正则 /(^|_)idle$/i 会
+        // 先命中 bg_idle 当默认动画 → 打开页面就是静帧；且 bg_* 被上层表情列表
+        // 过滤掉，下拉的 value 指向一个不存在的 option，看起来像选了空的
+        // 「更多表情」。所以挑选 idle 时先排除 bg_ / talk_ 这类前缀。
+        const isIdleName = (a: string) => /(^|_)idle$/i.test(a)
+        const visibleAnims = animNames.filter((a) => !/^(bg_|talk_)/i.test(a))
+        const idleFirst = visibleAnims.find(isIdleName) || visibleAnims[0] || animNames[0] || ''
         const first = (pickDefaultAnim && pickDefaultAnim(animNames)) || idleFirst
         setAnim(first)
 
@@ -1267,7 +1360,20 @@ export default function SpinePlayer({
           gl.clearColor(0, 0, 0, 0)
           gl.clear(gl.COLOR_BUFFER_BIT)
           scene.begin()
+          // 按 z 序绘制：z<0 的 BG 层在下，主模型居中，z>0 的 FG 层（帘子）在上。
+          const below = extraLayers.filter((L) => L.z < 0)
+          const above = extraLayers.filter((L) => L.z > 0)
+          for (const L of below) {
+            L.state.apply(L.skeleton)
+            L.skeleton.updateWorldTransform()
+            scene.drawSkeleton(L.skeleton, L.premultiplied)
+          }
           scene.drawSkeleton(skeleton, premultiplied)
+          for (const L of above) {
+            L.state.apply(L.skeleton)
+            L.skeleton.updateWorldTransform()
+            scene.drawSkeleton(L.skeleton, L.premultiplied)
+          }
           scene.end()
         }
 
@@ -1534,6 +1640,16 @@ export default function SpinePlayer({
             state.apply(skeleton)
             applyHiddenSlots(skeleton)
             skeleton.updateWorldTransform()
+            // 额外图层跟随主模型 seek 到同一时间点（若该层有此动画）
+            for (const L of extraLayers) {
+              if (!L.animSet.has(currentAnim)) continue
+              L.state.setAnimation(0, currentAnim, true)
+              const tr: any = L.state.getCurrent(0)
+              if (tr) tr.trackTime = clamped
+              L.state.update(0)
+              L.state.apply(L.skeleton)
+              L.skeleton.updateWorldTransform()
+            }
             // seek 是时间上的硬跳变，跟拍视角直接吸附到目标（不然切镜后
             // 画面要花一秒才追上，背景板还留在旧位置，校准拖拽会扑空）
             if (follow && unionRect) {
@@ -1556,9 +1672,11 @@ export default function SpinePlayer({
           setSpeed(v) {
             speed = Math.max(0.1, Math.min(3, v))
             if (state) state.timeScale = speed
+            for (const L of extraLayers) L.state.timeScale = speed
             emit(true)
           },
           setAnim(n) { setAnim(n) },
+          playOnce(n, followAnim) { setAnim(n, false, followAnim) },
           resetView() { fitFn?.() },
           setCameraFollow(on) {
             cinemaOn = on
@@ -1597,6 +1715,20 @@ export default function SpinePlayer({
           const dt = Math.min(0.05, (now - last) / 1000)
           last = now
           if (playing) state.update(dt)
+          // 额外图层与主模型同步推进时间，保证三层动画严格对齐
+          if (playing) {
+            for (const L of extraLayers) L.state.update(dt)
+          }
+          // 一次性过渡动画（第二形态切换）播完后，自动切到目标动画并循环。
+          // 用 track.isComplete() 判断：非循环 track 播到末尾会置位。
+          if (pendingFollow && state && playing) {
+            const tr: any = state.getCurrent(0)
+            if (tr && tr.isComplete()) {
+              const follow = pendingFollow
+              pendingFollow = null
+              setAnim(follow)
+            }
+          }
           drawFrame()
 
           // toDataURL 必须和绘制在同一个 rAF 回调里同步取，否则 drawing buffer 已被清空
@@ -1656,7 +1788,7 @@ export default function SpinePlayer({
       if (controllerRef) controllerRef.current = null
       localCtrl.current = null
     }
-  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim, sceneBg])
+  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim, sceneBg, layerNames?.bg, layerNames?.fg])
 
   if (error) {
     return <div className={`spine-player err ${className}`}>模型加载失败：{error}</div>

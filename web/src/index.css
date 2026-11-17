@@ -524,6 +524,16 @@ img { display: block; }
 }
 .char-anims .char-more:hover { color: var(--text); border-color: var(--dim); }
 .char-anims .char-more.on { background: var(--text); color: var(--bg); border: 1px solid var(--text); }
+/* 第二形态切换：两个按钮成组，与右侧表情按钮用竖线隔开 */
+.char-form-switch {
+  display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto;
+  padding-right: 7px; margin-right: 3px; border-right: 1px solid var(--line-2);
+}
+.char-form-switch button {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; letter-spacing: .04em;
+}
+.char-form-switch button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 .char-bar-row {
   display: flex; align-items: center; gap: 6px; padding: 10px 12px 12px;
 }
@@ -651,11 +661,6 @@ img { display: block; }
   font-size: 14px; line-height: 1.95; color: var(--text-2);
   margin-bottom: 14px; max-width: 640px;
 }
-.detail-desc .en {
-  font-size: 12.5px; color: var(--dim-2); line-height: 1.8;
-  margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line);
-  max-width: 640px;
-}
 
 .spec {
   margin-top: 40px; border: 1px solid var(--line);
@@ -760,6 +765,14 @@ img { display: block; }
   color: var(--acc, var(--text));
 }
 .statbox-body { padding: 15px 16px 16px; }
+
+/* 属性卡底部免责声明：放在卡片外，三个页签公用 */
+.statbox-disclaimer {
+  margin-top: 7px; padding: 0 2px;
+  font-size: 11px; line-height: 1.5;
+  color: var(--dim, var(--text-2));
+  text-align: center;
+}
 
 /* 滑块：细轨道 + 方形滑块，--acc 染角色主题色 */
 .stat-range {

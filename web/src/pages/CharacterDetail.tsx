@@ -7,7 +7,8 @@ import {
   skillcutModelName, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor, variantsOf,
   loadSquadIcons, loadCharStats, loadStatCurves, LB_MAX_LEVEL, LB_GAIN, affectionMax, AFFECTION_PER_LV,
   loadEquipStats, EQUIP_PARTS, EQUIP_PART_CN, EQUIP_TIERS, EQUIP_MAX_ENHANCE, EQUIP_ENHANCE_RATE, EQUIP_OPTIONS, EQUIP_TIER_ODDS,
-  loadCubeStats, CUBE_MAX_LEVEL, cubeTierIndex, cubeIcon,
+  loadCubeStats, CUBE_MAX_LEVEL, cubeTierIndex, cubeIcon, detectFormVariants, type FormInfo,
+  layerConfigFor,
   loadFavoriteStats, favoriteIcon, favoriteTierIndex, FAVORITE_EFFECTS, FAVORITE_GLOBAL_EFFECTS,
   type FavoriteStats, type FavoriteInfo,
   CORE_MAX, CORE_RATE, equipIcon,
@@ -412,6 +413,8 @@ export default function CharacterDetail() {
   const [skillcut, setSkillcut] = useState<SkillcutIndex | null>(null)
   /** 舞台姿态：stand 立绘（站姿模型/静态图），aim 背身射击，cover 掩体，burst 大招 */
   const [pose, setPose] = useState<'stand' | 'aim' | 'cover' | 'burst'>('stand')
+  /** 站姿模型的第二形态：0=形态①（基础），1=形态②（变体） */
+  const [form, setForm] = useState(0)
   const [pick, setPick] = useState<string | null>(null)
   const [status, setStatus] = useState<SpineStatus>(EMPTY)
   const [modelReady, setModelReady] = useState(false)
@@ -548,6 +551,7 @@ export default function CharacterDetail() {
   useEffect(() => {
     setPick(null)
     setPose('stand')
+    setForm(0)
     setStatus(EMPTY)
     setModelReady(false)
     setModelError(false)
@@ -575,6 +579,8 @@ export default function CharacterDetail() {
     setModelError(false)
     // 换皮肤 / 切姿态后模型会重建，镜头运镜恢复默认开启
     setCameraFollow(true)
+    // 换皮肤后新模型未必有第二形态，回到形态①（模型加载后按 anims 重新判定）
+    setForm(0)
   }, [pick, pose])
 
   const c = list?.find((x) => String(x.id) === id) || null
@@ -640,16 +646,55 @@ export default function CharacterDetail() {
       && !(pose !== 'stand' && a.startsWith('to_'))),
     [status.anims, pose],
   )
+  // 第二形态（只对站姿模型有意义）：把成套变体动画分成两组，用独立按钮切换。
+  // 形态①/②各自驱动一套表情按钮，避免变体动画挤在「更多表情」下拉里。
+  const formInfo = useMemo(
+    () => (pose === 'stand' ? detectFormVariants(anims, current) : null),
+    [anims, pose, current],
+  )
+  const shownAnims = useMemo(
+    () => (formInfo ? (form === 0 ? formInfo.form1 : formInfo.form2) : anims),
+    [formInfo, form, anims],
+  )
   const chips = useMemo(
-    () => (pose === 'burst' ? pickBurstChips(anims)
-      : pickChips(anims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS)),
-    [anims, pose],
+    () => (pose === 'burst' ? pickBurstChips(shownAnims)
+      : pickChips(shownAnims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS)),
+    [shownAnims, pose],
   )
   const extras = useMemo(() => {
     const used = new Set(chips.map((c) => c.anim))
-    return anims.filter((a) => !used.has(a))
-  }, [anims, chips])
+    return shownAnims.filter((a) => !used.has(a))
+  }, [shownAnims, chips])
   const onChip = chips.some((c) => c.anim === status.anim)
+  /** 当前动画是否在「更多表情」下拉里。都不在（如被过滤的 bg_/talk_ 动画，
+      或换皮肤瞬间 status 还没跟上）时下拉应回落到空占位，否则 value 指向一个
+      不存在的 option，浏览器会把它显示成选中的「更多表情」——看着像静帧 bug。 */
+  const onMore = !onChip && extras.includes(status.anim)
+  /** 切第二形态：有过渡动画就先播变身动画、播完自动停在目标形态；否则直接切。
+   *  目标动画优先保持当前表情（idle↔idle_02），无配对则回该形态待机。 */
+  const switchForm = useCallback((next: number) => {
+    if (!formInfo || next === form) return
+    const list = next === 0 ? formInfo.form1 : formInfo.form2
+    const pair = formInfo.pairs.find((p) => p[1] === status.anim || p[2] === status.anim)
+    let target = pair ? (next === 0 ? pair[1] : pair[2]) : undefined
+    // 待机的特殊处理：切到形态②时优先落在 form2Idle（如 idle_alt），因为变身动画的
+    // 末帧姿势与 idle_02 不同，直接用 idle_02 会让画面在切换完成瞬间跳一下。
+    if (next === 1 && formInfo.form2Idle && (!pair || /^idle/.test(pair[0]))) {
+      target = formInfo.form2Idle
+    }
+    if (!target || !list.includes(target)) {
+      target = (next === 1 ? formInfo.form2Idle : null)
+        || list.find((a) => a === 'idle')
+        || list.find((a) => /(^|_)idle$/i.test(a) && !/^(bg_|talk_)/i.test(a))
+        || list[0]
+    }
+    const trans = next === 1 ? formInfo.toForm2 : formInfo.toForm1
+    setForm(next)
+    if (target) {
+      if (trans) spineRef.current?.playOnce(trans, target)
+      else spineRef.current?.setAnim(target)
+    }
+  }, [formInfo, form, status.anim])
   /** 时间轴已播放段的填充比例，写入 --cv-pct 给滑块画进度 */
   const pct = status.duration > 0
     ? Math.max(0, Math.min(100, status.time / status.duration * 100)) : 0
@@ -1070,6 +1115,7 @@ export default function CharacterDetail() {
                 <SpinePlayer
                   name={current}
                   dir="spine_char"
+                  layerNames={layerConfigFor(current)}
                   controls={false}
                   controllerRef={spineRef}
                   onTick={setStatus}
@@ -1206,6 +1252,21 @@ export default function CharacterDetail() {
           {hasModel && (
             <div className="char-bar">
               <div className="char-anims">
+                {/* 第二形态切换：仅站姿模型存在成套变体动画时出现 */}
+                {formInfo && (
+                  <div className="char-form-switch" role="group" aria-label="形态切换">
+                    <button
+                      className={form === 0 ? 'on' : ''}
+                      onClick={() => switchForm(0)}
+                      title="形态①"
+                    >形态①</button>
+                    <button
+                      className={form === 1 ? 'on' : ''}
+                      onClick={() => switchForm(1)}
+                      title="形态②（第二种外观）"
+                    >形态②</button>
+                  </div>
+                )}
                 {chips.length === 0 && (
                   <span className="char-anims-hint">
                     {pose === 'stand' ? '表情动画载入中…'
@@ -1224,8 +1285,8 @@ export default function CharacterDetail() {
                 ))}
                 {extras.length > 0 && (
                   <select
-                    className={`char-more ${onChip ? '' : 'on'}`}
-                    value={onChip ? '' : status.anim}
+                    className={`char-more ${onMore ? 'on' : ''}`}
+                    value={onMore ? status.anim : ''}
                     onChange={(e) => e.target.value && spineRef.current?.setAnim(e.target.value)}
                     title={pose === 'stand' ? '更多表情' : '更多动作'}
                   >
@@ -1316,7 +1377,6 @@ export default function CharacterDetail() {
             ) : (
               <p style={{ color: 'var(--dim-2)' }}>暂未收录这个角色的介绍文本。</p>
             )}
-            {c.descEn && <div className="en">{c.descEn}</div>}
           </div>
 
           <div className={`spec ${specItems.length > SPEC_DEFAULT ? 'spec-has-more' : ''} ${specOpen ? 'spec-open' : ''}`}>
@@ -1345,6 +1405,7 @@ export default function CharacterDetail() {
           </div>
 
           {statCalc && baseStat && (
+            <>
             <section className="statbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
               <div className="statbox-head">
                 <div className="stat-tabbar" role="tablist">
@@ -1878,6 +1939,11 @@ export default function CharacterDetail() {
                 </div>
               )}
             </section>
+
+            <div className="statbox-disclaimer">
+              *数值为逆向推算，仅供参考。
+            </div>
+            </>
           )}
 
           {skills && skills.length > 0 && (

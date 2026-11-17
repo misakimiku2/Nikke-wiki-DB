@@ -872,6 +872,94 @@ export function pickBurstAnim(names: string[]): string | undefined {
   return undefined
 }
 
+/**
+ * 角色「第二形态」检测。
+ * 一部分妮姬的站姿模型把两种形态做在同一套动画里，同一批表情各录两份：
+ * idle/idle_02、angry/angry_alt、idle/idle_blue …… 这些变体动画目前会和普通
+ * 表情一起挤在「更多表情」下拉里。这里把它们识别出来，供页面做形态切换。
+ *
+ * 后缀命名并不统一（_02 / _alt / _blue / _2，同一模型内部还可能混用：
+ * 桃乐丝 c233 的 idle 变体叫 idle_alt、angry 变体却叫 angry_02），因此按
+ * 「去掉一个后缀后得到纯基础名、且该基础名真实存在」来配对，并且禁止链式
+ * 配对（灰姑娘 c511 有 idle_blue 又有 idle_blue_02，_blue_02 不能再当形态2）。
+ * 另有一些角色的第二形态只是小改动（潘托姆 c580 仅换眼镜/面具 3 个附件），
+ * 同样按成套变体识别，不做换装强度筛选。
+ */
+export type FormInfo = {
+  /** 形态①（基础）的动画名列表 */
+  form1: string[]
+  /** 形态②（变体）的动画名列表 */
+  form2: string[]
+  /** 成对项 [基础名, 形态①动画, 形态②动画]，用于切形态时保持同一表情 */
+  pairs: [string, string, string][]
+  /** 形态①→形态② 的过渡动画（如 expression_0），无则 null */
+  toForm2: string | null
+  /** 形态②→形态① 的过渡动画（如 expression_0_alt），无则 null */
+  toForm1: string | null
+  /** 形态②的默认待机：优先 idle_alt（变身动画末帧落点），避免切换后跳帧 */
+  form2Idle: string | null
+}
+
+const FORM_SUFFIXES = ['_02', '_alt', '_blue', '_2']
+const hasFormSuffix = (a: string) => FORM_SUFFIXES.some((s) => a.endsWith(s))
+const stripFormSuffix = (a: string): string | null => {
+  for (const s of FORM_SUFFIXES) if (a.endsWith(s)) return a.slice(0, -s.length)
+  return null
+}
+
+/**
+ * 已知源数据异常：动画表里有 _02/_alt 变体，但不是真正的第二形态。
+ * - c470 小红帽三条：expression_0 是把 images_1/images_2 分层差分图叠上去的
+ *   「红眼」效果，没有 idle 变体；切到所谓的形态②后点别的动画又回到形态①。
+ * - c402/c403 坎西两条：expression_0 是 action 的逐帧副本（附件 100% 相同），
+ *   不是变身动画，形态②只是同一动作的复制。
+ * 这些皮肤不显示形态切换按钮。随数据更新可按需增删。
+ */
+const FORM_FALSE_POSITIVES = /^c(402|403|470)_\d\d$/
+
+/**
+ * 第二形态判定：
+ * 1) 有双向过渡动画 expression_0 + expression_0_alt → 直接认定（覆盖 c100
+ *    拉普拉斯这种只有 idle_alt 一个变体、但有完整变身动画的模型）；
+ * 2) 否则要求 ≥3 对变体且含 idle 变体（普通成套表情差分）。
+ * name 传入模型名（如 c233_00），用于排除已知的源数据异常。
+ */
+export function detectFormVariants(anims: string[], name?: string): FormInfo | null {
+  if (name && FORM_FALSE_POSITIVES.test(name)) return null
+  // 形态切换过渡动画：expression_0 = 形态①→②，expression_0_alt = 形态②→①。
+  // 它们不是表情，要从表情列表和变体配对里都排除（否则 expression_0_alt 的
+  // 基础名 expression_0 会被当成一对普通变体）。
+  const toForm2 = anims.includes('expression_0') ? 'expression_0' : null
+  const toForm1 = anims.includes('expression_0_alt') ? 'expression_0_alt' : null
+  const exprs = new Set([toForm2, toForm1].filter(Boolean) as string[])
+  const set = new Set(anims)
+  const pairs: [string, string, string][] = []
+  for (const v of anims) {
+    if (exprs.has(v) || !hasFormSuffix(v)) continue
+    const base = stripFormSuffix(v)
+    if (base && !hasFormSuffix(base) && set.has(base) && !exprs.has(base)) {
+      pairs.push([base, base, v])
+    }
+  }
+  const hasIdleVar = pairs.some((p) => /^idle/.test(p[0]))
+  const twoWay = !!toForm2 && !!toForm1
+  // 双向过渡直接认定；否则需成套变体（≥3 对）且含待机变体
+  if (!twoWay && (pairs.length < 3 || !hasIdleVar)) return null
+  // 带后缀的一律归形态②（含 c511 那种 _blue_02 双层变体），不带后缀的归形态①，
+  // 两组互补且不重叠；过渡动画单独抽出，不出现在任一形态的表情列表里。
+  return {
+    form1: anims.filter((a) => !exprs.has(a) && !hasFormSuffix(a)),
+    form2: anims.filter((a) => !exprs.has(a) && hasFormSuffix(a)),
+    pairs,
+    toForm2,
+    toForm1,
+    /** 形态②的默认待机：优先 idle_alt（形态切换动画末帧落点，避免跳帧），其次 idle_02 等 */
+    form2Idle: anims.find((a) => a === 'idle_alt')
+      || anims.find((a) => /^idle_02$|^idle_blue$/.test(a))
+      || null,
+  }
+}
+
 /** 表情动画的中文名；未收录的原样显示（talk_* 是口型，放在下拉里） */
 export const EXPR_LABEL: Record<string, string> = {
   idle: '待机',
@@ -999,6 +1087,16 @@ export async function loadSpineOverrides(): Promise<Record<string, SpineOverride
     cacheOverrides = {}
   }
   return cacheOverrides
+}
+
+/** 立绘分层资源：部分角色的立绘拆成 BG 场景 + 角色 + FG 前景（如更衣帘），
+    三层同步播放切换动画。key 是主模型名，value 是额外层名（放在 /spine_layer/ 下）。
+    新增角色只需在这里加一条，SpinePlayer 会自动加载并同步。 */
+const LAYERED_MODELS: Record<string, { bg?: string; fg?: string }> = {
+  c515_00: { bg: 'c515_00_bg', fg: 'c515_00_fg' }, // 灰姑娘:琉璃波光（更衣帘转场）
+}
+export function layerConfigFor(name: string): { bg?: string; fg?: string } | undefined {
+  return LAYERED_MODELS[name]
 }
 
 export function variantsOf(imgs: CharImages, id: number): string[] {

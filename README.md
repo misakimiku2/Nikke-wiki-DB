@@ -108,6 +108,23 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
 
 `build/rerender_spine.py` 用于单独重渲染某个 Spine 模型，不必全量重跑。
 
+### 重新提取分层立绘素材（FG/BG）
+
+`public/spine_layer/` 不入库，换机器后需从游戏资源重新提取。主模型在 `spine/standing/` 组，
+但 BG/FG 层藏在 **dp 池 `spinestandingprefabgroup` 的 `00_decadent` prefab bundle** 里，
+上游 `export_char_standing.py` 只取主模型、不含这层，需要单独跑一段脚本：
+
+- 数据源：`../nikke_extract/catalogs/dp_catalog.ndb.dec`（SQLite）+ 游戏 patch 的
+  `dp/chunk/store.cdb`（路径见 `nikke_extract/scripts/config.py` 的 `GAME_PATCH`）
+- 复用 `export_cg_v2.rebuild(cat, cidx_map('dp'), store.cdb, zstd_decomp, file_id, size)` 重组 bundle
+- SQL 找目标：`select file_id,key from files_chunktype where lower(key) like
+  '%spinestandingprefabgroup%c515%decadent%' and lower(key) like '%hd%'`
+- `UnityPy.load(io.BytesIO(bundle))` 后取 `TextAsset`（`*_fg.atlas` / `*_fg.skel` /
+  `*_bg.atlas` / `*_bg.skel`）与 `Texture2D`（`read().image` 存 PNG）
+- 落到 `public/spine_layer/<名>_fg/`、`<名>_bg/`，**PNG 转无损 WebP**（`lossless=True, exact=True`），
+  并把各自 atlas 首行的 `<名>.png` 改成 `<名>.webp`（`pma:true` 原样保留）
+- 三层共用同一相机坐标系，无需额外校准即可对齐；层名在 `data.ts` 的 `LAYERED_MODELS` 登记
+
 构建用的是 `emptyOutDir: false` + 自定义的 `cleanDistAssets` 插件：每次只清 `dist/assets`
 里的 hash 产物，`dist` 下的素材副本原地覆盖。这样避免整份 6G 的 `dist` 被删了再拷，
 也避免本机的删除操作把 6G 塞进回收站。代价是**如果 `public/` 里删了文件，`dist/` 里的旧副本
@@ -122,6 +139,16 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
   surprise / shy / think / action` 等表情动画可在页面里一键切换（多的一套有 16 段，其余收在
   「更多表情」下拉里），和 CG 查看器共用同一个 `SpinePlayer`；没有站姿模型的皮肤退回官方全身立绘
   （`public/char`，即 `icons-char-full(hd)`）。
+- **形态切换**：有第二形态的角色，把成套变体动画（`idle_02` / `idle_alt` / `angry_02` …）
+  抽出来做成形态①/②按钮，切换整套表情；有过渡动画的（`expression_0` = ①→②，
+  `expression_0_alt` = ②→①）会先播变身动画再停在目标形态。判定在 `data.ts` 的
+  `detectFormVariants`，不做换装强度筛选；`FORM_FALSE_POSITIVES` 排除少数源数据异常
+  （坎西 c402/c403 的「默认表情」其实是 action 副本、小红帽 c470 的只是静态差分红眼）。
+- **分层立绘（BG / FG）**：个别皮肤的立绘拆成三层 Spine 叠加——`spine_char` 主模型 +
+  `public/spine_layer/<名>_bg/`（场景）+ `public/spine_layer/<名>_fg/`（前景，如更衣帘），
+  三层共用相机取景、切形态时同步播同名动画。目前只有灰姑娘:琉璃波光（c515，帘子从顶部导轨
+  转一圈遮挡的换装演出）配了，映射写在 `data.ts` 的 `LAYERED_MODELS`，加角色只需加一条。
+  ⚠️ 这些素材不入库（`public/` 被 gitignore），换机器 / CI 重建需重新提取，方法见下方。
 - **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
   姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
 - **好感剧情（个人剧情 + 咨询）**：详情页底部 `storybox` 区块，按角色内容显示
