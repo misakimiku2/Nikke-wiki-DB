@@ -1,6 +1,6 @@
 ---
 name: nikke-layered-spine
-description: 为 NIKKE 角色图鉴（nikke-web）提取并接入分层立绘 Spine（BG 场景层 / FG 前景层，如灰姑娘:琉璃波光的更衣帘转场），以及处理第二形态切换。当需要给某个角色加形态切换按钮、还原带特效的形态转场（帘子/场景层）、或排查游戏中视觉资源在 catalog 里搜不到时使用。
+description: 为 NIKKE 角色图鉴（nikke-web）提取并接入第二形态切换及其转场特效：分层立绘 Spine（BG 场景层 / FG 前景层，如灰姑娘:琉璃波光的更衣帘）、Unity 粒子特效（如红莲:弑神的红刃花瓣）。当需要给某个角色加形态切换按钮、还原带特效的形态转场（帘子/场景层/粒子）、或排查游戏中视觉资源在 catalog 里搜不到时使用。
 agent_created: true
 ---
 
@@ -8,23 +8,31 @@ agent_created: true
 
 ## Overview
 
-nikke-web 的角色详情默认只用 `public/spine_char/<名>/` 单个 Spine 模型。本 skill 处理两类扩展：
+nikke-web 的角色详情默认只用 `public/spine_char/<名>/` 单个 Spine 模型。本 skill 处理三类扩展：
 
 1. **第二形态切换**：把成套的变体动画（`idle_02`/`idle_alt` 等）抽成形态①/②按钮，
    有过渡动画（`expression_0`/`_alt`）时先播变身动画。
 2. **分层立绘**：个别皮肤的立绘拆成三层 Spine（BG 场景 + 角色 + FG 前景），
    三层共用相机、切形态时同步播同名动画。例如灰姑娘:琉璃波光的更衣帘——
    帘子从顶部圆形导轨转一圈遮挡，换装后打开。
+3. **粒子转场特效**：另一些角色（红莲:弑神等）的转场是 prefab 里的 Unity Timeline +
+   ParticleSystem 驱动的纯 2D 特效，**不是 Spine 层**，网页端用 Canvas 2D 粒子近似复现。
 
 ## Workflow
 
 ### 判断需求类型
 
 - 只是"给角色加形态按钮" → 走【形态切换】，通常无需提资源。
-- "还原某个形态转场特效"（帘子/场景/前景动画）→ 先走【定位资源】确认有无分层，
-  再走【分层接入】。
+- "还原某个形态转场特效" → 先走【判断特效类型】分清是 Spine 分层还是 Unity 粒子，再选对应路径。
 - 遇到"catalog 里搜 `curtain`/`change` 只有音效"的死胡同 → 读 `references/pitfalls.md` 第一节，
   不要过早下"资源不存在"的结论。
+
+### 判断特效类型（关键分岔）
+
+同一个 `00_decadent` prefab bundle 里可能同时有 Spine 层和粒子系统。用 UnityPy 统计 bundle 里的
+`ParticleSystem` 数量：**> 0 是粒子特效，走【粒子转场】；= 0 且有 `*_fg.atlas` 才是 Spine 分层**。
+全库参考：c515 帘子 = 0 粒子（Spine 分层）；c472 红莲 = 31 粒子、c580 潘托姆 = 22、c103 = 26
+（粒子特效）。不要看到 decadent prefab 就以为一定是分层 Spine。
 
 ### 形态切换（data.ts + UI 已实现，通常只需确认/微调）
 
@@ -62,6 +70,22 @@ PNG 转无损 WebP → atlas 首行改名 `.webp` → 打印 region 概览。**�
    同步广播、按 z 序绘制、共用相机取景。CharacterDetail 传 `layerNames={layerConfigFor(current)}`，
    新角色自动生效，无需改组件。
 3. 实现细节与同步陷阱见 `references/pitfalls.md` 第三节。
+
+### 粒子转场特效（Timeline + ParticleSystem）
+
+当特效是 Unity 粒子（红刃/花瓣/光带），**不要**往分层 Spine 方向做。步骤：
+
+1. 从同一个 decadent prefab bundle 导出所有 `Texture2D`（`read().image`，带 alpha），
+   筛 `fx_` 前缀。c472 用的关键几张：`uv_01` 花瓣、`uv_02` 光带、`uv_06` 刀刃、
+   `atlas` 火花；其余 `uv_03~05`/`mask` 是细线/噪声/遮罩，一般不用。
+2. 转无损 WebP（保留 alpha）落到 `public/vfx/<模型名>/`（素材 gitignore，不入库）。
+3. 在 `web/src/data.ts` 的 `VFX_MODELS` 登记 `VfxConfig`：`dir` / `duration` / 各贴图名 / `flash` 色调。
+4. `VfxBurst` 组件（Canvas 2D）读配置生成粒子：slash 大贴图斜向划入、ribbon 光带、
+   petal 花瓣飘散、spark 火花；带出场延迟与淡入淡出。`CharacterDetail.switchForm` 在
+   `playOnce` 过渡动画时递增 `vfxSignal` 触发，与变身同步。**粒子行为是照截图手工调参，
+   非逐帧 1:1**——先用 CDP 截图看效果，再调粒子数/尺寸/闪光强度。
+5. 已知 9 个角色有粒子特效：c017/c019/c103/c471/c472/c513/c580/c871/c872。
+   接入新角色只需加一条 `VFX_MODELS` 配置，组件与触发逻辑通用。
 
 ### 验证
 

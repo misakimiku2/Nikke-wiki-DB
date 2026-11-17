@@ -1099,6 +1099,24 @@ export function layerConfigFor(name: string): { bg?: string; fg?: string } | und
   return LAYERED_MODELS[name]
 }
 
+/** 形态转场粒子特效：部分角色的形态切换不是 Spine 图层，而是 Unity 粒子系统
+ *  驱动的纯 2D 特效（红刃/花瓣/光带），只在切换瞬间出现。贴图解包自游戏，
+ *  由 VfxBurst 用 Canvas 2D 近似复现。key 是主模型名。 */
+const VFX_MODELS: Record<string, import('./components/VfxBurst').VfxConfig> = {
+  c472_00: { // 红莲:弑神
+    dir: '/vfx/c472',
+    duration: 2600,
+    petal: 'fx_c472_00_normal_uv_01.webp',
+    ribbon: 'fx_c472_00_normal_uv_02.webp',
+    slash: 'fx_c472_00_normal_uv_06.webp',
+    sparks: 'fx_c472_00_normal_atlas.webp',
+    flash: '255, 55, 70',
+  },
+}
+export function vfxConfigFor(name: string) {
+  return VFX_MODELS[name]
+}
+
 export function variantsOf(imgs: CharImages, id: number): string[] {
   return imgs[String(id)] || []
 }

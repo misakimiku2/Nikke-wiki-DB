@@ -8,7 +8,7 @@ import {
   loadSquadIcons, loadCharStats, loadStatCurves, LB_MAX_LEVEL, LB_GAIN, affectionMax, AFFECTION_PER_LV,
   loadEquipStats, EQUIP_PARTS, EQUIP_PART_CN, EQUIP_TIERS, EQUIP_MAX_ENHANCE, EQUIP_ENHANCE_RATE, EQUIP_OPTIONS, EQUIP_TIER_ODDS,
   loadCubeStats, CUBE_MAX_LEVEL, cubeTierIndex, cubeIcon, detectFormVariants, type FormInfo,
-  layerConfigFor,
+  layerConfigFor, vfxConfigFor,
   loadFavoriteStats, favoriteIcon, favoriteTierIndex, FAVORITE_EFFECTS, FAVORITE_GLOBAL_EFFECTS,
   type FavoriteStats, type FavoriteInfo,
   CORE_MAX, CORE_RATE, equipIcon,
@@ -23,6 +23,7 @@ import PlayPauseIcon from '../components/PlayPauseIcon'
 import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Immersive'
 import MessageChat from '../components/MessageChat'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
+import VfxBurst from '../components/VfxBurst'
 import VoiceList from '../components/VoiceList'
 
 const EMPTY: SpineStatus = {
@@ -493,6 +494,8 @@ export default function CharacterDetail() {
   const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
+  /** 形态转场粒子特效：每次切形态递增触发一次 */
+  const [vfxSignal, setVfxSignal] = useState(0)
   /** 大招镜头运镜开关：默认开启（自动跟拍 + 锁定取景），关闭后可手动拖拽/缩放 */
   const [cameraFollow, setCameraFollow] = useState(true)
   /** 拖时间轴时先暂停，松手后按拖前的状态继续（与 CG 查看器同一套交互） */
@@ -588,6 +591,7 @@ export default function CharacterDetail() {
   // c010_01 这类曾被误标的，已按 ScenarioCharacterSettingTable / 皮肤表核实后恢复
   const vars = (c ? variantsOf(imgs, c.id) : []).filter((v) => !art[v]?.old)
   const current = pick || (c ? mainBase(imgs, c.id) : null) || ''
+  const vfxConfig = useMemo(() => vfxConfigFor(current), [current])
   /** 选中皮肤的文案；基础皮没有条目，介绍回退到角色默认（c.intro） */
   const ct = costumeTexts[current]
   const artName = current ? artLabel(art, current) : ''
@@ -691,10 +695,13 @@ export default function CharacterDetail() {
     const trans = next === 1 ? formInfo.toForm2 : formInfo.toForm1
     setForm(next)
     if (target) {
-      if (trans) spineRef.current?.playOnce(trans, target)
+      if (trans) {
+        spineRef.current?.playOnce(trans, target)
+        if (vfxConfig) setVfxSignal((n) => n + 1)
+      }
       else spineRef.current?.setAnim(target)
     }
-  }, [formInfo, form, status.anim])
+  }, [formInfo, form, status.anim, vfxConfig])
   /** 时间轴已播放段的填充比例，写入 --cv-pct 给滑块画进度 */
   const pct = status.duration > 0
     ? Math.max(0, Math.min(100, status.time / status.duration * 100)) : 0
@@ -1166,6 +1173,8 @@ export default function CharacterDetail() {
                 onError={() => setPose('stand')}
               />
             ) : null}
+            {/* 形态切换的 2D 粒子特效（红刃/花瓣），叠在立绘之上，仅切换瞬间出现 */}
+            {pose === 'stand' && vfxConfig && <VfxBurst config={vfxConfig} signal={vfxSignal} />}
             {stageLive && !modelReady && (
               <div className="char-loading"><span className="cv-spin" />加载实时模型…</div>
             )}

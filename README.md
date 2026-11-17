@@ -125,6 +125,23 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
   并把各自 atlas 首行的 `<名>.png` 改成 `<名>.webp`（`pma:true` 原样保留）
 - 三层共用同一相机坐标系，无需额外校准即可对齐；层名在 `data.ts` 的 `LAYERED_MODELS` 登记
 
+### 重新提取形态切换粒子特效（红刃/花瓣）
+
+`public/vfx/` 同样不入库。部分角色（红莲:弑神 c472 等）的形态切换**不是 Spine 图层**，
+而是 prefab 里的 **Unity Timeline + ParticleSystem** 驱动的纯 2D 特效，只在切换瞬间出现。
+同一个 `00_decadent` prefab bundle 里，除 FG/BG 的 Spine TextAsset 外还有很多
+`Texture2D`（名字形如 `fx_<角色>_<皮肤>_normal_uv_01`）：
+
+- 从上面的 decadent bundle 里导出所有 `Texture2D`（`read().image`，带 alpha），筛出 `fx_` 前缀
+- 挑关键的几张转无损 WebP 落到 `public/vfx/<模型名>/`，**保留 alpha**（`lossless=True, exact=True`）。
+  c472 用到：`uv_01` 花瓣、`uv_02` 光带、`uv_06` 刀刃、`atlas` 火花（其余是噪声/遮罩/公用贴图）
+- 在 `data.ts` 的 `VFX_MODELS` 登记：`dir` / `duration` / 各贴图文件名 / `flash` 色调
+- 网页端由 `VfxBurst` 组件用 Canvas 2D 粒子近似复现（**不是逐帧 1:1**，粒子行为按截图手工调参），
+  切形态时由 `CharacterDetail` 的 `switchForm` 递增 `vfxSignal` 触发，与 `playOnce` 过渡动画同步
+- 全库约 9 个角色带这类粒子特效（c017/c019/c103/c471/c472/c513/c580/c871/c872）；
+  用 `UnityPy` 统计 prefab 里 `ParticleSystem` 数量即可判断。c515 的帘子是纯 Spine（0 粒子），
+  走上面的分层方案，不要混用
+
 构建用的是 `emptyOutDir: false` + 自定义的 `cleanDistAssets` 插件：每次只清 `dist/assets`
 里的 hash 产物，`dist` 下的素材副本原地覆盖。这样避免整份 6G 的 `dist` 被删了再拷，
 也避免本机的删除操作把 6G 塞进回收站。代价是**如果 `public/` 里删了文件，`dist/` 里的旧副本

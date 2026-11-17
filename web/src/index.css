@@ -576,6 +576,11 @@ img { display: block; }
   opacity: 0; transition: opacity .28s ease;
 }
 .char-stage.is-ready .spine-player { opacity: 1; }
+/* 形态切换 2D 粒子层：盖在立绘之上，不吃鼠标事件 */
+.vfx-burst {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  z-index: 1; pointer-events: none;
+}
 .char-loading {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   z-index: 2; display: flex; align-items: center; gap: 9px;
