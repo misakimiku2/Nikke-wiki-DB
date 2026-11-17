@@ -509,6 +509,64 @@ export default function SpinePlayer({
         animNames = data.animations.map((a: any) => a.name)
         state.timeScale = speed
 
+        // ---- 「被运镜抛下的 IK」守卫 ----
+        // NIKKE 的大招动画把运镜烤进了骨架位移：特写镜头整条身体链（root2/pelvis）
+        // 一起放大（c033 是 4.07 倍），而腿/臂 IK 的目标骨挂在 root 下不跟着缩放。
+        // 目标被抛下后，mix=1 的 IK 会把腿强行拉向 setup 位置——表现为巨型断腿
+        // 悬在胯部、大腿网格盖住前臂（c033 大招第一镜「脚错位、手不见了」）。
+        // 判别：目标骨与受约束骨基准骨（bones[0] 的父骨）的「世界缩放比」相对
+        // setup 偏离 >25%（c033 特写时 0.25；正常模型全程 ≈1.00——c011 等目标
+        // 跟手的模型不受影响）。命中的约束在播放该动画期间 mix=0，直接采用
+        // 美工对这些骨骼的关键帧；若动画里键控了 IkConstraintTimeline，每帧
+        // 会覆盖 mix，键控 IK 优先，守卫自动失效。
+        const ikGuardData = new Map<string, Set<string>>() // animName -> 需禁用的约束名
+        if (data.ikConstraints?.length) {
+          const probe = new Skeleton(data)
+          probe.setSlotsToSetupPose()
+          probe.updateWorldTransform()
+          const boneOf = (bd: any) => probe.bones.find((b: any) => b.data === bd) ?? null
+          const setupRel = new Map<string, number>()
+          for (const c of data.ikConstraints as any[]) {
+            const bone0 = boneOf(c.bones?.[0])
+            const base = bone0?.parent ?? bone0
+            const target = boneOf(c.target)
+            if (!bone0 || !base || !target) continue
+            setupRel.set(c.name, target.getWorldScaleX() / Math.max(base.getWorldScaleX(), 1e-6))
+          }
+          const SAMPLES = 10
+          for (const anim of data.animations as any[]) {
+            const st = new AnimationState(new AnimationStateData(data))
+            st.setAnimation(0, anim.name, true)
+            const marked = new Set<string>()
+            for (const c of data.ikConstraints as any[]) {
+              const bone0 = boneOf(c.bones?.[0])
+              const base = bone0?.parent ?? bone0
+              const target = boneOf(c.target)
+              if (!bone0 || !base || !target) continue
+              const relSetup = setupRel.get(c.name) ?? 1
+              for (let i = 0; i < SAMPLES; i++) {
+                const tr: any = st.getCurrent(0)
+                if (tr) tr.trackTime = (i / SAMPLES) * (anim.duration || 0)
+                probe.setBonesToSetupPose()
+                st.update(0)
+                st.apply(probe)
+                probe.updateWorldTransform()
+                const rel = target.getWorldScaleX() / Math.max(base.getWorldScaleX(), 1e-6)
+                if (Math.abs(rel / relSetup - 1) > 0.25) { marked.add(c.name); break }
+              }
+            }
+            if (marked.size) ikGuardData.set(anim.name, marked)
+          }
+        }
+        /** 播放 animName 前套用 IK 守卫：命中的约束 mix=0，其余恢复 setup mix */
+        const applyIkGuard = (sk: any, animName: string) => {
+          const marked = ikGuardData.get(animName)
+          if (!marked) return
+          for (const c of sk.ikConstraints as any[]) {
+            if (marked.has(c.data.name)) c.mix = 0
+          }
+        }
+
         // 加载额外图层（BG 在角色下方、FG 在角色上方）。加载失败不影响主模型，
         // 只是没有分层效果——保证老角色/资源缺失时行为与单层完全一致。
         if (layerNames) {
@@ -539,6 +597,7 @@ export default function SpinePlayer({
             const L = await loadLayer(folder, name)
             if (L.data.animations.some((a: any) => a.name === bgSegment) && !disposed) {
               L.state.setAnimation(0, bgSegment, true)
+              applyIkGuard(L.skeleton, bgSegment)
               L.state.update(0)
               L.state.apply(L.skeleton)
               L.skeleton.updateWorldTransform()
@@ -563,6 +622,7 @@ export default function SpinePlayer({
           duration = a.duration || 0
           pendingFollow = loop ? null : follow
           state.setAnimation(0, n, loop)
+          applyIkGuard(skeleton, n)
           // 广播到额外图层：只在该层确实含有同名动画时才播（分层资源往往与主模型
           // 动画名一致，例如三层同时播 expression_0 实现帘子+换装同步）。
           // fixedAnim 层（大招背景段）固定播自己的动画，不随主模型切换。
@@ -570,6 +630,7 @@ export default function SpinePlayer({
             if (L.fixedAnim) continue
             if (L.animSet.has(n)) {
               L.state.setAnimation(0, n, loop)
+              applyIkGuard(L.skeleton, n)
               L.state.update(0)
               L.state.apply(L.skeleton)
               L.skeleton.updateWorldTransform()
@@ -1677,6 +1738,7 @@ export default function SpinePlayer({
             if (!state || !skeleton || !duration) return
             const clamped = Math.max(0, Math.min(duration - 1e-4, t))
             state.setAnimation(0, currentAnim, true)
+            applyIkGuard(skeleton, currentAnim)
             const track: any = state.getCurrent(0)
             if (track) track.trackTime = clamped
             state.update(0)
@@ -1689,6 +1751,7 @@ export default function SpinePlayer({
               const anim = L.fixedAnim || currentAnim
               if (!L.animSet.has(anim)) continue
               L.state.setAnimation(0, anim, true)
+              applyIkGuard(L.skeleton, anim)
               const tr: any = L.state.getCurrent(0)
               if (tr) tr.trackTime = clamped
               L.state.update(0)
