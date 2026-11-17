@@ -67,8 +67,20 @@ python build/export_char_mi.py            # → public/charmi      官方头像�
 python build/export_char_images.py        # → public/data/char_images.json
 python build/export_char_skills.py        # → public/data/char_skills.json  技能说明
 python build/export_skill_icons.py        # → public/skillicon/             技能图标（502 张）
+python build/export_ui_icons.py equip     # → public/equipicon/             装备图标（95 张，按 Sprite 切图）
+python build/export_ui_icons.py buff      # → public/staticon/              属性图标（HP/ATK/DEF 等 145 张）
+python build/export_ui_icons.py equip --only "ie_"   # → 魔方图标 ie_XXXXX（256²，透明底）
+python build/normalize_cube_icons.py                 # 统一裁紧 / 缩放，写入 public/cubeicon/
+#   魔方图标在 dp 池 icons-equip(hd) 图集里，命名规则 ie_{外观ID}。
+#   外观ID 来自 ItemHarmonyCubeTable 的「外观/主题色」那一列，**不等于序号**：
+#   例如 7 号量子魔方是 11001、8 号体力神器是 13001、18 号外框是 10015。
+#   图集里共 23 个 ie_ 立方体，其中若干是旧版遗留，实际用到的 18 个见 cube_stats.json 的 iconId。
 python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
 python build/export_char_voices.py        # → public/voice + public/data/char_voices.json 角色语音（日语+国服中文）
+# 角色三围（HP/ATK/DEF）由 nikke_extract 生成：python scripts/export_char_stats.py
+#   → staging/char_stats.json、staging/stat_curves.json，拷到 public/data/ 即可
+# 装备与魔方同理：python scripts/export_equip.py / export_cubes.py
+#   → staging/equip_stats.json、staging/cube_stats.json，拷到 public/data/ 即可
 
 # 3. CG
 python build/build_images.py              # → public/img         三档转码
@@ -87,9 +99,15 @@ node build/export_story_sms.mjs           # → public/data/story_sms.json 剧�
 # 5. 自检与前端构建
 python build/verify.py                    # 校验各产物是否齐备
 cd web && npm run build                   # → dist/
+VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（改 UI 时用）
 ```
 
 `build/rerender_spine.py` 用于单独重渲染某个 Spine 模型，不必全量重跑。
+
+构建用的是 `emptyOutDir: false` + 自定义的 `cleanDistAssets` 插件：每次只清 `dist/assets`
+里的 hash 产物，`dist` 下的素材副本原地覆盖。这样避免整份 6G 的 `dist` 被删了再拷，
+也避免本机的删除操作把 6G 塞进回收站。代价是**如果 `public/` 里删了文件，`dist/` 里的旧副本
+不会自动消失**，需要时手动删对应目录即可。
 
 ## 角色页的渲染方式
 

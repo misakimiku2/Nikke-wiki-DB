@@ -712,6 +712,509 @@ img { display: block; }
   mask: var(--icn) center / contain no-repeat;
 }
 
+/* ================= 角色基础属性（等级 / 突破 / 好感） ================= */
+.statbox {
+  margin-top: 18px; border: 1px solid var(--line);
+  position: relative;
+  transition: border-color .35s;
+}
+.statbox-head {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 48px; padding: 0 16px; box-sizing: border-box;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  transition: background .35s, border-color .35s;
+}
+.statbox-head-end {
+  display: flex; align-items: center; gap: 12px;
+}
+.statbox-lv {
+  font-size: 25px; font-weight: 800; letter-spacing: -.02em; line-height: 1;
+  font-variant-numeric: tabular-nums; color: var(--acc, var(--text));
+}
+.statbox-lv i {
+  font-style: normal; font-size: 13px; font-weight: 700;
+  letter-spacing: .06em; margin-right: 4px;
+  color: var(--dim-2); vertical-align: 3px;
+}
+/* 页签：等级 / 装备 */
+.stat-tabbar { display: flex; gap: 16px; }
+.stat-tabbar button {
+  position: relative; padding: 0 0 5px; background: none; border: 0; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; font-weight: 700; letter-spacing: .16em;
+  color: var(--dim-2); transition: color .2s;
+}
+.stat-tabbar button i {
+  font-style: normal; font-size: 9px; letter-spacing: .2em;
+  color: var(--dim-2); margin-left: 6px;
+}
+.stat-tabbar button.on { color: var(--text); }
+.stat-tabbar button.on::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: var(--acc, var(--text));
+}
+.statbox-note {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--acc, var(--text));
+}
+.statbox-body { padding: 15px 16px 16px; }
+
+/* 滑块：细轨道 + 方形滑块，--acc 染角色主题色 */
+.stat-range {
+  -webkit-appearance: none; appearance: none;
+  display: block; width: 100%; height: 20px; background: none; cursor: pointer;
+}
+.stat-range::-webkit-slider-runnable-track {
+  height: 3px; background: var(--line-2);
+}
+.stat-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 11px; height: 11px; margin-top: -4px; border: 0; border-radius: 0;
+  background: var(--acc, var(--text));
+  transition: transform .15s;
+}
+.stat-range::-webkit-slider-thumb:hover { transform: scale(1.25); }
+.stat-range::-moz-range-track { height: 3px; background: var(--line-2); }
+.stat-range::-moz-range-thumb {
+  width: 11px; height: 11px; border: 0; border-radius: 0;
+  background: var(--acc, var(--text));
+}
+.stat-range:disabled { cursor: default; }
+.stat-range:disabled::-webkit-slider-runnable-track { background: var(--line); }
+.stat-range:disabled::-webkit-slider-thumb {
+  background: var(--dim-2); transform: none; box-shadow: none;
+}
+.stat-range:disabled::-moz-range-track { background: var(--line); }
+.stat-range:disabled::-moz-range-thumb { background: var(--dim-2); }
+
+/* 三围：与概览卡同款细边框分栏 */
+.stat-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--line); margin-top: 12px;
+}
+.stat-grid div { padding: 10px 12px; border-right: 1px solid var(--line); }
+.stat-grid div:last-child { border-right: none; }
+.stat-grid span {
+  display: flex; align-items: center; gap: 5px; margin-bottom: 6px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .15em; color: var(--dim-2);
+}
+.stat-icn { width: 12px; height: 12px; flex: none; display: block; color: var(--text-2); }
+.stat-grid b { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* 突破：星星按钮，点亮几颗就是几破 */
+.stat-row {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line);
+}
+.stat-label {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .15em; color: var(--dim-2);
+}
+.stat-stars { display: flex; gap: 3px; }
+.stat-stars button {
+  padding: 0; background: none; border: 0; cursor: pointer;
+  font-size: 19px; line-height: 1; color: var(--line-2);
+  transition: color .18s, transform .18s;
+}
+.stat-stars button.on { color: var(--acc, var(--text)); }
+.stat-stars button:hover { transform: scale(1.15); }
+
+/* 极限突破（核心强化）：7 枚菱形，点亮几枚就是几级 */
+.stat-core { display: flex; gap: 5px; align-items: center; }
+.stat-core button {
+  width: 9px; height: 9px; padding: 0; cursor: pointer;
+  background: none; border: 1px solid var(--line-2);
+  transform: rotate(45deg);
+  transition: background .18s, border-color .18s;
+}
+.stat-core button.on {
+  background: var(--acc, var(--text)); border-color: var(--acc, var(--text));
+}
+.stat-core button:hover { border-color: var(--acc, var(--text)); }
+.stat-hint {
+  margin-left: auto;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .06em; color: var(--dim-2);
+}
+
+/* 好感：折叠区，默认收起 */
+.stat-aff { margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line); }
+.stat-aff-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 0; background: none; border: 0; cursor: pointer;
+  color: inherit; text-align: left;
+}
+.stat-aff-head b {
+  font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--acc, var(--text));
+}
+.stat-aff-pct {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .04em; color: var(--dim-2);
+}
+.stat-aff-arrow {
+  width: 0; height: 0; margin-left: auto;
+  border-left: 4.5px solid transparent; border-right: 4.5px solid transparent;
+  border-top: 5px solid var(--dim-2);
+  transition: transform .25s ease;
+}
+.stat-aff.open .stat-aff-arrow { transform: rotate(180deg); }
+.stat-aff-body { padding-top: 6px; animation: spec-in .28s ease both; }
+.stat-aff-body .stat-hint { display: block; margin: 2px 0 0; text-align: right; }
+
+/* 四宫格：每件装备一格，格内含品阶/强化与 3 条词条 */
+.equip-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.equip-cell {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 9px 9px 8px; border: 1px solid var(--line);
+}
+.equip-cell-head { display: flex; align-items: center; gap: 7px; }
+.equip-icn {
+  width: 24px; height: 24px; object-fit: contain; display: block; flex: none;
+}
+.equip-part {
+  font-size: 13.5px; font-weight: 800; letter-spacing: -.01em;
+  color: var(--text); font-family: inherit;
+}
+.equip-sel {
+  min-width: 0; padding: 2px 2px; cursor: pointer;
+  background: var(--bg-2); color: var(--text);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px;
+}
+.equip-cell-sel { display: flex; gap: 4px; }
+.equip-cell-sel .equip-sel { flex: 1; }
+.equip-cell-nums { display: flex; flex-wrap: nowrap; gap: 8px; overflow: hidden; }
+.equip-cell-nums i {
+  font-style: normal; font-size: 10.5px; font-variant-numeric: tabular-nums;
+  color: var(--text-2); white-space: nowrap;
+}
+.equip-cell-opts {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-top: 1px; padding-top: 5px; border-top: 1px dashed var(--line);
+}
+.equip-opt-row {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  align-items: center; gap: 3px;
+}
+
+/* 词条选择器：完整文案 + 文本区横向滚动 */
+.opt-select { position: relative; min-width: 0; }
+.opt-select-btn {
+  display: flex; align-items: center; gap: 3px; width: 100%;
+  padding: 2px 2px 2px 4px; cursor: pointer;
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line);
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; text-align: left;
+}
+.opt-select-text {
+  flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.opt-select-text::-webkit-scrollbar { display: none; }
+.opt-select-arrow {
+  width: 0; height: 0; flex: none; margin-right: 1px;
+  border-left: 3px solid transparent; border-right: 3px solid transparent;
+  border-top: 4px solid var(--dim-2);
+}
+.opt-select-menu {
+  position: absolute; z-index: 40; top: calc(100% + 2px); left: 0;
+  min-width: 148px; max-height: 340px; overflow-y: auto;
+  margin: 0; padding: 2px; list-style: none;
+  background: var(--bg-2); border: 1px solid var(--line-2);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .2);
+}
+.opt-select-menu button {
+  display: block; width: 100%; padding: 4px 6px; cursor: pointer;
+  background: none; border: 0; text-align: left; white-space: nowrap;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10.5px; color: var(--text-2);
+}
+.opt-select-menu button:hover { background: var(--surface); color: var(--text); }
+.opt-select-menu button.on { color: var(--acc, var(--text)); font-weight: 700; }
+/* 装备统计按钮（右上角图标）与展开面板 */
+.stat-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0; align-self: center;
+  background: none; border: 1px solid var(--line-2); color: var(--dim-2);
+  cursor: pointer; transition: color .2s, border-color .2s;
+}
+.stat-toggle-icn { display: block; width: 14px; height: 14px; }
+.stat-toggle:hover { color: var(--text); border-color: var(--text); }
+.stat-toggle.on { color: var(--acc, var(--text)); border-color: var(--acc, var(--text)); }
+.stat-io-btn.on { color: var(--acc, var(--text)); border-color: var(--acc, var(--text)); background: color-mix(in srgb, var(--acc, var(--text)) 10%, transparent); }
+
+.equip-summary {
+  margin-top: 10px; padding: 10px 11px 11px;
+  border: 1px solid var(--line); background: var(--surface);
+  animation: spec-in .25s ease both;
+}
+.equip-summary-head {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .16em; color: var(--dim-2); margin-bottom: 9px;
+}
+.equip-summary-main {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px; padding-bottom: 9px; margin-bottom: 9px;
+  border-bottom: 1px dashed var(--line);
+}
+.equip-summary-main > div { min-width: 0; }
+.equip-summary-main span {
+  display: block; margin-bottom: 3px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9px; letter-spacing: .1em; color: var(--dim-2);
+}
+.equip-summary-main b {
+  font-size: 12.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--acc, var(--text)); white-space: nowrap;
+}
+.equip-summary-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px;
+}
+.equip-summary-grid > div {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 6px; min-width: 0;
+}
+.equip-summary-grid span {
+  font-size: 10.5px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.equip-summary-grid b {
+  font-size: 11.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--text); white-space: nowrap;
+}
+.equip-summary-grid b.is-zero { color: var(--dim-2); font-weight: 400; }
+.equip-summary-vals {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+}
+.equip-summary-vals em {
+  font-style: normal; font-size: 9px; line-height: 1;
+  color: var(--dim-2); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.equip-total {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+}
+.equip-total span {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .12em; color: var(--dim-2);
+}
+.equip-total i {
+  font-style: normal; font-size: 12px; font-weight: 800;
+  font-variant-numeric: tabular-nums; color: var(--acc, var(--text));
+}
+
+/* ================= 魔方（Harmony Cube） ================= */
+/* 居中圆形图标：dp 池 ie_{id} 精灵（透明底立方体）衬主题色光晕 */
+.cube-hero {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 2px 0 14px;
+}
+.cube-orb {
+  position: relative;
+  width: 82px; height: 82px; flex: none;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  overflow: hidden;
+  /* --cube 由魔方自身的主题色注入，缺省回退到角色主题色 */
+  background:
+    radial-gradient(circle at 50% 36%,
+      color-mix(in srgb, var(--cube, var(--acc, var(--text))) 30%, transparent) 0%,
+      color-mix(in srgb, var(--cube, var(--acc, var(--text))) 12%, transparent) 58%,
+      transparent 74%),
+    var(--bg-2);
+  box-shadow:
+    inset 0 0 0 1px var(--line-2),
+    0 0 0 4px color-mix(in srgb, var(--cube, var(--acc, var(--text))) 14%, transparent),
+    0 6px 16px -6px color-mix(in srgb, var(--cube, var(--acc, var(--text))) 55%, transparent);
+}
+.cube-orb {
+  padding: 0; border: 0; cursor: pointer;
+  transition: transform .18s, box-shadow .2s;
+}
+.cube-orb:hover { transform: translateY(-1px) scale(1.04); }
+.cube-orb:active { transform: scale(.98); }
+.cube-orb:focus-visible {
+  outline: 2px solid var(--cube, var(--acc, var(--text)));
+  outline-offset: 4px;
+}
+.cube-orb img {
+  width: 100%; height: 100%; display: block;
+  object-fit: contain;
+  padding: 3px;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .28));
+}
+/* 图标下方的魔方名 + 更换提示 */
+.cube-name {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  margin-top: 12px;
+  font-size: 13px; font-weight: 800; letter-spacing: .01em; color: var(--text);
+}
+.cube-name i {
+  font-style: normal; font-weight: 400;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9.5px; letter-spacing: .12em; color: var(--dim-2);
+}
+/* 缺图时的线框占位 */
+.cube-ghost {
+  width: 42px; height: 42px;
+  color: var(--acc, var(--text-2));
+}
+/* 未装备：虚线空槽，不发光 */
+.statbox-lv.is-none { color: var(--dim-2); font-weight: 400; }
+.cube-orb.is-empty {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent);
+}
+.cube-orb.is-empty .cube-ghost {
+  width: 36px; height: 36px;
+  color: var(--dim-2);
+}
+/* ---- 魔方选择浮层（贴在卡片内的九宫格） ---- */
+.cube-body { position: relative; }
+.cube-pop {
+  position: absolute; z-index: 6;
+  left: 10px; right: 10px; top: 10px;
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 18px 46px -14px rgba(0, 0, 0, .5);
+  transform-origin: 50% 0;
+  animation: cubePop .15s ease;
+}
+@keyframes cubePop {
+  from { opacity: 0; transform: translateY(-5px) scale(.98) }
+  to { opacity: 1; transform: none }
+}
+.cube-pop-head {
+  flex: none;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 9px 8px 12px; border-bottom: 1px solid var(--line);
+  font-size: 12px; font-weight: 800; color: var(--text);
+}
+.cube-pop-head i {
+  font-style: normal; font-weight: 400;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 9px; letter-spacing: .18em; color: var(--dim-2); margin-left: 6px;
+}
+.cube-pop-close {
+  width: 24px; height: 24px; flex: none; cursor: pointer;
+  background: transparent; border: 1px solid var(--line); color: var(--dim);
+  font-size: 14px; line-height: 1;
+}
+.cube-pop-close:hover { background: var(--red); border-color: var(--red); color: #fff; }
+.cube-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px; padding: 10px;
+}
+.cube-cell {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 8px 3px 7px; cursor: pointer;
+  background: var(--bg-2); border: 1px solid var(--line);
+  transition: border-color .16s, background .16s, transform .16s;
+}
+.cube-cell:hover { transform: translateY(-1px); border-color: var(--line-2); }
+.cube-cell.on {
+  border-color: var(--cube, var(--acc, var(--text)));
+  box-shadow: inset 0 0 0 1px var(--cube, var(--acc, var(--text)));
+}
+.cube-cell-orb {
+  width: 50px; height: 50px; flex: none;
+  border-radius: 50%; display: grid; place-items: center; overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 36%,
+      color-mix(in srgb, var(--cube, var(--acc, var(--text))) 26%, transparent) 0%,
+      transparent 72%),
+    var(--surface);
+}
+.cube-cell-orb img { width: 100%; height: 100%; object-fit: contain; padding: 2px; }
+.cube-cell-orb.is-empty {
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--text) 22%, transparent);
+}
+.cube-cell-orb.is-empty .cube-ghost { width: 26px; height: 26px; color: var(--dim-2); }
+.cube-cell-name {
+  font-size: 10px; line-height: 1.3; text-align: center;
+  color: var(--text-2); word-break: break-all;
+}
+.cube-cell.on .cube-cell-name { color: var(--text); font-weight: 700; }
+/* ---- 配装导入 / 导出浮层（卡片内小弹窗） ---- */
+.io-pop {
+  position: absolute; z-index: 7;
+  left: 12px; right: 12px; top: 54px;
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  box-shadow: 0 18px 46px -14px rgba(0, 0, 0, .5);
+  transform-origin: 50% 0;
+  animation: cubePop .15s ease;
+}
+.io-body { padding: 4px 12px 13px; }
+.io-lead {
+  margin: 8px 0 10px; font-size: 11px; line-height: 1.5; color: var(--dim);
+}
+.io-code {
+  display: block; width: 100%; box-sizing: border-box;
+  min-height: 62px; max-height: 110px; resize: vertical;
+  padding: 8px 9px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; line-height: 1.5; color: var(--text);
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 0;
+  outline: none; word-break: break-all;
+}
+.io-code:focus { border-color: var(--acc, var(--text)); }
+.io-msg {
+  margin: 8px 0 0; font-size: 11px; line-height: 1.45;
+  padding: 6px 8px; border: 1px solid var(--line);
+}
+.io-msg.ok { color: var(--acc, var(--text)); border-color: color-mix(in srgb, var(--acc, var(--text)) 40%, transparent); }
+.io-msg.err { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.io-actions { display: flex; gap: 8px; margin-top: 10px; }
+.io-actions.sub { margin-top: 7px; }
+.io-act {
+  flex: 1; min-width: 0; padding: 7px 8px; cursor: pointer;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  color: var(--text); background: var(--bg-2); border: 1px solid var(--line-2);
+  transition: border-color .16s, background .16s, color .16s;
+}
+.io-act:hover { border-color: var(--text); }
+.io-act.primary { color: #fff; background: var(--acc, var(--text)); border-color: var(--acc, var(--text)); }
+.io-act.primary:hover { filter: brightness(1.1); }
+.io-act.ghost { color: var(--dim); background: transparent; font-weight: 500; }
+.io-act.ghost:hover { color: var(--text); }
+.io-file { display: none; }
+.cube-fx {
+  margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.cube-fx-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.cube-fx-row span {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .04em; color: var(--dim-2);
+}
+.cube-fx-row b {
+  font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--acc, var(--text)); white-space: nowrap;
+}
+/* 非加成信息（插槽数）：走常规文字色，避免被误读成加成 */
+.cube-fx-row.is-meta b { color: var(--text-2); font-weight: 700; }
+/* 未装备时的占位破折号：不要染主题色 */
+.cube-fx-row b.is-none { color: var(--dim-2); font-weight: 400; }
+.cube-note {
+  margin: 11px 0 0; padding-top: 9px; border-top: 1px dashed var(--line);
+  font-size: 10.5px; line-height: 1.6; color: var(--dim-2);
+}
+
 /* ================= 角色技能说明 ================= */
 .skillbox {
   margin-top: 40px; border: 1px solid var(--line);

@@ -59,11 +59,41 @@ function cgFlagsPlugin(): Plugin {
   }
 }
 
+/**
+ * 构建前只清 dist/assets，不动 dist 里的素材副本。
+ *
+ * 为什么不用 emptyOutDir：dist 会整份拷贝 ../public（约 6.4G），而本机的删除操作
+ * 会被沙箱重定向到回收站，emptyOutDir 等于每次构建都往回收站塞 6 个多 G，
+ * 很容易把磁盘撑满。这里只删几百 KB 的 hash 产物，素材原地覆盖。
+ */
+function cleanDistAssets(): Plugin {
+  return {
+    name: 'clean-dist-assets',
+    apply: 'build',
+    buildStart() {
+      const dir = path.resolve(HERE, '../dist/assets')
+      try {
+        if (!fs.existsSync(dir)) return
+        for (const f of fs.readdirSync(dir)) {
+          try {
+            fs.rmSync(path.join(dir, f), { recursive: true, force: true })
+          } catch {
+            /* 删不掉就留着，不影响构建 */
+          }
+        }
+      } catch {
+        /* 目录还不存在 */
+      }
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin()],
+  plugins: [react(), cgFlagsPlugin(), cleanDistAssets()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',
   server: { port: 5273, host: true },
-  build: { outDir: '../dist', emptyOutDir: true },
+  // emptyOutDir 关掉，理由见上方 cleanDistAssets 注释
+  build: { outDir: '../dist', emptyOutDir: false },
 })

@@ -270,6 +270,236 @@ export async function loadSpecTexts(): Promise<SpecTexts> {
   return cacheSpecTexts
 }
 
+/* ---------- 角色基础属性（等级 → HP / ATK / DEF） ---------- */
+
+/** 属性曲线：数组索引 = 等级 - 1 */
+export type StatCurve = { hp: number[]; atk: number[]; def: number[] }
+export type StatCurves = Record<string, StatCurve>
+
+/** char_stats.json 单条：模板键 + 16 个关键等级的数值快照 */
+export type CharBaseStat = {
+  id: number
+  name: string | null
+  nameEn: string | null
+  code: string | null
+  template: number
+  rarity: 'R' | 'SR' | 'SSR'
+  cls: number
+  clsName: string
+  weapon: string
+  stats: Record<string, { hp: number; atk: number; def: number }>
+}
+
+/** 突破星级 → 角色等级上限。3 星之后接同步器等级，属性表最高给到 1400 级 */
+export const LB_MAX_LEVEL = [80, 120, 160, 1400]
+
+/** 每次突破的属性增益：+2% 与固定值（固定值按稀有度区分，来自 CharacterStatEnhanceTable） */
+export const LB_GAIN: Record<string, { hp: number; atk: number; def: number }> = {
+  R: { hp: 2300, atk: 16, def: 80 },
+  SR: { hp: 2300, atk: 18, def: 90 },
+  SSR: { hp: 3000, atk: 20, def: 100 },
+}
+
+/** 好感度上限：朝圣者 40，其余 30 */
+export function affectionMax(corp: number | null | undefined): number {
+  return corp === 4 ? 40 : 30
+}
+/** 好感每级加成约 0.1% 三围（30 级约占 200 级总属性 3%） */
+export const AFFECTION_PER_LV = 0.001
+
+/** 极限突破（核心强化）：3 星之后 0–7 级，每级 +2%，无固定值 */
+export const CORE_MAX = 7
+export const CORE_RATE = 0.02
+
+let cacheStatCurves: StatCurves | null = null
+
+export async function loadStatCurves(): Promise<StatCurves> {
+  if (cacheStatCurves) return cacheStatCurves
+  try {
+    cacheStatCurves = await getJSON<StatCurves>('/data/stat_curves.json')
+  } catch {
+    cacheStatCurves = {}
+  }
+  return cacheStatCurves
+}
+
+let cacheCharStats: Record<string, CharBaseStat> | null = null
+
+export async function loadCharStats(): Promise<Record<string, CharBaseStat>> {
+  if (cacheCharStats) return cacheCharStats
+  try {
+    cacheCharStats = await getJSON<Record<string, CharBaseStat>>('/data/char_stats.json')
+  } catch {
+    cacheCharStats = {}
+  }
+  return cacheCharStats
+}
+
+/* ---------- 装备（部位 × 职业 × 品阶） ---------- */
+
+export type EquipPart = 'head' | 'arm' | 'body' | 'leg'
+export type EquipStat = {
+  part: EquipPart
+  cls: number
+  tier: number
+  atk: number
+  hp: number
+  def: number
+}
+export type EquipStats = { items: EquipStat[] }
+
+export const EQUIP_PARTS: EquipPart[] = ['head', 'arm', 'body', 'leg']
+export const EQUIP_PART_CN: Record<EquipPart, string> = {
+  head: '头盔', arm: '手套', body: '衣服', leg: '靴子',
+}
+export const EQUIP_TIERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+export const EQUIP_MAX_ENHANCE = 5
+/** 每级强化 +10% 基础值（游戏内 +0～+5 共约 +50%） */
+export const EQUIP_ENHANCE_RATE = 0.1
+
+/** 品阶 → 图标档位（图集只提供 6 档外观，相邻品阶共用） */
+const TIER_ICON: Record<number, string> = {
+  1: 't1', 2: 't1', 3: 't3', 4: 't3', 5: 't5',
+  6: 't5', 7: 't7', 8: 't7', 9: 't9_1', 10: 't9_3',
+}
+const CLS_KEY: Record<number, string> = { 1: 'attacker', 2: 'defender', 3: 'supporter' }
+
+/** 装备图标路径（dp 池 icons-equip 图集切图，128²） */
+export function equipIcon(part: EquipPart, cls: number, tier: number): string {
+  const t = TIER_ICON[tier] ?? 't9_1'
+  const c = CLS_KEY[cls] ?? 'attacker'
+  return `/equipicon/icn_equipment_${part}_${c}_${t}.webp`
+}
+
+/** T10 词条（Overload）：9 种，每种 15 档，数值为社区实测表 */
+export type EquipOption = {
+  key: string
+  label: string
+  /** 索引 = 档位-1，共 15 档 */
+  tiers: number[]
+}
+
+export const EQUIP_OPTIONS: EquipOption[] = [
+  {
+    key: 'atk', label: '攻击力增加',
+    tiers: [4.77, 5.47, 6.18, 6.88, 7.59, 8.29, 9.00, 9.70, 10.40, 11.11, 11.81, 12.52, 13.22, 13.93, 14.63],
+  },
+  {
+    key: 'def', label: '防御力增加',
+    tiers: [4.77, 5.47, 6.18, 6.88, 7.59, 8.29, 9.00, 9.70, 10.40, 11.11, 11.81, 12.52, 13.22, 13.93, 14.63],
+  },
+  {
+    key: 'elem', label: '优越代码伤害增加',
+    tiers: [9.54, 10.94, 12.34, 13.75, 15.15, 16.55, 17.95, 19.35, 20.75, 22.15, 23.56, 24.96, 26.36, 27.76, 29.16],
+  },
+  {
+    key: 'critdmg', label: '暴击伤害增加',
+    tiers: [6.64, 7.62, 8.60, 9.58, 10.56, 11.54, 12.52, 13.50, 14.48, 15.46, 16.44, 17.42, 18.40, 19.38, 20.36],
+  },
+  {
+    key: 'crit', label: '暴击率增加',
+    tiers: [2.30, 2.64, 2.98, 3.32, 3.66, 4.00, 4.35, 4.69, 5.03, 5.37, 5.70, 6.05, 6.39, 6.73, 7.07],
+  },
+  {
+    key: 'ammo', label: '最大装弹数',
+    tiers: [27.84, 31.95, 36.06, 40.17, 44.28, 48.39, 52.50, 56.60, 60.71, 64.82, 68.93, 73.04, 77.15, 81.26, 85.37],
+  },
+  {
+    key: 'hit', label: '命中率增加',
+    tiers: [4.77, 5.47, 6.18, 6.88, 7.59, 8.29, 9.00, 9.70, 10.40, 11.11, 11.81, 12.52, 13.22, 13.93, 14.63],
+  },
+  {
+    key: 'charge', label: '蓄力伤害增加',
+    tiers: [4.77, 5.47, 6.18, 6.88, 7.59, 8.29, 9.00, 9.70, 10.40, 11.11, 11.81, 12.52, 13.22, 13.93, 14.63],
+  },
+  {
+    key: 'chargespd', label: '蓄力速度增加',
+    tiers: [1.98, 2.28, 2.57, 2.86, 3.16, 3.45, 3.75, 4.04, 4.33, 4.63, 4.92, 5.21, 5.51, 5.80, 6.09],
+  },
+]
+
+/** 档位概率：1-5 档 60%，6-10 档 35%，11-15 档 5% */
+export const EQUIP_TIER_ODDS = ['60%', '60%', '60%', '60%', '60%',
+  '35%', '35%', '35%', '35%', '35%', '5%', '5%', '5%', '5%', '5%']
+
+let cacheEquipStats: EquipStats | null = null
+
+export async function loadEquipStats(): Promise<EquipStats> {
+  if (cacheEquipStats) return cacheEquipStats
+  try {
+    cacheEquipStats = await getJSON<EquipStats>('/data/equip_stats.json')
+  } catch {
+    cacheEquipStats = { items: [] }
+  }
+  return cacheEquipStats
+}
+
+/* ---------- 魔方（Harmony Cube） ---------- */
+
+export type CubeLevel = {
+  lv: number
+  atk: number
+  def: number
+  hp: number
+  /** 该等级可装备的妮姬数量 */
+  slots: number
+}
+
+export type CubeInfo = {
+  id: number
+  /** 图标/外观 ID，图标文件名即 ie_{iconId}，与序号不同（如量子魔方是 11001） */
+  iconId: number
+  /** 游戏内主题色 #RRGGBB */
+  color: string
+  key: string
+  name: string
+  nameEn: string
+  /** 该魔方自身的技能效果名 */
+  effect: string
+  unit: string
+  /** 三档数值：Lv1-2 / Lv3-6 / Lv7-15 */
+  tiers: number[]
+  /** 会作用到三围面板的字段 */
+  affects: 'hp' | 'def' | null
+}
+
+export type CubeStats = {
+  levels: CubeLevel[]
+  cubes: CubeInfo[]
+  /** 所有魔方通用的「优越代码伤害」按等级，Lv1-4 为 null */
+  elemental: (number | null)[]
+  tierBounds: number[]
+}
+
+/** 魔方等级上限 */
+export const CUBE_MAX_LEVEL = 15
+
+/** 魔方图标：dp 池 icons-equip 里的 ie_{id} 精灵（256²，透明底）
+ * 10018（外框魔方）为最新魔方，本地客户端图集尚未收录，前端自动回退线框占位 */
+export function cubeIcon(id: number): string {
+  return `/cubeicon/ie_${id}.webp`
+}
+
+/** 等级 → 档位下标（0/1/2），对应 tiers */
+export function cubeTierIndex(lv: number, bounds: number[]): number {
+  const [a, b] = bounds
+  if (lv <= a) return 0
+  if (lv <= b) return 1
+  return 2
+}
+
+let cacheCubeStats: CubeStats | null = null
+
+export async function loadCubeStats(): Promise<CubeStats> {
+  if (cacheCubeStats) return cacheCubeStats
+  try {
+    cacheCubeStats = await getJSON<CubeStats>('/data/cube_stats.json')
+  } catch {
+    cacheCubeStats = { levels: [], cubes: [], elemental: [], tierBounds: [2, 6, 15] }
+  }
+  return cacheCubeStats
+}
+
 /** 部队专属图标（dp 池 icons-squad 图集提取，部队中文名 → 图标路径；
  * 联动部队与四兽/近接等自创部队不在游戏图集内，查不到即回退无图标） */
 export type SquadIcons = Record<string, string>

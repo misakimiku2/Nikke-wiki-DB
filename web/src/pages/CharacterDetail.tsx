@@ -5,10 +5,14 @@ import {
   loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
   loadCharSpine, loadCharVoices, loadCharacters, loadCostumeTexts, loadSpecTexts, mainBase, nf, pickBurstAnim,
   skillcutModelName, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor, variantsOf,
-  loadSquadIcons,
-  type CharArtMap, type CharImages, type CharMetaMap, type Character, type CharMessagesData, type CharSkill,
-  type CharSkillsData, type CharStoriesData, type CharVoiceData, type CostumeTextMap, type SkillcutIndex,
-  type SpecTexts, type SquadIcons,
+  loadSquadIcons, loadCharStats, loadStatCurves, LB_MAX_LEVEL, LB_GAIN, affectionMax, AFFECTION_PER_LV,
+  loadEquipStats, EQUIP_PARTS, EQUIP_PART_CN, EQUIP_TIERS, EQUIP_MAX_ENHANCE, EQUIP_ENHANCE_RATE, EQUIP_OPTIONS, EQUIP_TIER_ODDS,
+  loadCubeStats, CUBE_MAX_LEVEL, cubeTierIndex, cubeIcon,
+  CORE_MAX, CORE_RATE, equipIcon,
+  type CharArtMap, type CharBaseStat, type CharImages, type CharMetaMap, type Character, type CharMessagesData,
+  type CharSkill, type CharSkillsData, type CharStoriesData, type CharVoiceData, type CostumeTextMap,
+  type SkillcutIndex, type SpecTexts, type SquadIcons, type StatCurves, type EquipStats, type EquipPart,
+  type CubeStats,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
@@ -22,6 +26,220 @@ const EMPTY: SpineStatus = {
   ready: false, playing: true, time: 0, duration: 0, speed: 1, zoom: 1, anim: '', anims: [],
 }
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+/** 装备词条：每件最多 3 条，类型 + 档位（1-15） */
+type OptRow = { key: string; tier: number }
+const OPT_ROWS = 3
+const emptyOpts = (): Record<EquipPart, OptRow[]> => ({
+  head: Array.from({ length: OPT_ROWS }, () => ({ key: '', tier: 0 })),
+  arm: Array.from({ length: OPT_ROWS }, () => ({ key: '', tier: 0 })),
+  body: Array.from({ length: OPT_ROWS }, () => ({ key: '', tier: 0 })),
+  leg: Array.from({ length: OPT_ROWS }, () => ({ key: '', tier: 0 })),
+})
+
+/* ---- 配装导入 / 导出：把全部可调状态编码成一行分享码 ---- */
+type BuildPreset = {
+  v: 1
+  lv: number                                   // 等级
+  lb: number                                   // 突破星级
+  co: number                                   // 极限突破
+  af: number                                   // 好感
+  eq: Record<EquipPart, [number, number]>      // 部位 → [品阶, 强化]
+  op: Record<EquipPart, [string, number][]>    // 部位 → [[词条key, 档位], ...]
+  cu: number | null                            // 魔方 id，null=未装备
+  cl: number                                   // 魔方等级
+}
+const PRESET_PREFIX = 'NKB1:'
+
+function encodePreset(p: BuildPreset): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(p))
+  let bin = ''
+  bytes.forEach((b) => { bin += String.fromCharCode(b) })
+  return PRESET_PREFIX + btoa(bin)
+}
+
+/** 解析 + 结构校验 + 范围钳制；角色相关上限（好感/魔方存在性）由调用方再处理 */
+function parsePreset(raw: string): BuildPreset | null {
+  const code = raw.trim()
+  if (!code.startsWith(PRESET_PREFIX)) return null
+  let obj: Record<string, unknown>
+  try {
+    const bin = atob(code.slice(PRESET_PREFIX.length))
+    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+    obj = JSON.parse(new TextDecoder().decode(bytes))
+  } catch {
+    return null
+  }
+  if (!obj || obj.v !== 1) return null
+  const num = (x: unknown, lo: number, hi: number, dflt: number) =>
+    typeof x === 'number' && Number.isFinite(x) ? Math.min(hi, Math.max(lo, Math.round(x))) : dflt
+  const eq = {} as BuildPreset['eq']
+  const op = {} as BuildPreset['op']
+  const rawEq = (obj.eq && typeof obj.eq === 'object' ? obj.eq : {}) as Record<string, unknown>
+  const rawOp = (obj.op && typeof obj.op === 'object' ? obj.op : {}) as Record<string, unknown>
+  for (const part of EQUIP_PARTS) {
+    const e = rawEq[part]
+    eq[part] = [
+      num(Array.isArray(e) ? e[0] : 1, 1, EQUIP_TIERS.length, 1),
+      num(Array.isArray(e) ? e[1] : 0, 0, EQUIP_MAX_ENHANCE, 0),
+    ]
+    const rows = rawOp[part]
+    const arr: [string, number][] = Array.isArray(rows)
+      ? rows.slice(0, OPT_ROWS).map((r: unknown) => {
+          const t = r as [unknown, unknown]
+          const key = typeof t?.[0] === 'string' && EQUIP_OPTIONS.some((o) => o.key === t[0]) ? t[0] : ''
+          return [key, key ? num(t[1], 1, 15, 1) : 0] as [string, number]
+        })
+      : []
+    while (arr.length < OPT_ROWS) arr.push(['', 0])
+    op[part] = arr
+  }
+  return {
+    v: 1,
+    lv: num(obj.lv, 1, LB_MAX_LEVEL[LB_MAX_LEVEL.length - 1], 1),
+    lb: num(obj.lb, 0, LB_MAX_LEVEL.length - 1, 3),
+    co: num(obj.co, 0, CORE_MAX, 0),
+    af: num(obj.af, 0, 1000, 0),
+    eq,
+    op,
+    cu: typeof obj.cu === 'number' ? obj.cu : null,
+    cl: num(obj.cl, 1, CUBE_MAX_LEVEL, 1),
+  }
+}
+/** 游戏内首次 Overload 的词条固定为 11 档 */
+const DEFAULT_TIER = 11
+
+/** 通用下拉：完整文案 + 文本区横向滚动（原生 select 在窄格子里会截断） */
+type SelectOpt = { value: string; label: string; short?: string; title?: string }
+
+function OptSelect({
+  value, onChange, options, label, placeholder = '—',
+}: {
+  value: string
+  onChange: (v: string) => void
+  options: SelectOpt[]
+  label: string
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const cur = options.find((o) => o.value === value)
+  return (
+    <div className="opt-select" ref={ref}>
+      <button
+        type="button"
+        className="opt-select-btn"
+        onClick={() => setOpen((v) => !v)}
+        title={cur?.title || cur?.label || placeholder}
+        aria-label={label}
+        aria-expanded={open}
+      >
+        <span className="opt-select-text">{cur?.short ?? cur?.label ?? placeholder}</span>
+        <i className="opt-select-arrow" aria-hidden />
+      </button>
+      {open && (
+        <ul className="opt-select-menu" role="listbox">
+          {options.map((o) => (
+            <li key={o.value}>
+              <button
+                type="button"
+                className={o.value === value ? 'on' : ''}
+                onClick={() => { onChange(o.value); setOpen(false) }}
+                title={o.title}
+              >{o.label}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** 装备统计图标：三根柱状条 */
+function ChartIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="stat-toggle-icn" aria-hidden>
+      <g stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
+        <line x1="5" y1="16.5" x2="5" y2="10.5" />
+        <line x1="10" y1="16.5" x2="10" y2="5" />
+        <line x1="15" y1="16.5" x2="15" y2="12.5" />
+      </g>
+    </svg>
+  )
+}
+
+/** 配装导入导出图标：双向箭头穿过方框 */
+function IoIcon() {
+  return (
+    <svg viewBox="0 0 20 20" className="stat-toggle-icn" aria-hidden>
+      <g fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 6.5h9M9.5 4 12 6.5 9.5 9" />
+        <path d="M17 13.5H8M10.5 11 8 13.5 10.5 16" />
+      </g>
+    </svg>
+  )
+}
+
+/** 魔方图标缺失时的占位：线框立方体，跟随主题色，风格与三围图标一致 */
+function CubeGhost() {
+  return (
+    <svg className="cube-ghost" viewBox="0 0 48 48" aria-hidden>
+      <g fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+        <path d="M24 5.5 40.5 14.7v18.6L24 42.5 7.5 33.3V14.7z" opacity=".7" />
+        <path d="M7.5 14.7 24 23.9l16.5-9.2M24 23.9v18.6" opacity=".4" />
+      </g>
+    </svg>
+  )
+}
+
+/** 三围图标：对齐游戏 STATUS 面板的星芒 / 横条箭头 / 盾形，内联 SVG 便于双主题染色 */
+function StatIcon({ kind }: { kind: 'hp' | 'atk' | 'def' }) {
+  if (kind === 'hp') {
+    return (
+      <svg viewBox="0 0 20 20" className="stat-icn" aria-hidden>
+        <g stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
+          <line x1="10" y1="3" x2="10" y2="17" />
+          <line x1="4" y1="6.5" x2="16" y2="13.5" />
+          <line x1="16" y1="6.5" x2="4" y2="13.5" />
+        </g>
+      </svg>
+    )
+  }
+  if (kind === 'atk') {
+    return (
+      <svg viewBox="0 0 20 20" className="stat-icn" aria-hidden>
+        <g stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" fill="none">
+          <line x1="3" y1="5.6" x2="11" y2="5.6" />
+          <line x1="3" y1="10" x2="15" y2="10" />
+          <line x1="3" y1="14.4" x2="9" y2="14.4" />
+          <path d="M12.6 7.6 L15.4 10 L12.6 12.4" />
+        </g>
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 20 20" className="stat-icn" aria-hidden>
+      <path
+        d="M10 2.2 L16.6 4.6 V9.2 C16.6 13.4 13.5 16.3 10 17.8 C6.5 16.3 3.4 13.4 3.4 9.2 V4.6 Z"
+        fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 /**
  * 表情按钮只放这几个「主表情」，其余（surprise / pain / rage / *_02 …）收进下拉，
@@ -213,6 +431,46 @@ export default function CharacterDetail() {
   const [skinsOpen, setSkinsOpen] = useState(false)
   /** 概览卡字段说明弹窗（与技能词条弹窗同款样式） */
   const [specPopup, setSpecPopup] = useState<{ title: string; lines: string[]; img?: string } | null>(null)
+  /** 角色基础属性：等级 / 突破 / 好感三档可调，数值实时重算 */
+  const [charStats, setCharStats] = useState<Record<string, CharBaseStat>>({})
+  const [statCurves, setStatCurves] = useState<StatCurves | null>(null)
+  const [level, setLevel] = useState(1)
+  const [limitBreak, setLimitBreak] = useState(3)
+  /** 极限突破（核心强化）0–7 级 */
+  const [core, setCore] = useState(0)
+  const [affection, setAffection] = useState(0)
+  /** 好感折叠区：默认收起 */
+  const [affOpen, setAffOpen] = useState(false)
+  /** 属性卡页签：等级 / 装备 / 魔方 */
+  const [statTab, setStatTab] = useState<'level' | 'equip' | 'cube'>('level')
+  /** 魔方：18 种，等级 1-15，等级决定三围固定加成与技能档位 */
+  const [cubeData, setCubeData] = useState<CubeStats>({ levels: [], cubes: [], elemental: [], tierBounds: [2, 6, 15] })
+  /** null = 未装备魔方 */
+  const [cubeId, setCubeId] = useState<number | null>(null)
+  /** 魔方选择弹窗（九宫格，卡片内浮层） */
+  const [cubePickOpen, setCubePickOpen] = useState(false)
+  const cubePopRef = useRef<HTMLDivElement>(null)
+  const [cubeLv, setCubeLv] = useState(1)
+  /** 记录图标 404 的魔方 id（外框魔方等最新魔方本地图集未收录） */
+  const [cubeIconBroken, setCubeIconBroken] = useState<number | null>(null)
+  /** 装备：4 部位各自选品阶与强化等级，外加两条 T10 词条 */
+  const [equipData, setEquipData] = useState<EquipStats>({ items: [] })
+  const [equip, setEquip] = useState<Record<EquipPart, { tier: number; enhance: number }>>({
+    head: { tier: 1, enhance: 0 },
+    arm: { tier: 1, enhance: 0 },
+    body: { tier: 1, enhance: 0 },
+    leg: { tier: 1, enhance: 0 },
+  })
+  /** 词条：每件装备最多 3 条（类型 + 档位） */
+  const [equipOpts, setEquipOpts] = useState<Record<EquipPart, OptRow[]>>(emptyOpts)
+  /** 装备统计面板：右上角按钮展开，列出三围与全部词条汇总 */
+  const [statOpen, setStatOpen] = useState(false)
+  /** 配装导入导出浮层：卡片内小弹窗 */
+  const [ioOpen, setIoOpen] = useState(false)
+  const [ioText, setIoText] = useState('')
+  const [ioMsg, setIoMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const ioPopRef = useRef<HTMLDivElement>(null)
+  const ioFileRef = useRef<HTMLInputElement>(null)
   /** 部队专属图标（部队中文名 → 图标路径，来自游戏 icons-squad 图集） */
   const [squadIcons, setSquadIcons] = useState<SquadIcons>({})
   const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
@@ -242,7 +500,33 @@ export default function CharacterDetail() {
     loadCharMeta().then(setCharMeta).catch(() => {})
     loadSpecTexts().then(setSpecTexts).catch(() => {})
     loadSquadIcons().then(setSquadIcons).catch(() => {})
+    loadCharStats().then(setCharStats).catch(() => {})
+    loadStatCurves().then(setStatCurves).catch(() => setStatCurves({}))
+    loadEquipStats().then(setEquipData).catch(() => {})
+    loadCubeStats().then(setCubeData).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!cubePickOpen && !ioOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setCubePickOpen(false)
+      setIoOpen(false)
+    }
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null
+      // 点浮层内部或对应触发按钮都不算「点外面」
+      if (t?.closest?.('.cube-pop, .cube-orb, .io-pop, .stat-io-btn')) return
+      setCubePickOpen(false)
+      setIoOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('mousedown', onDown)
+    }
+  }, [cubePickOpen, ioOpen])
 
   useEffect(() => {
     setPick(null)
@@ -253,6 +537,15 @@ export default function CharacterDetail() {
     setSpecOpen(false)
     setModesOpen(true)
     setSkinsOpen(false)
+    setLevel(1)
+    setLimitBreak(3)
+    setCore(0)
+    setAffection(0)
+    setAffOpen(false)
+    setStatTab('level')
+    setEquipOpts(emptyOpts())
+    setStatOpen(false)
+    setCubePickOpen(false)
   }, [id])
 
   // 换皮肤 / 切姿态时也要把状态归零，否则控制条会短暂显示上一套模型的动作与时长
@@ -404,6 +697,206 @@ export default function CharacterDetail() {
 
   /** 概览卡条目：游戏元数据（部队/企业/武器/爆裂/兵种/属性）优先，缺失的自动跳过；popup = 点击弹窗内容 */
   const meta = charMeta[String(c.id)]
+
+  /* ---- 基础属性卡：等级滑块 / 突破星级 / 好感折叠 / 装备与词条 ---- */
+  const baseStat = charStats[String(c.id)]
+  const curve = baseStat && statCurves ? statCurves[String(baseStat.template)] : undefined
+  const lbMax = LB_MAX_LEVEL[limitBreak]
+  const lv = Math.min(level, lbMax)
+
+  /* 装备：4 部位按当前角色职业取表，强化每级 +10% */
+  const equipCls = baseStat?.cls ?? 1
+  const equipRows = EQUIP_PARTS.map((part) => {
+    const sel = equip[part]
+    const row = equipData.items.find((r) => r.part === part && r.cls === equipCls && r.tier === sel.tier)
+    const mul = 1 + sel.enhance * EQUIP_ENHANCE_RATE
+    return {
+      part,
+      tier: sel.tier,
+      enhance: sel.enhance,
+      atk: row ? Math.round(row.atk * mul) : 0,
+      hp: row ? Math.round(row.hp * mul) : 0,
+      def: row ? Math.round(row.def * mul) : 0,
+    }
+  })
+  const equipTotal = equipRows.reduce(
+    (a, r) => ({ atk: a.atk + r.atk, hp: a.hp + r.hp, def: a.def + r.def }),
+    { atk: 0, hp: 0, def: 0 },
+  )
+
+  /** 词条里的攻击力/防御力百分比，汇总后乘在最终三围上 */
+  let optAtkPct = 0
+  let optDefPct = 0
+  for (const part of EQUIP_PARTS) {
+    for (const o of equipOpts[part]) {
+      if (!o.key || o.tier < 1) continue
+      const opt = EQUIP_OPTIONS.find((x) => x.key === o.key)
+      const v = opt?.tiers[o.tier - 1]
+      if (v == null) continue
+      if (o.key === 'atk') optAtkPct += v
+      else if (o.key === 'def') optDefPct += v
+    }
+  }
+
+  const updateOpt = (part: EquipPart, idx: number, patch: Partial<OptRow>) => {
+    setEquipOpts((prev) => ({
+      ...prev,
+      [part]: prev[part].map((x, k) => (k === idx ? { ...x, ...patch } : x)),
+    }))
+  }
+  const typeOptions: SelectOpt[] = [
+    { value: '', label: '—' },
+    ...EQUIP_OPTIONS.map((o) => ({ value: o.key, label: o.label })),
+  ]
+
+  /** 装备统计：9 类词条各自累计 */
+  const optSummary = EQUIP_OPTIONS.map((opt) => {
+    let total = 0
+    for (const part of EQUIP_PARTS) {
+      for (const o of equipOpts[part]) {
+        if (o.key === opt.key && o.tier > 0) total += opt.tiers[o.tier - 1] ?? 0
+      }
+    }
+    return { key: opt.key, label: opt.label, total }
+  })
+
+  /** 魔方：等级决定三围固定加成（18 种魔方共用），技能效果按 Lv1-2 / 3-6 / 7-15 三档 */
+  /** 未装备魔方时为 null，此时三围不含任何魔方加成 */
+  const cube = cubeId == null ? null : cubeData.cubes.find((x) => x.id === cubeId) ?? null
+  const cubeLvCur = Math.min(Math.max(1, cubeLv), CUBE_MAX_LEVEL)
+  const cubeRow = cube ? cubeData.levels[cubeLvCur - 1] ?? null : null
+  const cubeTier = cubeTierIndex(cubeLvCur, cubeData.tierBounds)
+  const cubeEffectVal = cube ? cube.tiers[cubeTier] ?? 0 : 0
+  const cubeElem = cube ? cubeData.elemental[cubeLvCur - 1] ?? null : null
+  const cubeFlat = {
+    atk: cubeRow?.atk ?? 0,
+    def: cubeRow?.def ?? 0,
+    hp: cubeRow?.hp ?? 0,
+  }
+  const cubeHpPct = cube?.affects === 'hp' ? cubeEffectVal : 0
+  const cubeDefPct = cube?.affects === 'def' ? cubeEffectVal : 0
+
+  /** 曲线基础值 → 逐星突破（×1.02 + 固定值）→ 极限 ×1.02 → 好感 → ＋装备＋魔方 → ×百分比 */
+  let statCalc: {
+    hp: number; atk: number; def: number
+    /** 百分比换算出的固定值，用于面板核对 */
+    optAtkFlat: number; optDefFlat: number
+    cubeHpFlat: number; cubeDefFlat: number
+  } | null = null
+  if (curve && baseStat) {
+    const i = Math.max(0, lv - 1)
+    if (i < curve.hp.length) {
+      let hp = curve.hp[i]
+      let atk = curve.atk[i]
+      let dfn = curve.def[i]
+      const g = LB_GAIN[baseStat.rarity] || LB_GAIN.SSR
+      for (let k = 0; k < limitBreak; k++) {
+        hp = hp * 1.02 + g.hp
+        atk = atk * 1.02 + g.atk
+        dfn = dfn * 1.02 + g.def
+      }
+      // 极限突破（核心强化）：每级 +2%，无固定值
+      const coreMul = (1 + CORE_RATE) ** core
+      hp *= coreMul
+      atk *= coreMul
+      dfn *= coreMul
+      // 好感按比例加，装备与魔方按固定值加（游戏内都是加法）
+      const affMul = 1 + affection * AFFECTION_PER_LV
+      hp = hp * affMul + equipTotal.hp + cubeFlat.hp
+      atk = atk * affMul + equipTotal.atk + cubeFlat.atk
+      dfn = dfn * affMul + equipTotal.def + cubeFlat.def
+      // 百分比（装备词条 + 魔方技能）作用在「含装备与魔方的白板」上
+      const optAtkFlat = atk * optAtkPct / 100
+      const optDefFlat = dfn * optDefPct / 100
+      const cubeDefFlat = dfn * cubeDefPct / 100
+      const cubeHpFlat = hp * cubeHpPct / 100
+      atk += optAtkFlat
+      dfn += optDefFlat + cubeDefFlat
+      hp += cubeHpFlat
+      statCalc = {
+        hp: Math.round(hp),
+        atk: Math.round(atk),
+        def: Math.round(dfn),
+        optAtkFlat: Math.round(optAtkFlat),
+        optDefFlat: Math.round(optDefFlat),
+        cubeHpFlat: Math.round(cubeHpFlat),
+        cubeDefFlat: Math.round(cubeDefFlat),
+      }
+    }
+  }
+  const affMax = affectionMax(meta?.corp)
+
+  /* ---- 配装导入导出 ---- */
+  const openIo = () => {
+    const preset: BuildPreset = {
+      v: 1,
+      lv: level, lb: limitBreak, co: core, af: affection,
+      eq: Object.fromEntries(EQUIP_PARTS.map((p) => [p, [equip[p].tier, equip[p].enhance]])) as BuildPreset['eq'],
+      op: Object.fromEntries(EQUIP_PARTS.map((p) => [p, equipOpts[p].filter((r) => r.key).map((r) => [r.key, r.tier])])) as BuildPreset['op'],
+      cu: cubeId, cl: cubeLv,
+    }
+    setIoText(encodePreset(preset))
+    setIoMsg(null)
+    setStatOpen(false)
+    setCubePickOpen(false)
+    setIoOpen(true)
+  }
+
+  const applyPreset = (raw: string) => {
+    const p = parsePreset(raw)
+    if (!p) {
+      setIoMsg({ ok: false, text: '配装码无效：格式不正确或版本不匹配。' })
+      return
+    }
+    setLevel(Math.min(p.lv, LB_MAX_LEVEL[p.lb]))
+    setLimitBreak(p.lb)
+    setCore(p.co)
+    setAffection(Math.min(p.af, affMax))
+    setCubeLv(p.cl)
+    setCubeId(p.cu != null && cubeData.cubes.some((cb) => cb.id === p.cu) ? p.cu : null)
+    setEquip(Object.fromEntries(EQUIP_PARTS.map((part) => [part, { tier: p.eq[part][0], enhance: p.eq[part][1] }])) as typeof equip)
+    setEquipOpts(Object.fromEntries(EQUIP_PARTS.map((part) => [
+      part,
+      p.op[part].map(([key, tier]) => ({ key, tier })),
+    ])) as typeof equipOpts)
+    setIoText(encodePreset(p))
+    setIoMsg({ ok: true, text: '已应用配装：等级 / 突破 / 好感 / 装备词条 / 魔方全部导入。' })
+  }
+
+  const copyIo = async () => {
+    try {
+      await navigator.clipboard.writeText(ioText)
+      setIoMsg({ ok: true, text: '配装码已复制到剪贴板。' })
+    } catch {
+      setIoMsg({ ok: false, text: '复制失败，请手动全选文本框内容复制。' })
+    }
+  }
+
+  const importIoFile = (file: File | undefined) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = String(reader.result ?? '').trim()
+      setIoText(text)
+      applyPreset(text)
+    }
+    reader.onerror = () => setIoMsg({ ok: false, text: '文件读取失败。' })
+    reader.readAsText(file)
+  }
+
+  const exportIoFile = () => {
+    const blob = new Blob([ioText], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `NIKKE-配装-Lv${lv}.txt`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    setIoMsg({ ok: true, text: '配装文件已导出。' })
+  }
+
   const specItems: { key: string; label: string; node: ReactNode; style?: CSSProperties; popup?: { title: string; lines: string[]; img?: string } }[] = []
   if (meta?.squad) {
     // 部队官方世界观介绍（游戏内部队档案原文），弹窗顶部带游戏内部队专属图标
@@ -808,6 +1301,428 @@ export default function CharacterDetail() {
               </button>
             )}
           </div>
+
+          {statCalc && baseStat && (
+            <section className="statbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
+              <div className="statbox-head">
+                <div className="stat-tabbar" role="tablist">
+                  <button
+                    role="tab"
+                    className={statTab === 'level' ? 'on' : ''}
+                    onClick={() => setStatTab('level')}
+                    aria-selected={statTab === 'level'}
+                  >等级 <i>LEVEL</i></button>
+                  <button
+                    role="tab"
+                    className={statTab === 'equip' ? 'on' : ''}
+                    onClick={() => setStatTab('equip')}
+                    aria-selected={statTab === 'equip'}
+                  >装备 <i>EQUIP</i></button>
+                  <button
+                    role="tab"
+                    className={statTab === 'cube' ? 'on' : ''}
+                    onClick={() => setStatTab('cube')}
+                    aria-selected={statTab === 'cube'}
+                  >魔方 <i>CUBE</i></button>
+                </div>
+                <div className="statbox-head-end">
+                  {statTab === 'level'
+                    ? <b className="statbox-lv"><i>LV.</i>{lv}</b>
+                    : statTab === 'cube'
+                      ? (cube
+                        ? <b className="statbox-lv"><i>LV.</i>{cubeLvCur}</b>
+                        : <b className="statbox-lv is-none" title="未装备魔方">—</b>)
+                      : (
+                        <button
+                          type="button"
+                          className={`stat-toggle ${statOpen ? 'on' : ''}`}
+                          onClick={() => setStatOpen((v) => !v)}
+                          aria-expanded={statOpen}
+                          aria-label="装备属性统计"
+                          title={statOpen ? '收起装备属性统计' : '查看装备提供的全部属性'}
+                        ><ChartIcon /></button>
+                      )}
+                  <button
+                    type="button"
+                    className={`stat-toggle stat-io-btn ${ioOpen ? 'on' : ''}`}
+                    onClick={openIo}
+                    aria-haspopup="dialog"
+                    aria-expanded={ioOpen}
+                    aria-label="导入导出配装"
+                    title="导入 / 导出配装"
+                  ><IoIcon /></button>
+                </div>
+              </div>
+
+              {statTab === 'level' ? (
+              <div className="statbox-body">
+                <input
+                  className="stat-range"
+                  type="range"
+                  min={1}
+                  max={lbMax}
+                  value={lv}
+                  onChange={(e) => setLevel(Number(e.target.value))}
+                  aria-label="角色等级"
+                />
+
+                <div className="stat-grid">
+                  <div>
+                    <span><StatIcon kind="hp" />HP</span>
+                    <b>{nf(statCalc.hp)}</b>
+                  </div>
+                  <div>
+                    <span><StatIcon kind="atk" />ATK</span>
+                    <b>{nf(statCalc.atk)}</b>
+                  </div>
+                  <div>
+                    <span><StatIcon kind="def" />DEF</span>
+                    <b>{nf(statCalc.def)}</b>
+                  </div>
+                </div>
+
+                <div className="stat-row">
+                  <span className="stat-label">突破</span>
+                  <div className="stat-stars" role="group" aria-label="突破星级">
+                    {[1, 2, 3].map((n) => (
+                      <button
+                        key={n}
+                        className={n <= limitBreak ? 'on' : ''}
+                        onClick={() => setLimitBreak(limitBreak === n ? n - 1 : n)}
+                        title={`${n} 星突破 · 等级上限 ${LB_MAX_LEVEL[n]}`}
+                        aria-pressed={n <= limitBreak}
+                      >★</button>
+                    ))}
+                  </div>
+                  <span className="stat-hint">{baseStat.rarity} · 上限 {lbMax} 级</span>
+                </div>
+
+                <div className="stat-row">
+                  <span className="stat-label">极限</span>
+                  <div className="stat-core" role="group" aria-label="极限突破等级">
+                    {Array.from({ length: CORE_MAX }, (_, i) => (
+                      <button
+                        key={i}
+                        className={i < core ? 'on' : ''}
+                        onClick={() => setCore(core === i + 1 ? i : i + 1)}
+                        title={`极限突破 Lv.${i + 1} · 三围 +${((i + 1) * CORE_RATE * 100).toFixed(0)}%`}
+                        aria-pressed={i < core}
+                      />
+                    ))}
+                  </div>
+                  <span className="stat-hint">Lv.{core} · +{(core * CORE_RATE * 100).toFixed(0)}%</span>
+                </div>
+
+                <div className={`stat-aff ${affOpen ? 'open' : ''}`}>
+                  <button
+                    className="stat-aff-head"
+                    onClick={() => setAffOpen((v) => !v)}
+                    aria-expanded={affOpen}
+                  >
+                    <span className="stat-label">好感</span>
+                    <b>{affection}</b>
+                    <span className="stat-aff-pct">+{(affection * AFFECTION_PER_LV * 100).toFixed(1)}%</span>
+                    <i className="stat-aff-arrow" aria-hidden />
+                  </button>
+                  {affOpen && (
+                    <div className="stat-aff-body">
+                      <input
+                        className="stat-range"
+                        type="range"
+                        min={0}
+                        max={affMax}
+                        value={affection}
+                        onChange={(e) => setAffection(Number(e.target.value))}
+                        aria-label="好感等级"
+                      />
+                      <span className="stat-hint">上限 {affMax}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              ) : statTab === 'equip' ? (
+              <div className="statbox-body">
+                <div className="equip-grid">
+                  {equipRows.map((r) => (
+                    <div className="equip-cell" key={r.part}>
+                      <div className="equip-cell-head">
+                        <img
+                          className="equip-icn"
+                          src={equipIcon(r.part, equipCls, r.tier)}
+                          alt=""
+                          loading="lazy"
+                        />
+                        <span className="equip-part">{EQUIP_PART_CN[r.part]}</span>
+                      </div>
+                      <div className="equip-cell-sel">
+                        <select
+                          className="equip-sel"
+                          value={r.tier}
+                          onChange={(e) => setEquip((v) => ({
+                            ...v, [r.part]: { ...v[r.part], tier: Number(e.target.value) },
+                          }))}
+                          aria-label={`${EQUIP_PART_CN[r.part]}品阶`}
+                        >
+                          {EQUIP_TIERS.map((t) => <option key={t} value={t}>T{t}</option>)}
+                        </select>
+                        <select
+                          className="equip-sel"
+                          value={r.enhance}
+                          onChange={(e) => setEquip((v) => ({
+                            ...v, [r.part]: { ...v[r.part], enhance: Number(e.target.value) },
+                          }))}
+                          aria-label={`${EQUIP_PART_CN[r.part]}强化`}
+                        >
+                          {Array.from({ length: EQUIP_MAX_ENHANCE + 1 }, (_, k) => (
+                            <option key={k} value={k}>+{k}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="equip-cell-nums">
+                        {r.atk > 0 && <i>ATK {nf(r.atk)}</i>}
+                        {r.hp > 0 && <i>HP {nf(r.hp)}</i>}
+                        {r.def > 0 && <i>DEF {nf(r.def)}</i>}
+                      </div>
+                      <div className="equip-cell-opts">
+                        {equipOpts[r.part].map((o, i) => {
+                          const opt = EQUIP_OPTIONS.find((x) => x.key === o.key)
+                          const tierOptions: SelectOpt[] = opt
+                            ? opt.tiers.map((v, k) => ({
+                              value: String(k + 1),
+                              label: `Lv.${k + 1} · ${v.toFixed(2)}%`,
+                              short: `Lv.${k + 1}`,
+                              title: `${opt.label} Lv.${k + 1} · ${v.toFixed(2)}%（出现率 ${EQUIP_TIER_ODDS[k]}）`,
+                            }))
+                            : [{ value: '', label: '—' }]
+                          return (
+                            <div className="equip-opt-row" key={i}>
+                              <OptSelect
+                                value={o.key}
+                                onChange={(v) => updateOpt(r.part, i, {
+                                  key: v,
+                                  tier: v ? (o.tier || DEFAULT_TIER) : 0,
+                                })}
+                                options={typeOptions}
+                                label={`${EQUIP_PART_CN[r.part]}词条 ${i + 1} 类型`}
+                              />
+                              <OptSelect
+                                value={o.tier ? String(o.tier) : ''}
+                                onChange={(v) => updateOpt(r.part, i, { tier: Number(v) || 0 })}
+                                options={tierOptions}
+                                label={`${EQUIP_PART_CN[r.part]}词条 ${i + 1} 档位`}
+                                placeholder={opt ? '档位' : '—'}
+                              />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="equip-total">
+                  <span>装备合计</span>
+                  <i>ATK +{nf(equipTotal.atk)}</i>
+                  <i>HP +{nf(equipTotal.hp)}</i>
+                  <i>DEF +{nf(equipTotal.def)}</i>
+                </div>
+
+                {statOpen && (
+                  <div className="equip-summary">
+                    <div className="equip-summary-head">装备属性统计</div>
+                    <div className="equip-summary-main">
+                      <div><span>攻击力</span><b>+{nf(equipTotal.atk)}</b></div>
+                      <div><span>体力</span><b>+{nf(equipTotal.hp)}</b></div>
+                      <div><span>防御力</span><b>+{nf(equipTotal.def)}</b></div>
+                    </div>
+                    <div className="equip-summary-grid">
+                      {optSummary.map((o) => {
+                        const flat = o.key === 'atk' ? statCalc.optAtkFlat
+                          : o.key === 'def' ? statCalc.optDefFlat : 0
+                        return (
+                          <div key={o.key}>
+                            <span>{o.label}</span>
+                            <span className="equip-summary-vals">
+                              <b className={o.total > 0 ? '' : 'is-zero'}>
+                                {o.total > 0 ? `+${o.total.toFixed(2)}%` : '—'}
+                              </b>
+                              {flat > 0 && <em>≈+{nf(flat)}</em>}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+              ) : (
+              <div className={`statbox-body cube-body ${cubePickOpen ? 'pop-open' : ''}`}>
+                <div className="cube-hero">
+                  <button
+                    type="button"
+                    className={`cube-orb ${cube ? '' : 'is-empty'}`}
+                    style={{ ['--cube' as string]: cube?.color ? `#${cube.color}` : undefined }}
+                    onClick={() => setCubePickOpen(true)}
+                    aria-haspopup="dialog"
+                    aria-label={cube ? `已装备 ${cube.name}，点击更换` : '未装备魔方，点击选择'}
+                    title={cube ? `${cube.name} · 点击更换` : '点击选择魔方'}
+                  >
+                    {!cube || cubeIconBroken === cube.iconId ? (
+                      <CubeGhost />
+                    ) : (
+                      <img
+                        src={cubeIcon(cube.iconId)}
+                        alt=""
+                        draggable={false}
+                        onError={() => setCubeIconBroken(cube.iconId)}
+                      />
+                    )}
+                  </button>
+                  <span className="cube-name">
+                    {cube ? cube.name : '未装备'}
+                    <i>点击更换</i>
+                  </span>
+                </div>
+
+                <input
+                  className="stat-range"
+                  type="range"
+                  min={1}
+                  max={CUBE_MAX_LEVEL}
+                  value={cubeLvCur}
+                  disabled={!cube}
+                  onChange={(e) => setCubeLv(Number(e.target.value))}
+                  aria-label="魔方等级"
+                />
+
+                <div className="stat-grid">
+                  <div>
+                    <span><StatIcon kind="hp" />HP</span>
+                    <b>{nf(cubeFlat.hp)}</b>
+                  </div>
+                  <div>
+                    <span><StatIcon kind="atk" />ATK</span>
+                    <b>{nf(cubeFlat.atk)}</b>
+                  </div>
+                  <div>
+                    <span><StatIcon kind="def" />DEF</span>
+                    <b>{nf(cubeFlat.def)}</b>
+                  </div>
+                </div>
+
+                <div className="cube-fx">
+                  <div className="cube-fx-row">
+                    <span>{cube?.effect ?? '技能效果'}</span>
+                    <b className={cube && cubeEffectVal > 0 ? '' : 'is-none'}>
+                      {cube && cubeEffectVal > 0 ? `+${cubeEffectVal}${cube.unit}` : '—'}
+                    </b>
+                  </div>
+                  <div className="cube-fx-row">
+                    <span>优越代码伤害增加</span>
+                    <b className={cubeElem != null ? '' : 'is-none'}>
+                      {cubeElem != null ? `+${cubeElem}%` : '—'}
+                    </b>
+                  </div>
+                  <div className="cube-fx-row is-meta">
+                    <span>可装备妮姬</span>
+                    <b>{cubeRow ? `${cubeRow.slots} 名` : '—'}</b>
+                  </div>
+                </div>
+
+                <p className="cube-note">
+                  三围加成由等级决定，18 种魔方通用；技能效果在 Lv.3 / Lv.7 各升一档。
+                </p>
+
+                {cubePickOpen && (
+                  <div className="cube-pop" role="dialog" aria-label="选择魔方" ref={cubePopRef}>
+                      <div className="cube-pop-head">
+                        <span>选择魔方 <i>CUBE</i></span>
+                        <button
+                          type="button"
+                          className="cube-pop-close"
+                          onClick={() => setCubePickOpen(false)}
+                          aria-label="关闭"
+                        >×</button>
+                      </div>
+                      <div className="cube-grid">
+                        <button
+                          type="button"
+                          className={`cube-cell ${cubeId == null ? 'on' : ''}`}
+                          onClick={() => { setCubeId(null); setCubePickOpen(false) }}
+                        >
+                          <span className="cube-cell-orb is-empty"><CubeGhost /></span>
+                          <span className="cube-cell-name">未装备</span>
+                        </button>
+                        {cubeData.cubes.map((cb) => (
+                          <button
+                            key={cb.id}
+                            type="button"
+                            className={`cube-cell ${cubeId === cb.id ? 'on' : ''}`}
+                            style={{ ['--cube' as string]: `#${cb.color}` }}
+                            onClick={() => { setCubeId(cb.id); setCubePickOpen(false) }}
+                            title={`${cb.name} · ${cb.nameEn}｜${cb.effect}`}
+                          >
+                            <span className="cube-cell-orb">
+                              <img src={cubeIcon(cb.iconId)} alt="" loading="lazy" />
+                            </span>
+                            <span className="cube-cell-name">{cb.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                  </div>
+                )}
+              </div>
+              )}
+
+              {ioOpen && (
+                <div className="io-pop" role="dialog" aria-label="导入导出配装" ref={ioPopRef}>
+                  <div className="cube-pop-head">
+                    <span>导入 / 导出配装 <i>BUILD CODE</i></span>
+                    <button
+                      type="button"
+                      className="cube-pop-close"
+                      onClick={() => setIoOpen(false)}
+                      aria-label="关闭"
+                    >×</button>
+                  </div>
+                  <div className="io-body">
+                    <p className="io-lead">
+                      等级、突破、极限、好感、装备词条与魔方已打包成一行配装码,可复制分享或存成文件。
+                    </p>
+                    <textarea
+                      className="io-code"
+                      value={ioText}
+                      onChange={(e) => { setIoText(e.target.value); setIoMsg(null) }}
+                      spellCheck={false}
+                      aria-label="配装码"
+                      placeholder="粘贴配装码后点击下方导入…"
+                    />
+                    {ioMsg && (
+                      <p className={`io-msg ${ioMsg.ok ? 'ok' : 'err'}`}>{ioMsg.text}</p>
+                    )}
+                    <div className="io-actions">
+                      <button type="button" className="io-act primary" onClick={copyIo}>复制配装码</button>
+                      <button type="button" className="io-act" onClick={() => applyPreset(ioText)}>导入并应用</button>
+                    </div>
+                    <div className="io-actions sub">
+                      <button type="button" className="io-act ghost" onClick={exportIoFile}>导出为文件</button>
+                      <button type="button" className="io-act ghost" onClick={() => ioFileRef.current?.click()}>从文件导入</button>
+                    </div>
+                    <input
+                      ref={ioFileRef}
+                      type="file"
+                      accept=".txt,text/plain"
+                      className="io-file"
+                      onChange={(e) => {
+                        importIoFile(e.target.files?.[0])
+                        e.target.value = ''
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
 
           {skills && skills.length > 0 && (
             <section className="skillbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
