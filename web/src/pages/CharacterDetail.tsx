@@ -4,10 +4,11 @@ import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
   loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
   loadCharSpine, loadCharVoices, loadCharacters, loadCostumeTexts, loadSpecTexts, mainBase, nf, pickBurstAnim,
-  skillcutModelName, tintFor, variantsOf,
+  skillcutModelName, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor, variantsOf,
+  loadSquadIcons,
   type CharArtMap, type CharImages, type CharMetaMap, type Character, type CharMessagesData, type CharSkill,
   type CharSkillsData, type CharStoriesData, type CharVoiceData, type CostumeTextMap, type SkillcutIndex,
-  type SpecTexts,
+  type SpecTexts, type SquadIcons,
 } from '../data'
 import CounselChat from '../components/CounselChat'
 import ImageViewer from '../components/ImageViewer'
@@ -56,38 +57,27 @@ function pickBurstChips(anims: string[]): { label: string; anim: string }[] {
   return out
 }
 
-/** 概览卡的枚举显示名（char_meta.json 的数值枚举 → 官方中文名） */
-const SPEC_CORP: Record<number, string> = {
-  1: '极乐净土', 2: '米西利斯', 3: '泰特拉', 4: '朝圣者', 7: '联动',
-}
 /** 各枚举对应的游戏图标（public/metaicon/，白色 sprite，前端 mask 染色） */
 const SPEC_CORP_ICN: Record<number, string> = {
   1: 'corp_icn_1', 2: 'corp_icn_2', 3: 'corp_icn_3', 4: 'corp_icn_4',
 }
-const SPEC_CLS: Record<number, string> = { 1: '火力型', 2: '防御型', 3: '辅助型' }
 const SPEC_CLS_ICN: Record<number, string> = {
   1: 'cls_attacker', 2: 'cls_defender', 3: 'cls_supporter',
-}
-const SPEC_ELEMENT: Record<string, string> = {
-  fire: '燃烧', water: '水冷', wind: '风压', electric: '电击', iron: '铁甲',
 }
 const SPEC_ELEMENT_ICN: Record<string, string> = {
   fire: 'element_fire', water: 'element_water', wind: 'element_wind',
   electric: 'element_elect', iron: 'element_iron',
 }
-const SPEC_WEAPON: Record<string, string> = {
-  ar: '步枪', smg: '冲锋枪', sg: '霰弹枪', rl: '发射器', sr: '狙击步枪', mg: '机枪',
-}
-/** 每种武器在游戏里就是一个专属准心图标（icn_weapon_ar/smg/...） */
-const SPEC_BURST: Record<number, string> = { 1: 'Ⅰ', 2: 'Ⅱ', 3: 'Ⅲ', 5: 'Ⅰ·Ⅱ·Ⅲ' }
 
-/** 企业弹窗文案：游戏内无官方说明，人工撰写（与社区共识一致） */
+/** 企业弹窗文案：游戏内无官方说明，人工撰写（与社区共识一致）；反常(5)有官方文本，不在此列 */
 const SPEC_CORP_DESC: Record<number, string[]> = {
   1: ['三大军工企业之一，倾向稳健持久的战斗风格，擅长防御与续航。'],
   2: ['三大军工企业之一，倾向激进的高火力路线，热衷尖端科技。'],
   3: ['三大军工企业之一，擅长特殊效果与辅助玩法，业务遍及娱乐产业。'],
   4: ['游离于人类编制之外的传奇妮姬，行踪神秘，实力超群。'],
-  7: ['与外部作品联动登场的特别角色，无所属企业。'],
+  101: ['统治方舟的官方机构，统辖政府军与情报部门，主导地面收复与方舟的日常运作。'],
+  102: ['游离于方舟体制之外的势力，与方舟保持距离，目的不明。'],
+  103: ['活跃于地表的武装势力，行事低调，底细鲜为人知。'],
 }
 /** 爆裂弹窗文案：游戏内无独立的阶段说明文本，按战斗机制人工撰写 */
 const SPEC_BURST_DESC: Record<number, string[]> = {
@@ -222,7 +212,9 @@ export default function CharacterDetail() {
   /** 皮肤切换区展开态：默认收起，只留底部居中的展开按钮 */
   const [skinsOpen, setSkinsOpen] = useState(false)
   /** 概览卡字段说明弹窗（与技能词条弹窗同款样式） */
-  const [specPopup, setSpecPopup] = useState<{ title: string; lines: string[] } | null>(null)
+  const [specPopup, setSpecPopup] = useState<{ title: string; lines: string[]; img?: string } | null>(null)
+  /** 部队专属图标（部队中文名 → 图标路径，来自游戏 icons-squad 图集） */
+  const [squadIcons, setSquadIcons] = useState<SquadIcons>({})
   const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
@@ -249,6 +241,7 @@ export default function CharacterDetail() {
     loadCostumeTexts().then(setCostumeTexts).catch(() => {})
     loadCharMeta().then(setCharMeta).catch(() => {})
     loadSpecTexts().then(setSpecTexts).catch(() => {})
+    loadSquadIcons().then(setSquadIcons).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -411,17 +404,17 @@ export default function CharacterDetail() {
 
   /** 概览卡条目：游戏元数据（部队/企业/武器/爆裂/兵种/属性）优先，缺失的自动跳过；popup = 点击弹窗内容 */
   const meta = charMeta[String(c.id)]
-  const specItems: { key: string; label: string; node: ReactNode; style?: CSSProperties; popup?: { title: string; lines: string[] } }[] = []
+  const specItems: { key: string; label: string; node: ReactNode; style?: CSSProperties; popup?: { title: string; lines: string[]; img?: string } }[] = []
   if (meta?.squad) {
-    // 部队官方世界观介绍（游戏内部队档案原文）
+    // 部队官方世界观介绍（游戏内部队档案原文），弹窗顶部带游戏内部队专属图标
     const lore = specTexts.squad[meta.squad]?.split('\n') ?? ['该妮姬在游戏档案中的所属部队。']
     specItems.push({
       key: 'squad', label: '部队', node: meta.squad, style: { fontSize: 15 },
-      popup: { title: `关于【部队 · ${meta.squad}】`, lines: lore },
+      popup: { title: `关于【${meta.squad}】`, lines: lore, img: squadIcons[meta.squad] || squadIcons._default },
     })
   }
   if (meta?.corp && SPEC_CORP[meta.corp]) {
-    // 企业官方世界观介绍（回收研究所文本）；联动(7)无官方文本，回退自拟
+    // 企业官方世界观介绍（回收研究所文本）；中央政府/伊甸园/V.T.C.(101-103)无官方文本，回退自拟
     const corpLines = specTexts.corp[String(meta.corp)]?.desc?.split('\n') ?? SPEC_CORP_DESC[meta.corp]
     specItems.push({
       key: 'corp', label: '企业', style: { fontSize: 15 },
@@ -431,7 +424,7 @@ export default function CharacterDetail() {
           {SPEC_CORP[meta.corp]}
         </span>
       ),
-      popup: { title: `关于【企业 · ${SPEC_CORP[meta.corp]}】`, lines: corpLines },
+      popup: { title: `关于【${SPEC_CORP[meta.corp]}】`, lines: corpLines },
     })
   }
   if (meta?.weapon && SPEC_WEAPON[meta.weapon]) {
@@ -444,7 +437,7 @@ export default function CharacterDetail() {
           {SPEC_WEAPON[meta.weapon]}
         </span>
       ),
-      popup: wt?.desc ? { title: `关于【武器 · ${wt.name || SPEC_WEAPON[meta.weapon]}】`, lines: [wt.desc] } : undefined,
+      popup: wt?.desc ? { title: `关于【${wt.name || SPEC_WEAPON[meta.weapon]}】`, lines: [wt.desc] } : undefined,
     })
   }
   if (meta?.burst && SPEC_BURST[meta.burst]) {
@@ -458,7 +451,7 @@ export default function CharacterDetail() {
           {[1, 2, 3].map((b) => <SpecIcon key={b} icn={`burst_${b}`} />)}
         </span>
       ),
-      popup: { title: `关于【爆裂 · ${SPEC_BURST[meta.burst]}】`, lines: SPEC_BURST_DESC[meta.burst] },
+      popup: { title: `关于【${SPEC_BURST[meta.burst]}】`, lines: SPEC_BURST_DESC[meta.burst] },
     })
   }
   if (meta?.cls && SPEC_CLS[meta.cls]) {
@@ -471,7 +464,7 @@ export default function CharacterDetail() {
           {SPEC_CLS[meta.cls]}
         </span>
       ),
-      popup: ct?.desc ? { title: `关于【兵种 · ${ct.name || SPEC_CLS[meta.cls]}】`, lines: [ct.desc] } : undefined,
+      popup: ct?.desc ? { title: `关于【${ct.name || SPEC_CLS[meta.cls]}】`, lines: [ct.desc] } : undefined,
     })
   }
   if (meta?.element && SPEC_ELEMENT[meta.element]) {
@@ -485,7 +478,7 @@ export default function CharacterDetail() {
         </span>
       ),
       popup: et?.desc
-        ? { title: `关于【属性 · ${et.name || SPEC_ELEMENT[meta.element]}】`, lines: [et.desc] }
+        ? { title: `关于【${et.name || SPEC_ELEMENT[meta.element]}】`, lines: [et.desc] }
         : undefined,
     })
   }
@@ -522,6 +515,7 @@ export default function CharacterDetail() {
         <div className="word-modal" onClick={closePopup}>
           <div className="word-card" onClick={(e) => e.stopPropagation()}>
             <button className="word-close" onClick={closePopup} aria-label="关闭">×</button>
+            {popup.img && <i className="word-logo" style={{ ['--logo' as string]: `url(${popup.img})` }} aria-hidden />}
             <div className="word-title">{popup.title}</div>
             {popup.lines.map((line, i) => (
               <div className="word-line" key={i}><i>◇</i><span>{line}</span></div>

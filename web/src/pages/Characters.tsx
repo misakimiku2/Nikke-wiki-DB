@@ -1,26 +1,59 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  accentFor, charPortrait, loadCharImages, loadCharMi, loadCharSpine,
-  loadCharacters, mainBase, nf, tintFor,
-  type CharImages, type Character,
+  accentFor, charPortrait, loadCharImages, loadCharMeta, loadCharMi, loadCharSpine,
+  loadCharacters, mainBase, nf, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor,
+  type CharImages, type CharMeta, type CharMetaMap, type Character,
 } from '../data'
 
-type Filter = 'all' | 'desc' | 'lines' | 'img'
+type SortMode = 'name' | 'squad'
+type FilterKey = 'corp' | 'weapon' | 'burst' | 'cls' | 'element'
+type Filters = Record<FilterKey, string[]>
+
+/** 筛选类别：候选值按 order 顺序展示（只渲染站内实际存在的） */
+const FILTER_GROUPS: Array<{
+  key: FilterKey; label: string; order: string[]; labelOf: (v: string) => string
+}> = [
+  { key: 'corp', label: '企业', order: ['1', '2', '3', '4', '5', '101', '102', '103'],
+    labelOf: (v) => SPEC_CORP[Number(v)] ?? v },
+  { key: 'weapon', label: '武器', order: ['ar', 'sg', 'rl', 'smg', 'sr', 'mg'],
+    labelOf: (v) => SPEC_WEAPON[v] ?? v },
+  { key: 'burst', label: '爆裂', order: ['1', '2', '3', '5'],
+    labelOf: (v) => SPEC_BURST[Number(v)] ?? v },
+  { key: 'cls', label: '兵种', order: ['1', '2', '3'],
+    labelOf: (v) => SPEC_CLS[Number(v)] ?? v },
+  { key: 'element', label: '属性', order: ['fire', 'water', 'wind', 'electric', 'iron'],
+    labelOf: (v) => SPEC_ELEMENT[v] ?? v },
+]
+
+/** 角色在某筛选类别下的取值（meta 缺失返回 null，参与筛选时视为不匹配） */
+function metaVal(m: CharMeta | undefined, key: FilterKey): string | null {
+  if (!m) return null
+  const v = key === 'corp' ? m.corp
+    : key === 'burst' ? m.burst
+    : key === 'cls' ? m.cls
+    : key === 'weapon' ? m.weapon
+    : m.element
+  return v == null ? null : String(v)
+}
 
 export default function Characters() {
   const [list, setList] = useState<Character[] | null>(null)
   const [imgs, setImgs] = useState<CharImages>({})
   const [mi, setMi] = useState<Set<string>>(new Set())
   const [spine, setSpine] = useState<Set<string>>(new Set())
+  const [meta, setMeta] = useState<CharMetaMap>({})
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
+  const [sort, setSort] = useState<SortMode>('name')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [filters, setFilters] = useState<Filters>({ corp: [], weapon: [], burst: [], cls: [], element: [] })
 
   useEffect(() => {
     loadCharacters().then(setList).catch(() => setList([]))
     loadCharImages().then(setImgs).catch(() => {})
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
+    loadCharMeta().then(setMeta).catch(() => {})
   }, [])
 
   /**
@@ -49,10 +82,42 @@ export default function Characters() {
   }, [])
   useEffect(() => () => warmOff(), [warmOff])
 
-  const shown = useMemo(() => {
+  /** 有可用立绘/头像的条目（图鉴只收录有资源的角色），后续筛选都在其上进行 */
+  const pool = useMemo(() => {
     if (!list) return []
+    return list.filter((c) => !!mainBase(imgs, c.id))
+  }, [list, imgs])
+
+  /** 每个筛选类别实际存在的候选值（按预定顺序） */
+  const options = useMemo(() => {
+    const sets: Record<FilterKey, Set<string>> = {
+      corp: new Set(), weapon: new Set(), burst: new Set(), cls: new Set(), element: new Set(),
+    }
+    for (const c of pool) {
+      const m = meta[String(c.id)]
+      for (const g of FILTER_GROUPS) {
+        const v = metaVal(m, g.key)
+        if (v) sets[g.key].add(v)
+      }
+    }
+    const out = {} as Record<FilterKey, string[]>
+    for (const g of FILTER_GROUPS) out[g.key] = g.order.filter((v) => sets[g.key].has(v))
+    return out
+  }, [pool, meta])
+
+  const activeCount = FILTER_GROUPS.reduce((a, g) => a + filters[g.key].length, 0)
+  const toggleFilter = (key: FilterKey, v: string) => {
+    setFilters((f) => {
+      const has = f[key].includes(v)
+      return { ...f, [key]: has ? f[key].filter((x) => x !== v) : [...f[key], v] }
+    })
+  }
+  const clearFilters = () => setFilters({ corp: [], weapon: [], burst: [], cls: [], element: [] })
+
+  /** 搜索 + 多选筛选：各类别之间取交集，类别内命中任一即可 */
+  const shown = useMemo(() => {
     const k = q.trim().toLowerCase()
-    let out = list
+    let out = pool
     if (k) {
       out = out.filter(
         (c) =>
@@ -62,16 +127,70 @@ export default function Characters() {
           (c.desc || '').includes(q),
       )
     }
-    if (filter === 'desc') out = out.filter((c) => c.hasDesc)
-    if (filter === 'lines') out = out.filter((c) => c.lines > 0)
-    // 只显示有可用立绘/头像的条目，避免 NPC 空卡
-    out = out.filter((c) => !!mainBase(imgs, c.id))
+    if (activeCount > 0) {
+      out = out.filter((c) => {
+        const m = meta[String(c.id)]
+        return FILTER_GROUPS.every((g) => {
+          const sel = filters[g.key]
+          if (!sel.length) return true
+          const v = metaVal(m, g.key)
+          return v != null && sel.includes(v)
+        })
+      })
+    }
     return out
-  }, [list, imgs, q, filter])
+  }, [pool, meta, q, filters, activeCount])
+
+  /** 部队模式：按部队分栏（顺序沿用默认排序里各部队首次出现的次序，无部队的排最后） */
+  const squadGroups = useMemo(() => {
+    if (sort !== 'squad') return null
+    const map = new Map<string, Character[]>()
+    for (const c of shown) {
+      const s = meta[String(c.id)]?.squad ?? '暂无部队'
+      const arr = map.get(s)
+      if (arr) arr.push(c)
+      else map.set(s, [c])
+    }
+    const none = [...map.entries()].filter(([s]) => s === '暂无部队')
+    return [...[...map.entries()].filter(([s]) => s !== '暂无部队'), ...none]
+  }, [shown, sort, meta])
+
+  const renderCard = (c: Character) => {
+    const base = mainBase(imgs, c.id)
+    const face = !!base && mi.has(base)
+    const src = charPortrait(base, mi)
+    return (
+      <Link
+        key={c.id}
+        to={`/characters/${c.id}`}
+        className="char-card"
+        style={{ ['--tint' as string]: tintFor(c.id) }}
+        onMouseEnter={() => warmOn(base)}
+        onMouseLeave={warmOff}
+      >
+        <div className={`visual ${face ? 'is-face' : 'is-full'}`}>
+          {src ? (
+            <img src={src} alt={c.name} loading="lazy" />
+          ) : (
+            <span className="fallback">{c.name.slice(0, 1)}</span>
+          )}
+        </div>
+        <div className="meta">
+          <h3>{c.name}</h3>
+          <div className="row">
+            <span>{c.code}</span>
+            <span className="lines" style={{ color: accentFor(c.id) }}>
+              {c.lines > 0 ? nf(c.lines) : '—'}
+            </span>
+          </div>
+        </div>
+      </Link>
+    )
+  }
 
   if (!list) return <div className="loading">LOADING…</div>
 
-  const total = list.filter((c) => !!mainBase(imgs, c.id)).length
+  const total = pool.length
 
   return (
     <div className="wrap">
@@ -80,7 +199,9 @@ export default function Characters() {
           <div className="idx">01 / CHARACTER</div>
           <h2>角色图鉴</h2>
         </div>
-        <div className="meta">{nf(total)} ENTRIES</div>
+        <div className="meta">
+          {activeCount > 0 ? `${nf(shown.length)} / ${nf(total)}` : nf(total)} ENTRIES
+        </div>
       </div>
 
       <div className="toolbar">
@@ -90,57 +211,63 @@ export default function Characters() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <button className={`chip ${filter === 'all' ? 'on' : ''}`} onClick={() => setFilter('all')}>
-          全部
-        </button>
-        <button className={`chip ${filter === 'img' ? 'on' : ''}`} onClick={() => setFilter('img')}>
-          有立绘
-        </button>
-        <button className={`chip ${filter === 'desc' ? 'on' : ''}`} onClick={() => setFilter('desc')}>
-          有档案
-        </button>
-        <button className={`chip ${filter === 'lines' ? 'on' : ''}`} onClick={() => setFilter('lines')}>
-          登过场
+        <div className="tool-sort" role="group" aria-label="排序方式">
+          <button className={`chip ${sort === 'name' ? 'on' : ''}`} onClick={() => setSort('name')}>
+            名称
+          </button>
+          <button className={`chip ${sort === 'squad' ? 'on' : ''}`} onClick={() => setSort('squad')}>
+            部队
+          </button>
+        </div>
+        <button
+          className={`chip tool-filter ${panelOpen ? 'on' : ''} ${activeCount > 0 ? 'has-active' : ''}`}
+          onClick={() => setPanelOpen((o) => !o)}
+          aria-expanded={panelOpen}
+          title="按企业 / 武器 / 爆裂 / 兵种 / 属性筛选"
+        >
+          筛选{activeCount > 0 ? ` · ${activeCount}` : ''}
         </button>
       </div>
 
+      {panelOpen && (
+        <div className="filter-panel">
+          {FILTER_GROUPS.map((g) => (
+            <div className="fp-group" key={g.key}>
+              <div className="fp-title">{g.label}</div>
+              <div className="fp-chips">
+                {options[g.key].length === 0 && <span className="fp-none">暂无数据</span>}
+                {options[g.key].map((v) => (
+                  <button
+                    key={v}
+                    className={`chip fp-chip ${filters[g.key].includes(v) ? 'on' : ''}`}
+                    onClick={() => toggleFilter(g.key, v)}
+                  >
+                    {g.labelOf(v)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {activeCount > 0 && (
+            <button className="chip fp-clear" onClick={clearFilters}>清除全部筛选</button>
+          )}
+        </div>
+      )}
+
       {shown.length === 0 ? (
         <div className="empty">NO MATCH</div>
+      ) : sort === 'squad' && squadGroups ? (
+        squadGroups.map(([squad, chars]) => (
+          <section className="squad-sect" key={squad}>
+            <div className="squad-head">
+              <h3>{squad}</h3>
+              <span className="cnt">{nf(chars.length)} 人</span>
+            </div>
+            <div className="char-grid">{chars.map(renderCard)}</div>
+          </section>
+        ))
       ) : (
-        <div className="char-grid">
-          {shown.map((c) => {
-            const base = mainBase(imgs, c.id)
-            const face = !!base && mi.has(base)
-            const src = charPortrait(base, mi)
-            return (
-              <Link
-                key={c.id}
-                to={`/characters/${c.id}`}
-                className="char-card"
-                style={{ ['--tint' as string]: tintFor(c.id) }}
-                onMouseEnter={() => warmOn(base)}
-                onMouseLeave={warmOff}
-              >
-                <div className={`visual ${face ? 'is-face' : 'is-full'}`}>
-                  {src ? (
-                    <img src={src} alt={c.name} loading="lazy" />
-                  ) : (
-                    <span className="fallback">{c.name.slice(0, 1)}</span>
-                  )}
-                </div>
-                <div className="meta">
-                  <h3>{c.name}</h3>
-                  <div className="row">
-                    <span>{c.code}</span>
-                    <span className="lines" style={{ color: accentFor(c.id) }}>
-                      {c.lines > 0 ? nf(c.lines) : '—'}
-                    </span>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
-        </div>
+        <div className="char-grid">{shown.map(renderCard)}</div>
       )}
     </div>
   )

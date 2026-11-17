@@ -201,7 +201,8 @@ export async function loadCostumeTexts(): Promise<CostumeTextMap> {
 
 /**
  * 角色元数据（来自游戏静态表，export_char_meta.mjs 导出）：
- * 兵种 cls（1 火力 / 2 防御 / 3 辅助）、企业 corp（1 极乐净土 / 2 米西利斯 / 3 泰特拉 / 4 朝圣者 / 7 联动）、
+ * 兵种 cls（1 火力 / 2 防御 / 3 辅助）、企业 corp（1 极乐净土 / 2 米西利斯 / 3 泰特拉 / 4 朝圣者 / 5 反常——
+ * 联动角色的游戏枚举 7 导出时归入 5；101 中央政府 / 102 伊甸园 / 103 V.T.C. 为站内自设枚举，NPC 由人工校对并入）、
  * 武器 weapon（ar/sg/rl/smg/sr/mg，由攻击技能射击表反查）、爆裂阶段 burst（1/2/3，5=全爆裂）、
  * 部队 squad（群聊标题与官方部队名匹配，部分角色缺失）、
  * 属性 element（人工对游戏整理，build/export_char_meta.mjs 的 ELEMENT_MANUAL 并入，
@@ -216,6 +217,20 @@ export type CharMeta = {
   element?: string | null
 }
 export type CharMetaMap = Record<string, CharMeta>
+
+/* 枚举显示名（char_meta.json 的数值/代码枚举 → 官方中文名），概览卡与图鉴筛选共用 */
+export const SPEC_CORP: Record<number, string> = {
+  1: '极乐净土', 2: '米西利斯', 3: '泰特拉', 4: '朝圣者', 5: '反常',
+  101: '中央政府', 102: '伊甸园', 103: 'V.T.C.',
+}
+export const SPEC_CLS: Record<number, string> = { 1: '火力型', 2: '防御型', 3: '辅助型' }
+export const SPEC_WEAPON: Record<string, string> = {
+  ar: '步枪', smg: '冲锋枪', sg: '霰弹枪', rl: '发射器', sr: '狙击步枪', mg: '机枪',
+}
+export const SPEC_ELEMENT: Record<string, string> = {
+  fire: '燃烧', water: '水冷', wind: '风压', electric: '电击', iron: '铁甲',
+}
+export const SPEC_BURST: Record<number, string> = { 1: 'Ⅰ', 2: 'Ⅱ', 3: 'Ⅲ', 5: '全爆裂' }
 
 let cacheCharMeta: CharMetaMap | null = null
 
@@ -253,6 +268,22 @@ export async function loadSpecTexts(): Promise<SpecTexts> {
     cacheSpecTexts = { weapon: {}, cls: {}, element: {}, corp: {}, squad: {} }
   }
   return cacheSpecTexts
+}
+
+/** 部队专属图标（dp 池 icons-squad 图集提取，部队中文名 → 图标路径；
+ * 联动部队与四兽/近接等自创部队不在游戏图集内，查不到即回退无图标） */
+export type SquadIcons = Record<string, string>
+
+let cacheSquadIcons: SquadIcons | null = null
+
+export async function loadSquadIcons(): Promise<SquadIcons> {
+  if (cacheSquadIcons) return cacheSquadIcons
+  try {
+    cacheSquadIcons = await getJSON<SquadIcons>('/data/squad_icons.json')
+  } catch {
+    cacheSquadIcons = {}
+  }
+  return cacheSquadIcons
 }
 
 /* 角色技能说明（desc 模板里的 {description_value_NN} 由前端按等级填充） */

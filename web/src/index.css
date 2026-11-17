@@ -319,6 +319,46 @@ img { display: block; }
 }
 .chip:hover { color: var(--text); border-color: var(--line-2); }
 .chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+/* 排序切换：两枚 chip 连成一体的分段控件 */
+.tool-sort { display: inline-flex; }
+.tool-sort .chip { padding: 10px 14px; }
+.tool-sort .chip + .chip { margin-left: -1px; }
+/* 筛选按钮：有激活筛选时描红边提示（面板打开时沿用 .on 反色态） */
+.tool-filter { position: relative; }
+.tool-filter.has-active:not(.on) { border-color: var(--red); color: var(--red); }
+.tool-filter.has-active:not(.on):hover { color: var(--red); border-color: var(--red); }
+
+/* 筛选面板：类别 → 候选值 chips，各类别之间取交集 */
+.filter-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  margin: -16px 0 28px; padding: 16px 18px;
+  border: 1px solid var(--line); background: var(--surface);
+  transition: background .35s;
+}
+.fp-group { display: flex; gap: 14px; align-items: flex-start; }
+.fp-title {
+  flex: 0 0 56px; padding-top: 8px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 10px;
+  letter-spacing: .16em; color: var(--dim-2);
+}
+.fp-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fp-chip { padding: 7px 12px; font-size: 11px; }
+.fp-none { font-size: 11px; color: var(--dim-2); }
+.fp-clear { align-self: flex-end; padding: 7px 14px; font-size: 11px; }
+
+/* 部队排序下的分栏：栏头 = 部队名 + 人数 */
+.squad-sect { margin-bottom: 38px; }
+.squad-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin: 0 0 16px; padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+  transition: border-color .35s ease;
+}
+.squad-head h3 { margin: 0; font-size: 17px; font-weight: 800; letter-spacing: .02em; }
+.squad-head .cnt {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 10px;
+  color: var(--dim-2); letter-spacing: .12em;
+}
 
 .char-grid {
   display: grid;
@@ -753,8 +793,17 @@ img { display: block; }
   box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
 }
 .word-title {
-  text-align: center; font-size: 16px; font-weight: 800; letter-spacing: -.01em;
-  color: var(--text); margin-bottom: 16px;
+  text-align: center; font-size: 17px; font-weight: 900; letter-spacing: -.02em;
+  color: var(--text); margin-bottom: 14px;
+}
+/* 部队专属字标：游戏图集里是白色 sprite，mask 染 currentColor 随主题显色；
+   图源已归一化为 320×240 画布，按画布比例渲染保证各部队视觉大小一致 */
+.word-logo {
+  display: block; width: min(230px, 66%); aspect-ratio: 320 / 240; height: auto;
+  margin: 2px auto 12px;
+  background: var(--text);
+  -webkit-mask: var(--logo) center / contain no-repeat;
+  mask: var(--logo) center / contain no-repeat;
 }
 .word-line {
   display: flex; gap: 9px; margin-top: 9px;
