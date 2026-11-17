@@ -75,12 +75,16 @@ python build/normalize_cube_icons.py                 # 统一裁紧 / 缩放，�
 #   外观ID 来自 ItemHarmonyCubeTable 的「外观/主题色」那一列，**不等于序号**：
 #   例如 7 号量子魔方是 11001、8 号体力神器是 13001、18 号外框是 10015。
 #   图集里共 23 个 ie_ 立方体，其中若干是旧版遗留，实际用到的 18 个见 cube_stats.json 的 iconId。
+python build/export_ui_icons.py "icons-favoriteitem(hd)" --out favoriteicon --only "si_favoriteitem_ar_00,si_favoriteitem_mg_00,si_favoriteitem_rl_00,si_favoriteitem_sg_00,si_favoriteitem_smg_00,si_favoriteitem_sr_00,favoriteitem_common_prop_00,favoriteitem_common_prop_01,favoriteitem_common_prop_02"
+#   珍藏品图标：6 职业 Q 版娃娃（R/SR 共用），dp 池 icons-favoriteitem(hd)
 python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
 python build/export_char_voices.py        # → public/voice + public/data/char_voices.json 角色语音（日语+国服中文）
 # 角色三围（HP/ATK/DEF）由 nikke_extract 生成：python scripts/export_char_stats.py
 #   → staging/char_stats.json、staging/stat_curves.json，拷到 public/data/ 即可
 # 装备与魔方同理：python scripts/export_equip.py / export_cubes.py
 #   → staging/equip_stats.json、staging/cube_stats.json，拷到 public/data/ 即可
+# 珍藏品：python scripts/export_favorites.py
+#   → staging/favorite_stats.json（12 款 × 16 级三围），拷到 public/data/ 即可
 
 # 3. CG
 python build/build_images.py              # → public/img         三档转码

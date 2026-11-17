@@ -500,6 +500,83 @@ export async function loadCubeStats(): Promise<CubeStats> {
   return cacheCubeStats
 }
 
+/* ---------- 珍藏品（Favorite Item / 收集品娃娃） ---------- */
+
+export type FavoriteLevel = { lv: number; hp: number; atk: number; def: number }
+export type FavoriteInfo = {
+  id: number
+  key: string
+  cls: string
+  weapon: string
+  rare: 'R' | 'SR'
+  name: string
+  nameEn: string
+  desc: string
+  icon: string
+  /** 16 级三围，索引 = 阶段 0-15 */
+  levels: FavoriteLevel[]
+}
+export type FavoriteStats = FavoriteInfo[]
+
+/** 珍藏品阶段上限（0-15，共 16 阶） */
+export const FAVORITE_MAX_PHASE = 15
+
+/** 图标：dp 池 icons-favoriteitem(hd) 的 si_favoriteitem_<职业>_00（R/SR 共用） */
+export function favoriteIcon(cls: string): string {
+  return `/favoriteicon/si_favoriteitem_${cls}_00.webp`
+}
+
+/** 各职业娃娃的技能效果（社区实测，非三围面板属性；phase 分档） */
+export const FAVORITE_EFFECTS: Record<string, { label: string; skill: string; tiers: number[]; unit: string }[]> = {
+  ar: [
+    { label: '核心伤害增加', skill: '给予勇气的视线', tiers: [8.52, 12.78, 17.04], unit: '%' },
+    { label: '防御力增加', skill: '心灵的支柱', tiers: [18.5, 27.75, 37], unit: '%' },
+  ],
+  mg: [
+    { label: '最大装弹数增加', skill: '给予勇气的视线', tiers: [4.75, 7.13, 9.5], unit: '%' },
+    { label: '防御力增加', skill: '心灵的支柱', tiers: [18.5, 27.75, 37], unit: '%' },
+  ],
+  rl: [
+    { label: '蓄力伤害增加', skill: '给予勇气的视线', tiers: [4.74, 7.11, 9.47], unit: '%' },
+    { label: '防御力增加', skill: '心灵的支柱', tiers: [18.5, 27.75, 37], unit: '%' },
+  ],
+  sg: [
+    { label: '普通攻击伤害增加', skill: '给予勇气的视线', tiers: [4.73, 7.1, 9.46], unit: '%' },
+    { label: '防御力增加', skill: '心灵的支柱', tiers: [18.5, 27.75, 37], unit: '%' },
+  ],
+  smg: [
+    { label: '普通攻击伤害增加', skill: '给予勇气的视线', tiers: [4.73, 7.1, 9.46], unit: '%' },
+    { label: '防御力增加', skill: '心灵的支柱', tiers: [18.5, 27.75, 37], unit: '%' },
+  ],
+  sr: [
+    { label: '蓄力伤害增加', skill: '给予勇气的视线', tiers: [4.74, 7.11, 9.47], unit: '%' },
+    { label: '防御力增加', skill: '心灵的支柱', tiers: [18.5, 27.75, 37], unit: '%' },
+  ],
+}
+/** 珍藏品通用第三效果（所有职业） */
+export const FAVORITE_GLOBAL_EFFECTS = [
+  { label: '所受伤害减少', tiers: [8.5, 12.75, 17], unit: '%' },
+  { label: '掩体最大体力增加', tiers: [15, 22.5, 30], unit: '%' },
+]
+/** 阶段 → 技能档位下标（0/1/2）：0-5 / 6-10 / 11-15 */
+export function favoriteTierIndex(phase: number): number {
+  if (phase <= 5) return 0
+  if (phase <= 10) return 1
+  return 2
+}
+
+let cacheFavoriteStats: FavoriteStats | null = null
+
+export async function loadFavoriteStats(): Promise<FavoriteStats> {
+  if (cacheFavoriteStats) return cacheFavoriteStats
+  try {
+    cacheFavoriteStats = await getJSON<FavoriteStats>('/data/favorite_stats.json')
+  } catch {
+    cacheFavoriteStats = []
+  }
+  return cacheFavoriteStats
+}
+
 /** 部队专属图标（dp 池 icons-squad 图集提取，部队中文名 → 图标路径；
  * 联动部队与四兽/近接等自创部队不在游戏图集内，查不到即回退无图标） */
 export type SquadIcons = Record<string, string>

@@ -8,6 +8,8 @@ import {
   loadSquadIcons, loadCharStats, loadStatCurves, LB_MAX_LEVEL, LB_GAIN, affectionMax, AFFECTION_PER_LV,
   loadEquipStats, EQUIP_PARTS, EQUIP_PART_CN, EQUIP_TIERS, EQUIP_MAX_ENHANCE, EQUIP_ENHANCE_RATE, EQUIP_OPTIONS, EQUIP_TIER_ODDS,
   loadCubeStats, CUBE_MAX_LEVEL, cubeTierIndex, cubeIcon,
+  loadFavoriteStats, favoriteIcon, favoriteTierIndex, FAVORITE_EFFECTS, FAVORITE_GLOBAL_EFFECTS,
+  type FavoriteStats, type FavoriteInfo,
   CORE_MAX, CORE_RATE, equipIcon,
   type CharArtMap, type CharBaseStat, type CharImages, type CharMetaMap, type Character, type CharMessagesData,
   type CharSkill, type CharSkillsData, type CharStoriesData, type CharVoiceData, type CostumeTextMap,
@@ -48,6 +50,8 @@ type BuildPreset = {
   op: Record<EquipPart, [string, number][]>    // 部位 → [[词条key, 档位], ...]
   cu: number | null                            // 魔方 id，null=未装备
   cl: number                                   // 魔方等级
+  fv?: number | null                           // 珍藏品 id（可选，兼容旧配装码）
+  fp?: number                                  // 珍藏品阶段 0-15
 }
 const PRESET_PREFIX = 'NKB1:'
 
@@ -104,6 +108,8 @@ function parsePreset(raw: string): BuildPreset | null {
     op,
     cu: typeof obj.cu === 'number' ? obj.cu : null,
     cl: num(obj.cl, 1, CUBE_MAX_LEVEL, 1),
+    fv: obj.fv === undefined ? null : (typeof obj.fv === 'number' ? obj.fv : null),
+    fp: num(obj.fp, 0, 15, 0),
   }
 }
 /** 游戏内首次 Overload 的词条固定为 11 档 */
@@ -453,6 +459,14 @@ export default function CharacterDetail() {
   const [cubeLv, setCubeLv] = useState(1)
   /** 记录图标 404 的魔方 id（外框魔方等最新魔方本地图集未收录） */
   const [cubeIconBroken, setCubeIconBroken] = useState<number | null>(null)
+  /** 珍藏品：12 款 × 16 阶段（0-15），三围加成计入总面板 */
+  const [favoriteData, setFavoriteData] = useState<FavoriteStats>([])
+  /** null = 未装备珍藏品 */
+  const [favoriteId, setFavoriteId] = useState<number | null>(null)
+  const [favoritePhase, setFavoritePhase] = useState(0)
+  const [favPickOpen, setFavPickOpen] = useState(false)
+  const favPopRef = useRef<HTMLDivElement>(null)
+  const [favIconBroken, setFavIconBroken] = useState(false)
   /** 装备：4 部位各自选品阶与强化等级，外加两条 T10 词条 */
   const [equipData, setEquipData] = useState<EquipStats>({ items: [] })
   const [equip, setEquip] = useState<Record<EquipPart, { tier: number; enhance: number }>>({
@@ -504,21 +518,24 @@ export default function CharacterDetail() {
     loadStatCurves().then(setStatCurves).catch(() => setStatCurves({}))
     loadEquipStats().then(setEquipData).catch(() => {})
     loadCubeStats().then(setCubeData).catch(() => {})
+    loadFavoriteStats().then(setFavoriteData).catch(() => {})
   }, [])
 
   useEffect(() => {
-    if (!cubePickOpen && !ioOpen) return
+    if (!cubePickOpen && !ioOpen && !favPickOpen) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       setCubePickOpen(false)
       setIoOpen(false)
+      setFavPickOpen(false)
     }
     const onDown = (e: MouseEvent) => {
       const t = e.target as Element | null
       // 点浮层内部或对应触发按钮都不算「点外面」
-      if (t?.closest?.('.cube-pop, .cube-orb, .io-pop, .stat-io-btn')) return
+      if (t?.closest?.('.cube-pop, .cube-orb, .io-pop, .stat-io-btn, .fav-pop, .fav-orb')) return
       setCubePickOpen(false)
       setIoOpen(false)
+      setFavPickOpen(false)
     }
     document.addEventListener('keydown', onKey)
     document.addEventListener('mousedown', onDown)
@@ -526,7 +543,7 @@ export default function CharacterDetail() {
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [cubePickOpen, ioOpen])
+  }, [cubePickOpen, ioOpen, favPickOpen])
 
   useEffect(() => {
     setPick(null)
@@ -546,6 +563,9 @@ export default function CharacterDetail() {
     setEquipOpts(emptyOpts())
     setStatOpen(false)
     setCubePickOpen(false)
+    setFavoriteId(null)
+    setFavoritePhase(0)
+    setFavPickOpen(false)
   }, [id])
 
   // 换皮肤 / 切姿态时也要把状态归零，否则控制条会短暂显示上一套模型的动作与时长
@@ -776,12 +796,28 @@ export default function CharacterDetail() {
   const cubeHpPct = cube?.affects === 'hp' ? cubeEffectVal : 0
   const cubeDefPct = cube?.affects === 'def' ? cubeEffectVal : 0
 
-  /** 曲线基础值 → 逐星突破（×1.02 + 固定值）→ 极限 ×1.02 → 好感 → ＋装备＋魔方 → ×百分比 */
+  /** 珍藏品：选中款在对应阶段的三围固定加成（加法，与装备/魔方同类） */
+  const favorite = favoriteId == null ? null : favoriteData.find((f) => f.id === favoriteId) ?? null
+  const favoritePhaseCur = Math.min(Math.max(0, favoritePhase), 15)
+  const favRow = favorite?.levels[favoritePhaseCur] ?? null
+  const favoriteFlat = {
+    hp: favRow?.hp ?? 0,
+    atk: favRow?.atk ?? 0,
+    def: favRow?.def ?? 0,
+  }
+  const favTier = favoriteTierIndex(favoritePhaseCur)
+  const favEffects = favorite ? FAVORITE_EFFECTS[favorite.cls] ?? [] : []
+  const favoriteIconSrc = favorite ? favoriteIcon(favorite.cls) : ''
+  /** 珍藏品「防御力增加」（心灵的支柱）按阶段分档，计入 DEF 百分比乘算；其他战斗效果暂不计入 */
+  const favDefEffect = favEffects.find((e) => e.label === '防御力增加')
+  const favoriteDefPct = favDefEffect ? favDefEffect.tiers[favTier] ?? 0 : 0
+
+  /** 曲线基础值 → 逐星突破（×1.02 + 固定值）→ 极限 ×1.02 → 好感 → ＋装备＋魔方＋珍藏品 → ×百分比 */
   let statCalc: {
     hp: number; atk: number; def: number
     /** 百分比换算出的固定值，用于面板核对 */
     optAtkFlat: number; optDefFlat: number
-    cubeHpFlat: number; cubeDefFlat: number
+    cubeHpFlat: number; cubeDefFlat: number; favoriteDefFlat: number
   } | null = null
   if (curve && baseStat) {
     const i = Math.max(0, lv - 1)
@@ -800,18 +836,19 @@ export default function CharacterDetail() {
       hp *= coreMul
       atk *= coreMul
       dfn *= coreMul
-      // 好感按比例加，装备与魔方按固定值加（游戏内都是加法）
+      // 好感按比例加，装备/魔方/珍藏品按固定值加（游戏内都是加法）
       const affMul = 1 + affection * AFFECTION_PER_LV
-      hp = hp * affMul + equipTotal.hp + cubeFlat.hp
-      atk = atk * affMul + equipTotal.atk + cubeFlat.atk
-      dfn = dfn * affMul + equipTotal.def + cubeFlat.def
-      // 百分比（装备词条 + 魔方技能）作用在「含装备与魔方的白板」上
+      hp = hp * affMul + equipTotal.hp + cubeFlat.hp + favoriteFlat.hp
+      atk = atk * affMul + equipTotal.atk + cubeFlat.atk + favoriteFlat.atk
+      dfn = dfn * affMul + equipTotal.def + cubeFlat.def + favoriteFlat.def
+      // 百分比（装备词条 + 魔方技能 + 珍藏品防御）作用在「含固定加成的白板」上
       const optAtkFlat = atk * optAtkPct / 100
       const optDefFlat = dfn * optDefPct / 100
       const cubeDefFlat = dfn * cubeDefPct / 100
       const cubeHpFlat = hp * cubeHpPct / 100
+      const favoriteDefFlat = dfn * favoriteDefPct / 100
       atk += optAtkFlat
-      dfn += optDefFlat + cubeDefFlat
+      dfn += optDefFlat + cubeDefFlat + favoriteDefFlat
       hp += cubeHpFlat
       statCalc = {
         hp: Math.round(hp),
@@ -821,6 +858,7 @@ export default function CharacterDetail() {
         optDefFlat: Math.round(optDefFlat),
         cubeHpFlat: Math.round(cubeHpFlat),
         cubeDefFlat: Math.round(cubeDefFlat),
+        favoriteDefFlat: Math.round(favoriteDefFlat),
       }
     }
   }
@@ -834,6 +872,7 @@ export default function CharacterDetail() {
       eq: Object.fromEntries(EQUIP_PARTS.map((p) => [p, [equip[p].tier, equip[p].enhance]])) as BuildPreset['eq'],
       op: Object.fromEntries(EQUIP_PARTS.map((p) => [p, equipOpts[p].filter((r) => r.key).map((r) => [r.key, r.tier])])) as BuildPreset['op'],
       cu: cubeId, cl: cubeLv,
+      fv: favoriteId, fp: favoritePhase,
     }
     setIoText(encodePreset(preset))
     setIoMsg(null)
@@ -854,13 +893,16 @@ export default function CharacterDetail() {
     setAffection(Math.min(p.af, affMax))
     setCubeLv(p.cl)
     setCubeId(p.cu != null && cubeData.cubes.some((cb) => cb.id === p.cu) ? p.cu : null)
+    setFavoritePhase(p.fp ?? 0)
+    setFavoriteId(p.fv != null && favoriteData.some((f) => f.id === p.fv) ? p.fv : null)
+    setFavIconBroken(false)
     setEquip(Object.fromEntries(EQUIP_PARTS.map((part) => [part, { tier: p.eq[part][0], enhance: p.eq[part][1] }])) as typeof equip)
     setEquipOpts(Object.fromEntries(EQUIP_PARTS.map((part) => [
       part,
       p.op[part].map(([key, tier]) => ({ key, tier })),
     ])) as typeof equipOpts)
     setIoText(encodePreset(p))
-    setIoMsg({ ok: true, text: '已应用配装：等级 / 突破 / 好感 / 装备词条 / 魔方全部导入。' })
+    setIoMsg({ ok: true, text: '已应用配装：等级 / 突破 / 好感 / 装备词条 / 魔方 / 珍藏品全部导入。' })
   }
 
   const copyIo = async () => {
@@ -1439,6 +1481,120 @@ export default function CharacterDetail() {
                     </div>
                   )}
                 </div>
+
+                {/* 珍藏品：好感下方，点击娃娃图标选择，阶段滑块实时计入三围 */}
+                <div className={`fav ${favorite ? 'has' : ''} ${favPickOpen ? 'pop-open' : ''}`}>
+                  <div className="fav-head">
+                    <span className="stat-label">珍藏品</span>
+                    <button
+                      type="button"
+                      className={`fav-orb ${favorite ? '' : 'is-empty'}`}
+                      onClick={() => setFavPickOpen(true)}
+                      aria-haspopup="dialog"
+                      aria-expanded={favPickOpen}
+                      aria-label={favorite ? `${favorite.name}，点击更换` : '点击选择珍藏品'}
+                      title={favorite ? '点击更换珍藏品' : '点击选择珍藏品'}
+                    >
+                      {favorite && !favIconBroken ? (
+                        <img src={favoriteIconSrc} alt="" onError={() => setFavIconBroken(true)} />
+                      ) : (
+                        <span className="fav-ghost">◇</span>
+                      )}
+                    </button>
+                    <div className="fav-meta">
+                      <b className={favorite ? '' : 'is-none'}>
+                        {favorite ? favorite.name : '未装备'}
+                      </b>
+                      <span>
+                        {favorite
+                          ? `${favorite.rare} · ${favorite.weapon} · P${favoritePhaseCur}`
+                          : '点击图标选择收集品娃娃'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {favorite && (
+                    <>
+                      <input
+                        className="stat-range fav-range"
+                        type="range"
+                        min={0}
+                        max={15}
+                        value={favoritePhaseCur}
+                        onChange={(e) => setFavoritePhase(Number(e.target.value))}
+                        aria-label="珍藏品阶段"
+                      />
+                      <div className="stat-grid fav-grid">
+                        <div><span><StatIcon kind="hp" />HP</span><b>+{nf(favoriteFlat.hp)}</b></div>
+                        <div><span><StatIcon kind="atk" />ATK</span><b>+{nf(favoriteFlat.atk)}</b></div>
+                        <div><span><StatIcon kind="def" />DEF</span><b>+{nf(favoriteFlat.def)}</b></div>
+                      </div>
+                      <div className="fav-effects">
+                        {favEffects.map((fx, i) => {
+                          const isDef = fx.label === '防御力增加'
+                          return (
+                            <div className={`fav-fx-row ${isDef ? 'is-def' : ''}`} key={i}>
+                              <span>{fx.label} <i>{fx.skill}</i></span>
+                              <b>+{fx.tiers[favTier]}{fx.unit}</b>
+                              {isDef && statCalc && favoriteDefPct > 0 && (
+                                <em>已计入 DEF ≈+{nf(statCalc.favoriteDefFlat)}</em>
+                              )}
+                            </div>
+                          )
+                        })}
+                        {FAVORITE_GLOBAL_EFFECTS.map((fx, i) => (
+                          <div className="fav-fx-row is-global" key={`g${i}`}>
+                            <span>{fx.label}</span>
+                            <b>+{fx.tiers[favTier]}{fx.unit}</b>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  {favPickOpen && (
+                    <div className="fav-pop" role="dialog" aria-label="选择珍藏品" ref={favPopRef}>
+                      <div className="cube-pop-head">
+                        <span>选择珍藏品 <i>FAVORITE ITEM</i></span>
+                        <button
+                          type="button"
+                          className="cube-pop-close"
+                          onClick={() => setFavPickOpen(false)}
+                          aria-label="关闭"
+                        >×</button>
+                      </div>
+                      <div className="fav-grid-pick">
+                        <button
+                          type="button"
+                          className={`cube-cell ${favoriteId == null ? 'on' : ''}`}
+                          onClick={() => { setFavoriteId(null); setFavPickOpen(false) }}
+                        >
+                          <span className="cube-cell-orb is-empty"><span className="fav-ghost">◇</span></span>
+                          <span className="cube-cell-name">未装备</span>
+                        </button>
+                        {favoriteData.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            className={`cube-cell ${favoriteId === f.id ? 'on' : ''}`}
+                            onClick={() => {
+                              setFavoriteId(f.id)
+                              setFavoritePhase(0)
+                              setFavIconBroken(false)
+                              setFavPickOpen(false)
+                            }}
+                            title={`${f.name} · ${f.rare} ${f.weapon}`}
+                          >
+                            <span className="cube-cell-orb">
+                              <img src={favoriteIcon(f.cls)} alt="" loading="lazy" />
+                            </span>
+                            <span className="cube-cell-name">{f.rare} {f.name.replace(/（限量版）/, '')}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               ) : statTab === 'equip' ? (
               <div className="statbox-body">
@@ -1687,7 +1843,7 @@ export default function CharacterDetail() {
                   </div>
                   <div className="io-body">
                     <p className="io-lead">
-                      等级、突破、极限、好感、装备词条与魔方已打包成一行配装码,可复制分享或存成文件。
+                      等级、突破、极限、好感、装备词条、魔方与珍藏品已打包成一行配装码,可复制分享或存成文件。
                     </p>
                     <textarea
                       className="io-code"
