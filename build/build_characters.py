@@ -113,8 +113,9 @@ EXTRA = {
     9103: ("c934", "安洁丽娜", "Angelina"),
     9104: ("c935", "约瑟夫", "Joseph"),
     # 已实装 / 即将实装的独立角色卡（不是现有角色的皮肤）
+    # 9200/9201 暂无官方命名，站内用自创名；诺雅的原型此时已非异端，取「新生」
     9200: ("c474", "桃乐丝：异端", "Dorothy: Heretic"),
-    9201: ("c235", "诺雅：异端", "Noah: Heretic"),
+    9201: ("c235", "诺雅：新生", "Noah: Rebirth"),
 }
 
 
@@ -204,6 +205,15 @@ def build_characters(con_target):
             continue
         rows.append((cid, code, zh, en, None, None, None,
                      None, None, None, None, None, 0))
+
+    # 无独立声优的 NPC 角色卡沿用本体声优：桃乐丝：异端→桃乐丝，诺雅：新生→诺雅
+    CV_INHERIT = {9200: 233, 9201: 232}
+    idx = {r[0]: i for i, r in enumerate(rows)}
+    for cid, base_id in CV_INHERIT.items():
+        if cid in idx and base_id in idx:
+            base = rows[idx[base_id]]
+            r = rows[idx[cid]]
+            rows[idx[cid]] = r[:11] + (base[11],) + r[12:]
 
     con_target.executemany(
         "INSERT OR REPLACE INTO character_entries"

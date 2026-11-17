@@ -37,6 +37,12 @@ WANT = {
     'icn_weapon_rl': 'weapon_rl',
     'icn_weapon_sr': 'weapon_sr',
     'icn_weapon_mg': 'weapon_mg',
+    # 属性图标（概览卡用，游戏里为彩色 sprite，前端直接 <img> 不染色）
+    'icn_element_fire': 'element_fire',
+    'icn_element_water': 'element_water',
+    'icn_element_wind': 'element_wind',
+    'icn_element_elect': 'element_elect',
+    'icn_element_iron': 'element_iron',
 }
 
 cat = sqlite3.connect(r'E:/test/nikke_extract/catalogs/core_catalog.ndb.dec')

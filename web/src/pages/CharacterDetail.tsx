@@ -68,6 +68,13 @@ const SPEC_CLS: Record<number, string> = { 1: '火力型', 2: '防御型', 3: '�
 const SPEC_CLS_ICN: Record<number, string> = {
   1: 'cls_attacker', 2: 'cls_defender', 3: 'cls_supporter',
 }
+const SPEC_ELEMENT: Record<string, string> = {
+  fire: '燃烧', water: '水冷', wind: '风压', electric: '电击', iron: '铁甲',
+}
+const SPEC_ELEMENT_ICN: Record<string, string> = {
+  fire: 'element_fire', water: 'element_water', wind: 'element_wind',
+  electric: 'element_elect', iron: 'element_iron',
+}
 const SPEC_WEAPON: Record<string, string> = {
   ar: '步枪', smg: '冲锋枪', sg: '霰弹枪', rl: '发射器', sr: '狙击步枪', mg: '机枪',
 }
@@ -402,26 +409,15 @@ export default function CharacterDetail() {
   /** 校准模式：URL hash 带 calib=1 时在大招视图显示背景板微调面板（人工对齐采数） */
   const calibMode = /[?&]calib=1/.test(window.location.hash)
 
-  /** 概览卡条目：游戏元数据（部队/企业/武器/爆裂/兵种）优先，缺失的自动跳过；popup = 点击弹窗内容 */
+  /** 概览卡条目：游戏元数据（部队/企业/武器/爆裂/兵种/属性）优先，缺失的自动跳过；popup = 点击弹窗内容 */
   const meta = charMeta[String(c.id)]
   const specItems: { key: string; label: string; node: ReactNode; style?: CSSProperties; popup?: { title: string; lines: string[] } }[] = []
   if (meta?.squad) {
-    // 同部队妮姬：从全站元数据里捞同 squad 的角色名
-    const mates = Object.keys(charMeta)
-      .filter((id) => id !== String(c.id) && charMeta[id]?.squad === meta.squad)
-      .map((id) => list.find((x) => String(x.id) === id)?.name)
-      .filter(Boolean)
-    // 部队官方世界观介绍（游戏内部队档案原文），后面附同部队成员
+    // 部队官方世界观介绍（游戏内部队档案原文）
     const lore = specTexts.squad[meta.squad]?.split('\n') ?? ['该妮姬在游戏档案中的所属部队。']
     specItems.push({
       key: 'squad', label: '部队', node: meta.squad, style: { fontSize: 15 },
-      popup: {
-        title: `关于【部队 · ${meta.squad}】`,
-        lines: [
-          ...lore,
-          mates.length ? `同部队的妮姬：${mates.join('、')}` : '目前站内暂无其他收录的同部队妮姬。',
-        ],
-      },
+      popup: { title: `关于【部队 · ${meta.squad}】`, lines: lore },
     })
   }
   if (meta?.corp && SPEC_CORP[meta.corp]) {
@@ -476,6 +472,21 @@ export default function CharacterDetail() {
         </span>
       ),
       popup: ct?.desc ? { title: `关于【兵种 · ${ct.name || SPEC_CLS[meta.cls]}】`, lines: [ct.desc] } : undefined,
+    })
+  }
+  if (meta?.element && SPEC_ELEMENT[meta.element]) {
+    const et = specTexts.element[meta.element]
+    specItems.push({
+      key: 'element', label: '属性', style: { fontSize: 15 },
+      node: (
+        <span className="spec-weapon">
+          <SpecIcon icn={SPEC_ELEMENT_ICN[meta.element]} />
+          {SPEC_ELEMENT[meta.element]}
+        </span>
+      ),
+      popup: et?.desc
+        ? { title: `关于【属性 · ${et.name || SPEC_ELEMENT[meta.element]}】`, lines: [et.desc] }
+        : undefined,
     })
   }
   specItems.push(
@@ -824,51 +835,6 @@ export default function CharacterDetail() {
               ))}
             </section>
           )}
-
-          <div className="detail-slots">
-            <div className={`slot ${stageLive ? 'on' : ''}`}>
-              <span>动态立绘</span>
-              <em>
-                {stageLive
-                  ? (modelReady ? `${anims.length} 段动画` : '读取模型中…')
-                  : modelError ? '模型数据不完整，已退回静态立绘' : '这个皮肤没有站姿模型'}
-              </em>
-            </div>
-            {hasStoryRel && (
-              <button
-                className="slot slot-btn"
-                onClick={() => {
-                  document.getElementById('storybox')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }}
-                title="跳到剧情与语音"
-              >
-                <span>
-                  {relStories.length || relCounsel.length
-                    ? (hasVoices ? '剧情与语音' : '好感剧情')
-                    : '角色语音'}
-                </span>
-                <em>
-                  {[
-                    relStories.length ? `${relStories.length} 卷剧情` : '',
-                    relCounsel.length ? `${relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)} 次咨询` : '',
-                    hasVoices ? `${voice.n} 条语音` : '',
-                  ].filter(Boolean).join(' · ') || '暂无收录'}
-                </em>
-              </button>
-            )}
-            {hasMsg && (
-              <button
-                className="slot slot-btn"
-                onClick={() => {
-                  document.getElementById('msgbox')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }}
-                title="跳到巴拉短信"
-              >
-                <span>巴拉短信</span>
-                <em>{msgRooms.length} 段 · {nf(msg?.lines ?? 0)} 条</em>
-              </button>
-            )}
-          </div>
 
           {hasStoryRel && (
             <section className="storybox" id="storybox" style={{ ['--acc' as string]: accentFor(c.id) }}>

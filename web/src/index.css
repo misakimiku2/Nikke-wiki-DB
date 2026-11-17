@@ -1291,8 +1291,6 @@ img { display: block; }
   border: 0; background: var(--bg-2);
 }
 
-.slot-btn { cursor: pointer; text-align: left; font: inherit; color: inherit; background: transparent; }
-.slot-btn:hover { border-color: var(--line-2); border-style: solid; }
 @media (max-width: 760px) {
   .cc-msg { max-width: 94%; }
   .cc-choice { max-width: 94%; }
@@ -1863,21 +1861,6 @@ img { display: block; }
   .detail-info { border-left: none; border-top: 1px solid var(--line); padding: 34px 24px 80px; }
 }
 .detail-info .detail-title { font-size: clamp(34px, 5vw, 60px); }
-
-/* 详情页预留位 */
-.detail-slots {
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: 10px; margin-top: 24px;
-}
-.slot {
-  border: 1px dashed var(--line-2); padding: 14px 16px;
-  display: flex; flex-direction: column; gap: 7px;
-}
-.slot span {
-  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9.5px;
-  letter-spacing: .14em; color: var(--dim-2);
-}
-.slot em { font-style: normal; font-size: 12px; color: var(--dim-2); opacity: .38; }
 
 /* ================= CG 画廊 ================= */
 .cg-grid {

@@ -203,8 +203,9 @@ export async function loadCostumeTexts(): Promise<CostumeTextMap> {
  * 角色元数据（来自游戏静态表，export_char_meta.mjs 导出）：
  * 兵种 cls（1 火力 / 2 防御 / 3 辅助）、企业 corp（1 极乐净土 / 2 米西利斯 / 3 泰特拉 / 4 朝圣者 / 7 联动）、
  * 武器 weapon（ar/sg/rl/smg/sr/mg，由攻击技能射击表反查）、爆裂阶段 burst（1/2/3，5=全爆裂）、
- * 部队 squad（群聊标题与官方部队名匹配，部分角色缺失）。
- * 属性 element 字段待后续人工整理后并入。
+ * 部队 squad（群聊标题与官方部队名匹配，部分角色缺失）、
+ * 属性 element（人工对游戏整理，build/export_char_meta.mjs 的 ELEMENT_MANUAL 并入，
+ * fire/water/wind/electric/iron；无战斗属性的 NPC 缺失）。
  */
 export type CharMeta = {
   burst?: number | null
@@ -212,6 +213,7 @@ export type CharMeta = {
   cls?: number | null
   weapon?: string | null
   squad?: string | null
+  element?: string | null
 }
 export type CharMetaMap = Record<string, CharMeta>
 
