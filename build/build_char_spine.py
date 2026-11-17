@@ -19,6 +19,9 @@
 图集头 pma:true —— 贴图 RGB 已经乘过 alpha，绝不能再次预乘。
 只把 alpha=0 的像素 RGB 清零（PMA 混合下残留色会直接叠加成灰斑/白线），
 并用 lossless + exact=True 保存，防止编码器往全透明像素里塞填充色。
+凡是做过插值（压扁页拉伸回声明尺寸 / --size 降采样）的页：
+  先清 alpha=0 残留再插值（防杂色混入边缘），插值后钳制 RGB≤A
+  （LANCZOS 过冲会产生 RGB>A 的加法亮斑，头发边缘的小白点）。
 
   python build/build_char_spine.py                 # 增量，2048 原尺寸
   python build/build_char_spine.py --kind combat   # 战斗姿态模型
@@ -66,23 +69,28 @@ def atlas_pages(text):
 
 
 def rescale_atlas_pages(atlas_text, src_folder, name="", verbose=True):
-    """修正 atlas 声明尺寸与实际纹理尺寸不符的页（游戏资源错配）。
+    """修正 atlas 声明尺寸与实际纹理尺寸不符的页（游戏资源错配）。两类失配两种修法：
 
-    少数模型（已知 c094_00 战术升级第二页 2048x1398 声明 / 2048x1024 实际）
-    的 atlas region 坐标是按声明尺寸排布的，但 bundle 里纹理被换成了更小的一张。
-    Spine 运行时按「实际图片尺寸」归一化 UV，于是该页所有 region 的 Y 采样错位：
-    脸颊粘上眼睛皮肤的碎片、后脑空缺、身上出现黑色多边形（就是采样越界到图集外）。
+    - 实际 > 声明（如 c223_01/c912_00 声明 ~1790-1934 / 实际 2048²）：
+      整页纹理被等比放大到 2 的幂画布，内容与声明布局一致——把该页所有
+      bounds/offsets 按 实际/声明 缩放，并把 size 声明改成实际尺寸。
+      只缩坐标不重采样，保住纹理分辨率。
+    - 实际 < 声明（已知 c094_00 战术升级第二页 2048x1398 声明 / 2048x1024 实际，
+      以及 c062/c194 战斗模型 2048² 声明 / 1024² 实际）：
+      整页纹理被压扁（某条轴或两条轴按 实际/声明 缩短），坐标描述的仍是
+      压扁前的布局。这种情况缩坐标是错的：压扁发生在页面上，rotate:90/270
+      的 region 页内 footprint 与压扁轴正好互换，缩放后的 footprint 会指向
+      错误内容（脸上横跨碎发、贝雷帽破片、部件消失）。
+      正确修法是把贴图拉伸回声明尺寸、atlas 原样保留——UV 与内容逐像素对齐，
+      rotate/offsets 一并自然修正。拉伸只在低分辨率方向插值，不损失原有细节。
+    只有 2~5% 的 2 的幂取整差异（如 2046 vs 2048）不动——那种是正常填充。
 
-    这里对每条轴分别算比例 = 实际/声明，若失配 > 5% 就把该页所有
-    bounds/offsets 的对应坐标按比例缩放，并把 size 声明改成实际尺寸。
-    只有 2~3px 的 2 的幂取整差异（如 2046 vs 2048）不动——那种是正常填充。
-
-    返回 (修正后的 atlas 文本, 修正过的页名列表)。
+    返回 (修正后的 atlas 文本, 需拉伸到声明尺寸的页名 -> (宽, 高))。
     """
     from PIL import Image
 
     blocks = re.split(r"(\n\s*\n)", atlas_text)
-    fixed, out = [], []
+    stretch, out = [], []
     for block in blocks:
         # 分隔符原样保留
         if not block.strip():
@@ -108,9 +116,16 @@ def rescale_atlas_pages(atlas_text, src_folder, name="", verbose=True):
         if abs(sx - 1) <= 0.05 and abs(sy - 1) <= 0.05:
             out.append(block)
             continue
-        # 逐行缩放 bounds / offsets（保留原有行序与别的字段）
+        if act_w < decl_w or act_h < decl_h:
+            # 压扁页：贴图拉伸回声明尺寸，atlas 文本原样保留
+            stretch.append((page_name, (decl_w, decl_h)))
+            if verbose:
+                print(f"  [atlas fix] {name} {page_name}: 贴图 {act_w}x{act_h}"
+                      f" -> 拉伸回声明 {decl_w}x{decl_h}（坐标不变）", flush=True)
+            out.append(block)
+            continue
+        # 放大页：逐行缩放 bounds / offsets（保留原有行序与别的字段）
         raw = block.splitlines()
-        # 在原始（含空行）文本里按字段定位；用行内容做 key 逐行替换
         for i, ln in enumerate(raw):
             s = ln.strip()
             if s.startswith("size:"):
@@ -123,12 +138,38 @@ def rescale_atlas_pages(atlas_text, src_folder, name="", verbose=True):
                 vals = [int(v) for v in s[len("offsets:"):].split(",")]
                 vals = [round(vals[0]*sx), round(vals[1]*sy), round(vals[2]*sx), round(vals[3]*sy)]
                 raw[i] = re.sub(r"offsets:[\d,]+", "offsets:" + ",".join(map(str, vals)), ln)
-        fixed.append(page_name)
         if verbose:
             print(f"  [atlas fix] {name} {page_name}: {decl_w}x{decl_h} -> {act_w}x{act_h}"
                   f" (scale {sx:.3f},{sy:.3f})", flush=True)
         out.append("\n".join(raw))
-    return "".join(out), fixed
+    return "".join(out), dict(stretch)
+
+
+def _pma_zero_transparent(im):
+    """alpha=0 的像素 RGB 归零。插值（拉伸/缩放）前必做：LANCZOS 会采样邻域，
+    把图集空白区的残留色混进发丝边缘，PMA 混合下表现为白点/灰斑。"""
+    from PIL import Image
+
+    alpha = im.getchannel("A")
+    zero_mask = alpha.point(lambda v: 255 if v == 0 else 0)
+    return Image.composite(Image.new("RGBA", im.size, (0, 0, 0, 0)), im, zero_mask)
+
+
+def _pma_clamp(im):
+    """钳制 RGB ≤ A，恢复 pma:true 的合法性。
+
+    对 PMA 贴图做 LANCZOS 插值时，负瓣过冲会让边缘像素的 RGB 超过 alpha
+    （实测 c094_00 第二页 ~1.1 万像素、最大超出 254）。混合方程是
+    (ONE, ONE_MINUS_SRC_ALPHA)，RGB 超出 A 的部分会变成加法亮斑——头发边缘的
+    小白点。min(RGB, A) 对合法像素是无操作，对过冲像素恢复约束（alpha=0 处
+    RGB 也随之归零）。"""
+    from PIL import Image, ImageChops
+
+    r, g, b, a = im.split()
+    return Image.merge("RGBA", (
+        ImageChops.darker(r, a), ImageChops.darker(g, a),
+        ImageChops.darker(b, a), a,
+    ))
 
 
 def convert(job, force=False, size=0):
@@ -143,9 +184,9 @@ def convert(job, force=False, size=0):
     try:
         raw = open(os.path.join(folder_src, name + ".atlas"), "rb").read()
         atlas_text = raw.decode("utf-8-sig", "replace")
-        # 修正 atlas 声明尺寸与实际纹理不符的页（如 c094_00 第二页 1398->1024），
-        # 否则该页 region 的 UV 会整体错位——脸上出现黑色碎片、贴图错位、后脑空缺
-        atlas_text, _fixed_pages = rescale_atlas_pages(atlas_text, folder_src, name)
+        # 修正 atlas 声明尺寸与实际纹理不符的页：
+        # 放大页缩坐标；压扁页（如 c094_00 第二页、c062/c194 战斗页）把贴图拉伸回声明尺寸
+        atlas_text, stretch_pages = rescale_atlas_pages(atlas_text, folder_src, name)
         pages = atlas_pages(atlas_text)
         if not pages:
             return {"name": name, "error": "atlas 里找不到图集页"}
@@ -183,8 +224,17 @@ def convert(job, force=False, size=0):
                     break
             with Image.open(src_page) as im:
                 im = im.convert("RGBA")
+                resized = False
+                if old_page in stretch_pages:
+                    # 压扁页：拉伸回 atlas 声明尺寸，UV 才能逐像素对齐
+                    im = _pma_zero_transparent(im)
+                    im = im.resize(stretch_pages[old_page], Image.LANCZOS)
+                    resized = True
                 if size and im.width > size:
                     im = im.resize((size, size), Image.LANCZOS)
+                    resized = True
+                if resized:
+                    im = _pma_clamp(im)
                 # alpha=0 的像素连 RGB 一起清零
                 alpha = im.getchannel("A")
                 zero_mask = alpha.point(lambda v: 255 if v == 0 else 0)
@@ -229,6 +279,8 @@ def main():
     ap.add_argument("--size", type=int, default=0,
                     help="图集页统一缩放到这个边长（0 = 保持原样 2048）")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--only", default="",
+                    help="只处理这些模型名，逗号分隔（部分重建，索引与全量合并）")
     args = ap.parse_args()
 
     SRC, OUT, META, label = paths_for(args.kind)
@@ -251,6 +303,12 @@ def main():
         jobs.append((name, d, OUT))
     if args.limit:
         jobs = jobs[:args.limit]
+    if args.only:
+        want = {s.strip() for s in args.only.split(",") if s.strip()}
+        missing = want - {j[0] for j in jobs}
+        if missing:
+            print(f"! --only 里找不到这些模型：{sorted(missing)}")
+        jobs = [j for j in jobs if j[0] in want]
     print(f"待处理 {len(jobs)} 个{label}")
 
     ok, errors = [], []
@@ -269,6 +327,16 @@ def main():
                 print(f"  {i}/{len(jobs)}  {done_mb:.0f} MB  {time.time()-t0:.0f}s", flush=True)
 
     names = sorted({r["name"] for r in ok})
+    # 部分重建（--only/--limit）时合并旧索引，避免把全量列表覆盖成本轮子集
+    partial = bool(args.only or args.limit)
+    old_meta = {}
+    if partial and os.path.exists(META):
+        try:
+            with open(META, encoding="utf-8") as f:
+                old_meta = json.load(f)
+        except Exception:
+            old_meta = {}
+        names = sorted(set(names) | set(old_meta.get("items", [])))
     meta = {"total": len(names), "items": names}
     if args.kind == "skillcut":
         meta["bgs"] = sorted(r["name"] for r in ok if r.get("bg"))
@@ -296,6 +364,11 @@ def main():
             m = re.match(r"^(c\d+)_", name)                    # c093_skillcut 无皮肤段
             if m:
                 by_char.setdefault(m.group(1), name)
+        if partial:
+            by_skin = {**old_meta.get("bySkin", {}), **by_skin}
+            by_char = {**old_meta.get("byChar", {}), **by_char}
+            meta["bgs"] = sorted(set(meta["bgs"]) | set(old_meta.get("bgs", [])))
+            meta["bg2s"] = sorted(set(meta["bg2s"]) | set(old_meta.get("bg2s", [])))
         meta["bySkin"] = by_skin
         meta["byChar"] = by_char
         print(f"  皮肤映射 {len(by_skin)} 条，角色级兜底 {len(by_char)} 条")
