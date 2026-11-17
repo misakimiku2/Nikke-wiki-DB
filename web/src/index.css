@@ -451,10 +451,9 @@ img { display: block; }
 .detail-visual .variant-caption-desc {
   color: var(--dim-2); opacity: .72; letter-spacing: 0;
 }
-/* 皮肤名并入皮肤条：width:100% 让它在 flex 换行里独占一行，
-   落在渐变的实色区，与下方控制栏无缝衔接 */
+/* 皮肤名行（variants-foot 内）：居中单行，收起时随 foot 整行塌缩 */
 .detail-page .detail-visual .variant-caption {
-  width: 100%; padding: 6px 0 10px;
+  max-width: 100%; padding: 0; text-align: center;
 }
 
 /* 角色详情：实时 Spine 模型控制条。不加 border-top——
@@ -554,7 +553,9 @@ img { display: block; }
 .char-live.on { color: var(--text); }
 .char-live.on i { background: var(--red); box-shadow: 0 0 0 3px rgba(255,45,85,.16); }
 
-/* 战斗姿态切换（立绘 / 射击 / 掩体）：与实时徽标同位，皮肤有战斗模型时取而代之 */
+/* 战斗姿态切换（立绘 / 射击 / 掩体）：与实时徽标同位，皮肤有战斗模型时取而代之。
+   右端常驻收起钮：收起时标签组向左滑出（max-width 收缩、右缘裁切），
+   展开钮随收起缘滑回左端原位 */
 .char-modes {
   position: absolute; left: 16px; top: 14px; z-index: 3;
   display: inline-flex;
@@ -570,6 +571,22 @@ img { display: block; }
 .char-modes button + button { border-left: 1px solid var(--line); }
 .char-modes button:hover { color: var(--text); }
 .char-modes button.on { background: var(--red); color: #fff; }
+.char-modes-tabs {
+  display: inline-flex; overflow: hidden;
+  max-width: 440px; opacity: 1;
+  transition: max-width .3s ease, opacity .2s ease;
+}
+.char-modes.is-collapsed .char-modes-tabs { max-width: 0; opacity: 0; }
+/* 收起钮与标签间补一条分隔线（tabs 包装层隔开了 + 选择器），收起后去掉 */
+.char-modes .char-modes-toggle { padding: 5px 8px; border-left: 1px solid var(--line); }
+.char-modes.is-collapsed .char-modes-toggle { border-left: 0; }
+.char-modes-arrow {
+  display: block; width: 0; height: 0;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  border-right: 5px solid currentColor; /* 展开态朝左：点击向左收起 */
+  transition: transform .25s ease;
+}
+.char-modes.is-collapsed .char-modes-arrow { transform: rotate(180deg); }
 
 .detail-code {
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
@@ -1741,6 +1758,12 @@ img { display: block; }
   transition: opacity .35s;
 }
 [data-theme="light"] .detail-page .detail-visual .stage::before { opacity: .5; }
+/* 皮肤区收起后舞台下缘直接衔接按钮区：把光晕在底部的残留淡出（78% 以下
+   渐隐、98% 处归零），边界恢复锐利；展开态该区域被皮肤条盖住，不受影响 */
+.detail-page .detail-visual .stage:has(> .variants.is-collapsed)::before {
+  -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent 98%);
+  mask-image: linear-gradient(180deg, #000 78%, transparent 98%);
+}
 .detail-page .detail-visual img {
   position: relative; z-index: 1;
   width: 100%; height: 100%; object-fit: contain; object-position: bottom center;
@@ -1752,26 +1775,82 @@ img { display: block; }
 }
 @keyframes figureIn { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
 
-/* 皮肤切换条骑在舞台下缘：背景自上而下由透明渐变到面板实色——顶部露出
-   立绘，底部并进信息面板。渐变用百分比，皮肤多到换行时依旧成立。
-   皮肤名 caption 也收在条内（width:100% 独占一行），下沿直接接控制栏。 */
+/* 皮肤切换条：绝对定位浮在舞台底部、水平居中，不占任何布局空间——
+   收起 / 展开都不会移动舞台与角色。背景自上而下由透明渐变到面板实色
+   （顶部露出立绘、底部并进控制栏），渐变用百分比，皮肤多到换行时依旧成立。
+   收起时整体向下收拢：顶部透明区归零、皮肤内容高度塌缩（内容顺下滑出），
+   只留底部居中的展开钮浮在舞台下缘。透明区不拦截指针，保证画布可拖拽。 */
 .detail-page .detail-visual .variants {
-  flex-shrink: 0;
-  position: relative; z-index: 2;
-  display: flex; gap: 8px; padding: 46px 0 0;
-  margin-top: -60px;
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; gap: 5px; padding: 26px 0 6px;
   border-top: none;
   flex-wrap: wrap; justify-content: center;
-  background: linear-gradient(180deg, transparent 0%, var(--surface) 58%);
+  transition: padding .35s ease;
+  pointer-events: none;
 }
-.detail-page .detail-visual .variants button {
+.detail-page .detail-visual .variants.is-collapsed { padding-top: 0; }
+/* 渐变背景独立成层：收起时整层淡出，舞台下缘与按钮区的衔接恢复锐利 */
+.detail-page .detail-visual .variants::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(180deg, transparent 0%, var(--surface) 58%);
+  opacity: 1; transition: opacity .35s ease;
+}
+.detail-page .detail-visual .variants.is-collapsed::before { opacity: 0; }
+.detail-page .detail-visual .variants button { pointer-events: auto; }
+/* 皮肤缩略图行：展开钮排在行末，随 flex 流被图标推到右侧；
+   收起时各图标原地塌缩（宽高归零）并淡出，按钮滑回行中心 */
+.detail-page .detail-visual .variants-body {
+  width: 100%;
+  display: flex; gap: 8px; flex-wrap: wrap;
+  justify-content: center; align-items: center;
+  transition: gap .3s ease;
+}
+.detail-page .detail-visual .variants.is-collapsed .variants-body { gap: 0; }
+.detail-page .detail-visual .variants-body .vt-thumb {
+  position: relative;
   width: 54px; height: 54px; padding: 0; cursor: pointer;
   background: var(--bg-2); border: 1px solid var(--line); overflow: hidden;
-  transition: border-color .15s, transform .15s;
   border-radius: 2px;
+  transition: width .3s ease, height .3s ease, opacity .22s ease,
+    border-color .15s, transform .15s, box-shadow .15s;
 }
-.detail-page .detail-visual .variants button:hover { transform: translateY(-2px); border-color: var(--line-2); }
-.detail-page .detail-visual .variants button.on { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.detail-page .detail-visual .variants-body .vt-thumb:hover { transform: translateY(-2px); border-color: var(--line-2); }
+.detail-page .detail-visual .variants-body .vt-thumb.on { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+.detail-page .detail-visual .variants.is-collapsed .vt-thumb {
+  width: 0; height: 0; padding: 0; border-width: 0; opacity: 0; pointer-events: none;
+}
+/* 皮肤名行：紧贴缩略图下缘；收起时整行塌缩淡出 */
+.detail-page .detail-visual .variants-foot {
+  width: 100%;
+  display: flex; justify-content: center;
+  max-height: 48px; opacity: 1; overflow: hidden;
+  transition: max-height .3s ease, opacity .22s ease;
+}
+.detail-page .detail-visual .variants.is-collapsed .variants-foot { max-height: 0; opacity: 0; }
+/* 展开 / 收起钮：排在缩略图行末尾。展开时按钮滑到图标右侧并放大
+   （transform 带延迟，落位后再放大）；收起时立即缩小并滑回行中心 */
+.detail-page .detail-visual .variants-toggle {
+  flex: 0 0 auto; align-self: center;
+  width: auto; height: 18px; padding: 0 12px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  background: var(--tag-bg); border: 1px solid var(--line); border-radius: 2px;
+  color: var(--dim);
+  transform: scale(1);
+  transition: transform .25s ease, color .15s, border-color .15s;
+}
+.detail-page .detail-visual .variants:not(.is-collapsed) .variants-toggle {
+  transform: scale(1.24);
+  transition: transform .28s ease .16s, color .15s, border-color .15s;
+}
+.detail-page .detail-visual .variants-toggle:hover { color: var(--text); border-color: var(--line-2); }
+.variants-toggle-arrow {
+  display: block; width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 5px solid currentColor; /* 展开态朝下：点击向下收起 */
+  transition: transform .25s ease;
+}
+.detail-page .detail-visual .variants.is-collapsed .variants-toggle-arrow { transform: rotate(180deg); }
 
 /* 右侧信息栏 */
 .detail-info {
@@ -2596,50 +2675,4 @@ body.immersive-mode .cv-shell .cv-hint { display: none !important; }
 body.immersive-mode .cv-shell .cv-main {
   position: fixed; inset: 0; z-index: 1000;
   width: 100vw; height: 100vh; height: 100dvh;
-}
-
-/* ================= 姿态标签 / 皮肤区 收起按钮 ================= */
-/* 姿态标签：向左收起，只留一个向右箭头的小按钮 */
-.char-modes .cm-fold,
-.char-modes .cm-fold-open {
-  padding: 5px 8px; color: var(--dim); background: transparent;
-  border: 0; cursor: pointer; display: grid; place-items: center;
-  transition: color .15s, background .15s;
-}
-.char-modes .cm-fold + button { border-left: 1px solid var(--line); }
-.char-modes .cm-fold:hover,
-.char-modes .cm-fold-open:hover { color: var(--text); background: var(--surface); }
-.char-modes.folded { background: transparent; border-color: transparent; }
-
-/* 皮肤切换区：向下收起。收起后顶部留一条窄条显示「皮肤 + 当前皮肤名」 */
-.detail-page .detail-visual .variants .vf-toggle {
-  width: auto; height: auto; padding: 3px 9px; margin: 0 auto 6px;
-  display: flex; align-items: center; gap: 6px;
-  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
-  font-size: 10px; letter-spacing: .06em; color: var(--dim-2);
-  background: transparent; border: 1px solid var(--line); border-radius: 2px;
-  cursor: pointer; transition: color .15s, border-color .15s, background .15s;
-}
-.detail-page .detail-visual .variants .vf-toggle:hover {
-  color: var(--text); border-color: var(--line-2); background: var(--surface-2);
-}
-.detail-page .detail-visual .variants .vf-toggle b {
-  color: var(--text-2); font-weight: 700; max-width: 160px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-/* 缩略图 + 名称整体作为可收起主体；max-height 过渡实现「向下收起」 */
-.detail-page .detail-visual .variants .variant-body {
-  display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
-  max-height: 600px; overflow: hidden;
-  transition: max-height .3s ease, opacity .2s ease;
-}
-.detail-page .detail-visual .variants.folded .variant-body {
-  max-height: 0; opacity: 0; pointer-events: none;
-}
-/* 收起时不再需要那么高的渐变留白，避免舞台下缘空出一大块 */
-.detail-page .detail-visual .variants.folded {
-  padding-top: 10px; margin-top: -10px;
-}
-@media (max-width: 620px) {
-  .detail-page .detail-visual .variants.folded { padding-top: 8px; margin-top: -8px; }
 }
