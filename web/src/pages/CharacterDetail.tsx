@@ -638,39 +638,46 @@ export default function CharacterDetail() {
                 <i />{modelReady ? '实时模型' : '模型加载中'}
               </div>
             )}
+          </div>
 
-            {/* 皮肤切换：浮在查看器右下角，不占布局空间 */}
-            {vars.length > 1 && (
-              <div className={`variants ${skinFolded ? 'folded' : ''}`}>
-                <button
-                  className="vf-toggle"
-                  onClick={() => setSkinFolded((v) => !v)}
-                  title={skinFolded ? '展开皮肤切换' : '收起皮肤切换'}
-                  aria-label={skinFolded ? '展开皮肤切换' : '收起皮肤切换'}
-                >
-                  <FoldIcon dir={skinFolded ? 'up' : 'down'} />
-                  <span>皮肤</span>
-                  <b>{currentLabel}</b>
-                </button>
-                <div className="variant-body">
-                  {vars.map((v) => {
-                    const label = artLabel(art, v)
-                    return (
-                      <button
-                        key={v}
-                        className={v === current ? 'on' : ''}
-                        onClick={() => setPick(v)}
-                        title={`${spine.has(v) ? `${label} · 可动` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
-                      >
-                        <img src={charThumb(v, mi)} alt={label} loading="lazy" />
-                        {spine.has(v) && <i className="vt-live" />}
-                      </button>
-                    )
-                  })}
+          {/* 皮肤切换条：骑在舞台下缘，皮肤名并入条内落渐变实色区，
+              下沿直接衔接按钮区、中间不留独立行 */}
+          {vars.length > 1 && (
+            <div className={`variants ${skinFolded ? 'folded' : ''}`}>
+              <button
+                className="vf-toggle"
+                onClick={() => setSkinFolded((v) => !v)}
+                title={skinFolded ? '展开皮肤切换' : '收起皮肤切换'}
+                aria-label={skinFolded ? '展开皮肤切换' : '收起皮肤切换'}
+              >
+                <FoldIcon dir={skinFolded ? 'up' : 'down'} />
+                <span>皮肤</span>
+                {skinFolded && <b>{currentLabel}</b>}
+              </button>
+              <div className="variant-body">
+                {vars.map((v) => {
+                  const label = artLabel(art, v)
+                  return (
+                    <button
+                      key={v}
+                      className={v === current ? 'on' : ''}
+                      onClick={() => setPick(v)}
+                      title={`${spine.has(v) ? `${label} · 可动` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
+                    >
+                      <img src={charThumb(v, mi)} alt={label} loading="lazy" />
+                      {spine.has(v) && <i className="vt-live" />}
+                    </button>
+                  )
+                })}
+                <div className="variant-caption">
+                  {currentLabel}
+                  {ct?.desc && (
+                    <span className="variant-caption-desc"> · {ct.desc.replace(/\n/g, ' ')}</span>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 实时模型控制条：表情 / 时间轴 / 速度 / 取景 / 保存当前帧 */}
           {hasModel && (
