@@ -44,7 +44,7 @@ export default function Characters() {
   const [spine, setSpine] = useState<Set<string>>(new Set())
   const [meta, setMeta] = useState<CharMetaMap>({})
   const [q, setQ] = useState('')
-  const [sort, setSort] = useState<SortMode>('name')
+  const [sort, setSort] = useState<SortMode>('squad')
   const [panelOpen, setPanelOpen] = useState(false)
   const [filters, setFilters] = useState<Filters>({ corp: [], weapon: [], burst: [], cls: [], element: [] })
 
@@ -114,7 +114,7 @@ export default function Characters() {
   }
   const clearFilters = () => setFilters({ corp: [], weapon: [], burst: [], cls: [], element: [] })
 
-  /** 搜索 + 多选筛选：各类别之间取交集，类别内命中任一即可 */
+  /** 搜索 + 多选筛选：各类别之间取交集，类别内命中任一即可；名称模式按英文名 A-Z 排序 */
   const shown = useMemo(() => {
     const k = q.trim().toLowerCase()
     let out = pool
@@ -138,8 +138,15 @@ export default function Characters() {
         })
       })
     }
+    if (sort === 'name') {
+      out = [...out].sort((a, b) => {
+        const ka = (a.names.en || a.names.zh || '').toLowerCase()
+        const kb = (b.names.en || b.names.zh || '').toLowerCase()
+        return ka.localeCompare(kb, 'en')
+      })
+    }
     return out
-  }, [pool, meta, q, filters, activeCount])
+  }, [pool, meta, q, filters, activeCount, sort])
 
   /** 部队模式：按部队分栏（顺序沿用默认排序里各部队首次出现的次序，无部队的排最后） */
   const squadGroups = useMemo(() => {
