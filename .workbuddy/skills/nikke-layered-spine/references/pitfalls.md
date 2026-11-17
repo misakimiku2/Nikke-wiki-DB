@@ -120,31 +120,3 @@ c580 第二形态只摘面具/换眼镜（附件差异仅 3 个），确实是�
 3. `web/src/data.ts` 的 `LAYERED_MODELS` 加一条映射。
 4. 确认主模型与额外层有同名动画（`expression_0` 等），否则不会同步。
 5. 构建 + 在角色页实测。`public/` 素材不入库，CI/换机器必须重跑提取脚本。
-
-## 七、粒子转场特效：不是 Spine，别往分层方向做
-
-**症状**：某角色切形态有华丽的 2D 特效（红刃/花瓣/光带），但它们不在 FG/BG Spine 层里，
-prefab 的 FG atlas 也搜不到相关贴图。
-
-**根因**：这类特效是 Unity **Timeline（PlayableDirector）+ ParticleSystem** 驱动的，
-在 decadent prefab 的 GameObject/Mesh/材质里，跟 Spine 前景层是两套完全不同的机制。
-判断方法：用 UnityPy 统计 bundle 里的 `ParticleSystem` 数量——c472 有 31 个、c580 有 22 个、
-c103 有 26 个；而 c515 帘子是 **0 粒子**（纯 Spine 分层）。有粒子就不要去翻 `*_fg.atlas`。
-
-**贴图**：特效用的图也是 `Texture2D`，名字形如 `fx_<角色>_<皮肤>_normal_uv_01`：
-- c472 实测：`uv_01` 花瓣群（256²，白底红瓣但 alpha 正常）、`uv_02` 红色光带、
-  `uv_06` 红白刀刃（最显眼）、`atlas` 小火花图集（512²）；`uv_03~05`/`mask` 是细线/噪声/遮罩，可不接。
-- 导出时 `read().image` 带 alpha，转无损 WebP 别丢 alpha（`lossless=True, exact=True`）。
-
-**网页复现**：用 `VfxBurst`（Canvas 2D 粒子）而非多层 Spine。几个要点：
-- 粒子行为无源数据可精确还原（Timeline 曲线能读到 `m_PositionCurves` 等，但重建 Unity 发射器
-  工程量极大），**按游戏截图手工调参**即可，用户接受"近似"。
-- 混合模式用 `screen`，让刀刃/花瓣叠加发亮又不糊；全屏红色渐变闪光前 25% 冲峰值、之后衰减。
-- 出场加 `delay`（各粒子 0~0.5 随机）错开，不然齐刷刷一起出现很假。
-- 调参经验（c472）：刀刃 6 条、size ≈ `min(W,H)` 的 0.85~1.7 倍、alpha 0.75~1；
-  花瓣 38 片、size 为 min(W,H) 的 5%~16%；闪光峰值 alpha 0.34（太高会盖住角色）。
-- 触发：`CharacterDetail.switchForm` 里只在有过渡动画（`playOnce`）时递增 `vfxSignal`，
-  这样瞬时切换的角色不会误触发。`vfxConfigFor(name)` 返回 undefined 时不渲染组件。
-
-**范围**：全库约 9 个角色有粒子特效（c017/c019/c103/c471/c472/c513/c580/c871/c872）。
-新增角色只加一条 `VFX_MODELS` 配置。素材在 `public/vfx/`（gitignore），换机器要重跑提取。
