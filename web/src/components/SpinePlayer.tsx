@@ -7,6 +7,12 @@ import {
 import { loadSpineOverrides, type SpineOverride, type ViewTransform } from '../data'
 import PlayPauseIcon from './PlayPauseIcon'
 
+// 图集贴图是 pma:true（RGB 已乘 alpha），浏览器解码 webp 后仍保持预乘数据
+// （实测半透明像素 RGB <= A）。GLTexture 默认 texImage2D 会再乘一次 alpha，
+// 造成双重预乘——半透明层被压暗，表现为脸部黑块、头顶粉块、发梢缺失。
+// 关闭它，让「PMA 贴图 + PMA 混合(ONE, ONE_MINUS_SRC_ALPHA)」正确配对。
+GLTexture.DISABLE_UNPACK_PREMULTIPLIED_ALPHA_WEBGL = true
+
 /** 播放器的实时状态，供外部时间轴 / 按钮区读取 */
 export type SpineStatus = {
   ready: boolean
