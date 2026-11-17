@@ -873,6 +873,25 @@ const BURST_CHAR_SEGMENT: Record<string, string> = {
 }
 
 /**
+ * 大招「角色段 + 背景段」双实例合成配置：key 为模型名，value 为只含背景图/背景
+ * 运镜的那段动画名。游戏里这类演出用两个骨架实例分别播角色段与背景段再叠加；
+ * 背景段有独立的运镜骨，和角色段动画同步，构图上比纯静态背景板更接近原作。
+ * 只有确认两段共用同一套运镜、叠在一起观感正确的模型才加进来。
+ */
+export const BURST_BG_SEGMENT: Record<string, string> = {
+  c093_skillcut: 'skillcut_1', // 艾玛:战术升级 —— 暗场+右侧光条，与角色段同运镜
+  c094_00_skillcut: 'skillcut_1_OFF', // 贝斯蒂:战术升级 —— 深蓝聚光灯，角色清晰
+  c582_00_skillcut: 'skillcut_1', // 蕾贝儿 —— 书桌/紫色思考泡场景
+}
+/** 其余 10 个错选模型（c073/c105/c191/c223/c234/c281/c331/c411/c580/c833）的
+ *  背景段多为纯色板/特效，未逐一验证叠加观感，暂只播角色段（见 BURST_CHAR_SEGMENT）。 */
+
+/** 取模型的大招背景段动画名（无则 undefined） */
+export function burstBgSegment(model?: string): string | undefined {
+  return model ? BURST_BG_SEGMENT[model] : undefined
+}
+
+/**
  * 大招 cut-in 的主动画挑选。源数据命名五花八门（全量 233 个里 30 个不带
  * skillcut_1）：skillcut_0 / skillcut_01 / skilcut_1（拼写错误）/ skillcut1 /
  * skillcut / skill_cut / skill_01 / c094 的 _OFF 三段式 / c532 的 _all 分层。

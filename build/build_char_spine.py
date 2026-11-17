@@ -65,6 +65,72 @@ def atlas_pages(text):
     return pages
 
 
+def rescale_atlas_pages(atlas_text, src_folder, name="", verbose=True):
+    """修正 atlas 声明尺寸与实际纹理尺寸不符的页（游戏资源错配）。
+
+    少数模型（已知 c094_00 战术升级第二页 2048x1398 声明 / 2048x1024 实际）
+    的 atlas region 坐标是按声明尺寸排布的，但 bundle 里纹理被换成了更小的一张。
+    Spine 运行时按「实际图片尺寸」归一化 UV，于是该页所有 region 的 Y 采样错位：
+    脸颊粘上眼睛皮肤的碎片、后脑空缺、身上出现黑色多边形（就是采样越界到图集外）。
+
+    这里对每条轴分别算比例 = 实际/声明，若失配 > 5% 就把该页所有
+    bounds/offsets 的对应坐标按比例缩放，并把 size 声明改成实际尺寸。
+    只有 2~3px 的 2 的幂取整差异（如 2046 vs 2048）不动——那种是正常填充。
+
+    返回 (修正后的 atlas 文本, 修正过的页名列表)。
+    """
+    from PIL import Image
+
+    blocks = re.split(r"(\n\s*\n)", atlas_text)
+    fixed, out = [], []
+    for block in blocks:
+        # 分隔符原样保留
+        if not block.strip():
+            out.append(block)
+            continue
+        lines = [ln.strip() for ln in block.strip().splitlines() if ln.strip()]
+        if not lines or ":" in lines[0]:
+            out.append(block)
+            continue
+        page_name = lines[0]
+        src_png = os.path.join(src_folder, page_name.replace(".webp", ".png"))
+        if not os.path.exists(src_png):
+            out.append(block)
+            continue
+        size_idx = next((i for i, ln in enumerate(lines) if ln.startswith("size:")), None)
+        if size_idx is None:
+            out.append(block)
+            continue
+        decl_w, decl_h = map(int, lines[size_idx][len("size:"):].split(","))
+        with Image.open(src_png) as im:
+            act_w, act_h = im.size
+        sx, sy = act_w / decl_w, act_h / decl_h
+        if abs(sx - 1) <= 0.05 and abs(sy - 1) <= 0.05:
+            out.append(block)
+            continue
+        # 逐行缩放 bounds / offsets（保留原有行序与别的字段）
+        raw = block.splitlines()
+        # 在原始（含空行）文本里按字段定位；用行内容做 key 逐行替换
+        for i, ln in enumerate(raw):
+            s = ln.strip()
+            if s.startswith("size:"):
+                raw[i] = re.sub(r"size:[\d,]+", f"size:{act_w},{act_h}", ln)
+            elif s.startswith("bounds:"):
+                vals = [int(v) for v in s[len("bounds:"):].split(",")]
+                vals = [round(vals[0]*sx), round(vals[1]*sy), round(vals[2]*sx), round(vals[3]*sy)]
+                raw[i] = re.sub(r"bounds:[\d,]+", "bounds:" + ",".join(map(str, vals)), ln)
+            elif s.startswith("offsets:"):
+                vals = [int(v) for v in s[len("offsets:"):].split(",")]
+                vals = [round(vals[0]*sx), round(vals[1]*sy), round(vals[2]*sx), round(vals[3]*sy)]
+                raw[i] = re.sub(r"offsets:[\d,]+", "offsets:" + ",".join(map(str, vals)), ln)
+        fixed.append(page_name)
+        if verbose:
+            print(f"  [atlas fix] {name} {page_name}: {decl_w}x{decl_h} -> {act_w}x{act_h}"
+                  f" (scale {sx:.3f},{sy:.3f})", flush=True)
+        out.append("\n".join(raw))
+    return "".join(out), fixed
+
+
 def convert(job, force=False, size=0):
     from PIL import Image
 
@@ -77,6 +143,9 @@ def convert(job, force=False, size=0):
     try:
         raw = open(os.path.join(folder_src, name + ".atlas"), "rb").read()
         atlas_text = raw.decode("utf-8-sig", "replace")
+        # 修正 atlas 声明尺寸与实际纹理不符的页（如 c094_00 第二页 1398->1024），
+        # 否则该页 region 的 UV 会整体错位——脸上出现黑色碎片、贴图错位、后脑空缺
+        atlas_text, _fixed_pages = rescale_atlas_pages(atlas_text, folder_src, name)
         pages = atlas_pages(atlas_text)
         if not pages:
             return {"name": name, "error": "atlas 里找不到图集页"}

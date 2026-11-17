@@ -120,6 +120,13 @@ export type SpinePlayerProps = {
   /** 校准模式：显示背景板微调面板（URL 带 calib=1 时由页面传入），
       用于人工对齐背景与骨架并导出数据 */
   calib?: boolean
+  /**
+   * 大招分层演出：同一个骨架资源里有「角色段」和「背景段」两套动画，游戏里用两个
+   * 实例分别播放再叠加（背景段含 bg 图与其运镜骨）。传背景段动画名，这里加载同一
+   * 模型的第二个独立骨架作为 BG 层播它——不能用同骨架第二轨道，那样两段骨骼变换
+   * 会互相覆盖导致只剩背景（见 c582/c093 的历史问题）。
+   */
+  bgSegment?: string
   /** 自定义默认动画挑选（模型动画列表 → 动画名）；缺省自动挑 idle
       （站姿 idle / 战斗 aim_idle / 大招 Idle）。返回 undefined 时回落到 idle。
       第二参为模型名，供大招角色段覆盖表按模型命中（见 pickBurstAnim） */
@@ -284,6 +291,7 @@ function collectSlotCenters(skeleton: any): Array<[number, number]> {
 export default function SpinePlayer({
   name, dir = 'spine', className = '', controls = true, onReady, onTick, onView, onError, controllerRef,
   backgroundSrc, fitMode = 'contain', hideShadows, sceneBg, sceneBg2, pickDefaultAnim, extra, calib, layerNames,
+  bgSegment,
 }: SpinePlayerProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -345,6 +353,8 @@ export default function SpinePlayer({
       skeleton: Skeleton
       premultiplied: boolean
       animSet: Set<string>
+      /** 非空 = 该层固定播这段动画（大招背景段），不随主模型动画切换 */
+      fixedAnim?: string
     }> = []
     let duration = 0
     let animNames: string[] = []
@@ -515,6 +525,30 @@ export default function SpinePlayer({
           extraLayers.sort((a, b) => a.z - b.z)
         }
 
+        // 大招背景段：加载同一模型的独立骨架实例（z=-1，画在角色下方），固定播
+        // bgSegment 这段动画。背景段自带 bg 图 + 运镜骨，与主角色段用各自的骨架
+        // apply，避免同骨架多轨互相覆盖骨骼变换（那样会只剩背景或只剩角色）。
+        if (bgSegment && dir === 'spine_skillcut') {
+          try {
+            const L = await loadLayer(folder, name)
+            if (L.data.animations.some((a: any) => a.name === bgSegment) && !disposed) {
+              L.state.setAnimation(0, bgSegment, true)
+              L.state.update(0)
+              L.state.apply(L.skeleton)
+              L.skeleton.updateWorldTransform()
+              extraLayers.push({
+                ...L,
+                z: -1,
+                animSet: new Set(L.data.animations.map((a: any) => a.name)),
+                fixedAnim: bgSegment,
+              })
+              extraLayers.sort((a, b) => a.z - b.z)
+            }
+          } catch (e) {
+            console.warn('[SpinePlayer] 大招背景段加载失败:', bgSegment, e)
+          }
+        }
+
         const setAnim = (n: string, loop = true, follow: string | null = null) => {
           if (!state || !skeleton) return
           const a: any = data.animations.find((x: any) => x.name === n)
@@ -524,8 +558,10 @@ export default function SpinePlayer({
           pendingFollow = loop ? null : follow
           state.setAnimation(0, n, loop)
           // 广播到额外图层：只在该层确实含有同名动画时才播（分层资源往往与主模型
-          // 动画名一致，例如三层同时播 expression_0 实现帘子+换装同步）
+          // 动画名一致，例如三层同时播 expression_0 实现帘子+换装同步）。
+          // fixedAnim 层（大招背景段）固定播自己的动画，不随主模型切换。
           for (const L of extraLayers) {
+            if (L.fixedAnim) continue
             if (L.animSet.has(n)) {
               L.state.setAnimation(0, n, loop)
               L.state.update(0)
@@ -1641,10 +1677,12 @@ export default function SpinePlayer({
             state.apply(skeleton)
             applyHiddenSlots(skeleton)
             skeleton.updateWorldTransform()
-            // 额外图层跟随主模型 seek 到同一时间点（若该层有此动画）
+            // 额外图层跟随主模型 seek 到同一时间点（若该层有此动画）。
+            // fixedAnim 层（大招背景段）播自己的动画，但同样对齐到该时间点。
             for (const L of extraLayers) {
-              if (!L.animSet.has(currentAnim)) continue
-              L.state.setAnimation(0, currentAnim, true)
+              const anim = L.fixedAnim || currentAnim
+              if (!L.animSet.has(anim)) continue
+              L.state.setAnimation(0, anim, true)
               const tr: any = L.state.getCurrent(0)
               if (tr) tr.trackTime = clamped
               L.state.update(0)
@@ -1789,7 +1827,7 @@ export default function SpinePlayer({
       if (controllerRef) controllerRef.current = null
       localCtrl.current = null
     }
-  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim, sceneBg, layerNames?.bg, layerNames?.fg])
+  }, [name, dir, controllerRef, fitMode, hideShadows, pickDefaultAnim, sceneBg, layerNames?.bg, layerNames?.fg, bgSegment])
 
   if (error) {
     return <div className={`spine-player err ${className}`}>模型加载失败：{error}</div>

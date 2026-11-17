@@ -4,6 +4,7 @@ import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
   loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
   loadCharSpine, loadCharVoices, loadCharacters, loadCostumeTexts, loadSpecTexts, mainBase, nf, pickBurstAnim,
+  burstBgSegment,
   skillcutModelName, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor, variantsOf,
   loadSquadIcons, loadCharStats, loadStatCurves, LB_MAX_LEVEL, LB_GAIN, affectionMax, AFFECTION_PER_LV,
   loadEquipStats, EQUIP_PARTS, EQUIP_PART_CN, EQUIP_TIERS, EQUIP_MAX_ENHANCE, EQUIP_ENHANCE_RATE, EQUIP_OPTIONS, EQUIP_TIER_ODDS,
@@ -1146,6 +1147,7 @@ export default function CharacterDetail() {
                 name={burstName}
                 dir="spine_skillcut"
                 pickDefaultAnim={pickBurstAnim}
+                bgSegment={burstBgSegment(burstName)}
                 sceneBg={skillcut?.bg.has(burstName) ? `/spine_skillcut/${burstName}/bg.webp` : undefined}
                 sceneBg2={skillcut?.bg2.has(burstName) ? `/spine_skillcut/${burstName}/bg2.webp` : undefined}
                 calib={calibMode}
