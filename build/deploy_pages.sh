@@ -10,14 +10,14 @@
 # 前置（只需一次）：
 #   npm install -g wrangler
 #   wrangler login          # 浏览器授权 Cloudflare 账号
-# 项目名默认 nikke-db，可用环境变量覆盖：NIKKE_PAGES_PROJECT=xxx bash build/deploy_pages.sh
+# 项目名默认 nikke-db-wiki，可用环境变量覆盖：NIKKE_PAGES_PROJECT=xxx bash build/deploy_pages.sh
 # 首次部署会自动创建同名 Pages 项目；部署结束打印的 URL 就是正式站点地址，
 # 记得把它写进 build/prerender_seo.mjs 的 SITE_URL 常量再重新构建上传一次。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
-PROJECT="${NIKKE_PAGES_PROJECT:-nikke-db}"
+PROJECT="${NIKKE_PAGES_PROJECT:-nikke-db-wiki}"
 
 if ! command -v wrangler >/dev/null 2>&1; then
   echo "缺 wrangler。先装并授权一次："
@@ -44,5 +44,7 @@ fi
 echo "体检通过：$COUNT 个文件，无超标单文件。"
 
 echo "== 上传 $DIST -> Pages 项目 $PROJECT =="
+# 项目不存在就创建（幂等：已存在时创建会失败，忽略即可）
+wrangler pages project create "$PROJECT" --production-branch=main >/dev/null 2>&1 || true
 # --commit-dirty：素材不入库导致工作区常年 dirty，跳过 wrangler 的这个提醒
 wrangler pages deploy "$DIST" --project-name="$PROJECT" --commit-dirty=true

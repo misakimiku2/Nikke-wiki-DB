@@ -22,7 +22,7 @@
 - **B5 404 页** ⏭ 决定不做：保留 A2 的通配回退，未知路径由 SPA 内的 404 Stub 页接管（二者取一，取 SPA）。
 - **部署脚本** ✅ `build/deploy_pages.sh`（构建 → 25 MiB/20000 文件体检 → `wrangler pages deploy dist`）。
 - **待办（需要人）**：① `wrangler login` 后跑一次部署，**以 wrangler 输出的 URL 为准**，
-  若不是 `https://nikke-db.pages.dev`，改 `build/prerender_seo.mjs` 的 `SITE_URL` 和 `build/site/robots.txt`
+  若不是 `https://nikke-db-wiki.pages.dev`，改 `build/prerender_seo.mjs` 的 `SITE_URL` 和 `build/site/robots.txt`
   两处后重新构建上传；② 提交 sitemap 到 Google Search Console。百度按放弃处理（境外托管 + 无备案）。
 
 原任务描述保留如下，字段名/做法细节仍可参考。

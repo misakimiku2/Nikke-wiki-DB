@@ -9,7 +9,7 @@
 // React 挂载后 #root 整棵被替换，用户无感；不要用 puppeteer 逐页渲染（2452 页太慢）。
 //
 // 域名只定义这一处（canonical / og:url / sitemap 都用它）：
-// 默认值按部署脚本的项目名假设，首次部署以 wrangler pages deploy 输出的 URL 为准，
+// 对应 Pages 项目名 nikke-db-wiki；若 wrangler 部署输出的实际 URL 不同，
 // 改这里或设环境变量 SITE_URL 后重新构建即可。
 import fs from 'node:fs'
 import path from 'node:path'
@@ -20,7 +20,7 @@ const ROOT = path.resolve(HERE, '..')
 const DIST = path.join(ROOT, 'dist')
 const PUB = path.join(ROOT, 'public')
 
-const SITE_URL = (process.env.SITE_URL || 'https://nikke-db.pages.dev').replace(/\/+$/, '')
+const SITE_URL = (process.env.SITE_URL || 'https://nikke-db-wiki.pages.dev').replace(/\/+$/, '')
 
 const readJSON = (p) => JSON.parse(fs.readFileSync(p, 'utf-8'))
 const esc = (s) =>

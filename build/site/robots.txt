@@ -1,9 +1,9 @@
 # 源文件在 build/site/（入库），由 web/vite.config.ts 的 site-files 插件拷到 public/。
 # 别直接改 public/robots.txt——那份是副本，每次 dev / build 都会被这里覆盖。
 #
-# 域名 https://nikke-db.pages.dev 与 build/prerender_seo.mjs 的 SITE_URL 常量对应；
+# 域名 https://nikke-db-wiki.pages.dev 与 build/prerender_seo.mjs 的 SITE_URL 常量对应；
 # 若首次部署后 wrangler 给出的实际 URL 不同，两处一起改，重新构建上传。
 User-agent: *
 Allow: /
 
-Sitemap: https://nikke-db.pages.dev/sitemap.xml
+Sitemap: https://nikke-db-wiki.pages.dev/sitemap.xml
