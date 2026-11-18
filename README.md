@@ -244,17 +244,43 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
 - 站姿模型的图集是 `pma:true`，转换规则与 CG 一致：只把 alpha=0 的像素 RGB 清零，
   lossless WebP + `exact=True`，不要二次预乘。
 
-## 部署
+## 部署与日常更新
 
-`dist/` 是纯静态产物，可整体上传到任意静态托管。注意两处体积限制：
+**站点已上线：https://nikke-db-wiki.pages.dev**（Cloudflare Pages 免费版，2026-11-19 首次部署）。
 
-- `public/data/search-index.json` 约 **29 MB**，超过 Cloudflare Pages 单文件 25 MiB 上限，
-  需要拆分或改走对象存储
-- `dist/` 约 **3.8 GB / 10700 个文件**，Cloudflare Pages 单项目上限 20000 文件，能放下但接近
-- 若 `npm run build` 因为无权限清空旧 `dist/` 失败（批量删除保护），可以构建到新目录再换名：
-  `cd web && npx vite build --outDir ../dist_new`，然后 `mv dist dist_old && mv dist_new dist`
+`dist/` 是纯静态产物；素材与产物都不进 git，所以不能用 Pages 的 Git 自动构建——
+部署方式是**本地构建后上传产物**，脚本一键完成：
 
-素材与产物都不进 git，所以 CI 里没有素材可构建——部署方式是**本地构建后上传产物**。
+```bash
+bash build/deploy_pages.sh   # 构建（tsc + vite + 预渲染 SEO 页）→ 体检 → wrangler 增量上传
+```
+
+- 上传按文件内容哈希去重：没改的文件不重传，日常小改动几十秒到几分钟传完
+- 体检会拦截单文件超 25 MiB（Pages 上限）和总数超 20000 的部署
+- 生效速度：HTML 立即生效；`/data/*.json` 有 5 分钟 CDN 缓存（见 `build/site/_headers`）
+- 前置（只需一次）：`npm install -g wrangler` + `wrangler login`；
+  项目名默认 `nikke-db-wiki`，可用 `NIKKE_PAGES_PROJECT` 环境变量覆盖
+- 域名常量在 `build/prerender_seo.mjs`（`SITE_URL`，影响 canonical / sitemap / og:url）
+  和 `build/site/robots.txt`（Sitemap 行）两处；换域名两处一起改
+
+**日常更新对照**（改完跑一次上面的部署命令即可）：
+
+| 想改什么 | 改哪里 |
+|---|---|
+| 角色 / 剧情 / CG 数据（游戏版本更新） | 对应 build / export 脚本重建 `public/`，流程见上文「构建」章节 |
+| 前端界面 / 文案 / 样式 | `web/src/` |
+| 站点根配置（robots / SPA 回退 / 缓存头） | `build/site/`（入库源文件，`public/` 里的是同步副本） |
+| 人工标注（模型覆盖 / CG 封面标记） | `build/spine_overrides.json` / `build/cg_flags.json` |
+| 详情页 SEO（标题 / 摘要 / OG 规则） | `build/prerender_seo.mjs` |
+| 首页标题与描述 | `web/index.html` |
+
+注意：更新内容不影响搜索引擎收录（Google 会自动抓新版），但**不要改 URL 结构**
+（`/characters/<id>`、`/story/<id>`、`/cg/<名>` 已进 sitemap）。
+
+历史备注：旧的单文件 `search-index.json`（29 MB 超 Pages 25 MiB 上限）已拆分为
+`public/data/search/{0..3}.json` + `manifest.json`；`dist/` 现约 17900 个文件，接近但低于 20000 上限。
+若 `npm run build` 因为无权限清空旧 `dist/` 失败（批量删除保护），可以构建到新目录再换名：
+`cd web && npx vite build --outDir ../dist_new`，然后 `mv dist dist_old && mv dist_new dist`
 
 为此留了两个约定：
 
