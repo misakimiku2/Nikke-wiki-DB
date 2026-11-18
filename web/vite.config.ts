@@ -132,17 +132,33 @@ function spineOverridesPlugin(): Plugin {
  * 部署时认的就是 public/ 里（再由 vite 拷到 dist/）的那一份。
  */
 function siteFilesPlugin(): Plugin {
+  /** 编辑器原子保存会先写 xxx.tmp.<pid>.<rand> 再改名，这类中间态文件要跳过 */
+  const isTemp = (f: string) => f.startsWith('.') || f.includes('.tmp.') || f.endsWith('~')
+
   const sync = () => {
     try {
       if (!fs.existsSync(SITE_SRC)) return
-      for (const f of fs.readdirSync(SITE_SRC)) {
-        const src = path.join(SITE_SRC, f)
-        if (!fs.statSync(src).isFile()) continue
-        fs.copyFileSync(src, path.join(SITE_DST, f))
+      // 用 withFileTypes 而不是逐个 statSync：临时文件在 readdir 与 stat 之间被改名/删除时，
+      // statSync 会抛 ENOENT，把整轮同步打断（上一次 dev server 就是被这个坑掉的）
+      for (const ent of fs.readdirSync(SITE_SRC, { withFileTypes: true })) {
+        if (!ent.isFile() || isTemp(ent.name)) continue
+        try {
+          fs.copyFileSync(path.join(SITE_SRC, ent.name), path.join(SITE_DST, ent.name))
+        } catch (e) {
+          console.warn(`[site-files] 跳过 ${ent.name}：`, e)
+        }
       }
     } catch (e) {
       console.warn('[site-files] 同步失败：', e)
     }
+  }
+  let timer: NodeJS.Timeout | undefined
+  const schedule = (server: { ws: { send: (m: unknown) => void } }) => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      sync()
+      server.ws.send({ type: 'full-reload' })
+    }, 80)
   }
   return {
     name: 'site-files',
@@ -154,10 +170,10 @@ function siteFilesPlugin(): Plugin {
       if (!fs.existsSync(SITE_SRC)) return
       server.watcher.add(SITE_SRC)
       server.watcher.on('change', (file) => {
-        if (path.resolve(file).startsWith(SITE_SRC + path.sep)) {
-          sync()
-          server.ws.send({ type: 'full-reload' })
-        }
+        if (path.resolve(file).startsWith(SITE_SRC + path.sep)) schedule(server)
+      })
+      server.watcher.on('unlink', (file) => {
+        if (path.resolve(file).startsWith(SITE_SRC + path.sep)) schedule(server)
       })
     },
   }
