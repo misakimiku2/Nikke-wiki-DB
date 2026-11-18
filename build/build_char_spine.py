@@ -71,10 +71,11 @@ def atlas_pages(text):
 def rescale_atlas_pages(atlas_text, src_folder, name="", verbose=True):
     """修正 atlas 声明尺寸与实际纹理尺寸不符的页（游戏资源错配）。两类失配两种修法：
 
-    - 实际 > 声明（如 c223_01/c912_00 声明 ~1790-1934 / 实际 2048²）：
-      整页纹理被等比放大到 2 的幂画布，内容与声明布局一致——把该页所有
-      bounds/offsets 按 实际/声明 缩放，并把 size 声明改成实际尺寸。
-      只缩坐标不重采样，保住纹理分辨率。
+    - 实际 > 声明（如 c094_01 青涩新生 1930 / 实际 2048²，c223_01/c912_00 声明
+      ~1790-1934 / 实际 2048²）：整页被等比放大到 2 的幂画布，内容跟着一起拉伸。
+      UV 是归一化的（bounds / 声明尺寸），采样时自动乘到实际像素，**atlas 原样不动**。
+      早先这里去缩放 bounds/offsets，结果部件的世界尺寸被放大（c094_01 多 6%，
+      裙摆/丝袜错位），rotate:90/270 的 region 取样区还会偏掉，边缘冒出黑色三角碎片。
     - 实际 < 声明（已知 c094_00 战术升级第二页 2048x1398 声明 / 2048x1024 实际，
       以及 c062/c194 战斗模型 2048² 声明 / 1024² 实际）：
       整页纹理被压扁（某条轴或两条轴按 实际/声明 缩短），坐标描述的仍是
@@ -124,24 +125,15 @@ def rescale_atlas_pages(atlas_text, src_folder, name="", verbose=True):
                       f" -> 拉伸回声明 {decl_w}x{decl_h}（坐标不变）", flush=True)
             out.append(block)
             continue
-        # 放大页：逐行缩放 bounds / offsets（保留原有行序与别的字段）
-        raw = block.splitlines()
-        for i, ln in enumerate(raw):
-            s = ln.strip()
-            if s.startswith("size:"):
-                raw[i] = re.sub(r"size:[\d,]+", f"size:{act_w},{act_h}", ln)
-            elif s.startswith("bounds:"):
-                vals = [int(v) for v in s[len("bounds:"):].split(",")]
-                vals = [round(vals[0]*sx), round(vals[1]*sy), round(vals[2]*sx), round(vals[3]*sy)]
-                raw[i] = re.sub(r"bounds:[\d,]+", "bounds:" + ",".join(map(str, vals)), ln)
-            elif s.startswith("offsets:"):
-                vals = [int(v) for v in s[len("offsets:"):].split(",")]
-                vals = [round(vals[0]*sx), round(vals[1]*sy), round(vals[2]*sx), round(vals[3]*sy)]
-                raw[i] = re.sub(r"offsets:[\d,]+", "offsets:" + ",".join(map(str, vals)), ln)
+        # 放大页：整页被等比放大到 2 的幂画布，内容跟着一起被拉伸。
+        # 归一化 UV（bounds / 声明尺寸）采样时会自动乘到实际像素上，坐标**不能**改：
+        # 改 bounds/offsets 会让世界尺寸整体放大（c094_01 青涩新生多出 6%，裙摆、丝袜错位），
+        # 而 rotate:90/270 的 region 页内 footprint 与被缩放的轴正好互换，取样区整个偏掉，
+        # 表现为边缘冒出的黑色三角碎片。atlas 原样保留即可。
         if verbose:
-            print(f"  [atlas fix] {name} {page_name}: {decl_w}x{decl_h} -> {act_w}x{act_h}"
-                  f" (scale {sx:.3f},{sy:.3f})", flush=True)
-        out.append("\n".join(raw))
+            print(f"  [atlas keep] {name} {page_name}: 声明 {decl_w}x{decl_h} / 实际 {act_w}x{act_h}"
+                  f"（坐标不动，UV 归一化已自洽）", flush=True)
+        out.append(block)
     return "".join(out), dict(stretch)
 
 
@@ -153,6 +145,37 @@ def _pma_zero_transparent(im):
     alpha = im.getchannel("A")
     zero_mask = alpha.point(lambda v: 255 if v == 0 else 0)
     return Image.composite(Image.new("RGBA", im.size, (0, 0, 0, 0)), im, zero_mask)
+
+
+def _stretch_page_straight(im, target_size):
+    """压扁页拉伸：在「直通 alpha」空间重采样，而不是直接在 PMA 数据上 resize。
+
+    压扁页（实际 < 声明，如 c094_00 第二页 2048x1024 / 声明 2048x1398）需要拉回声明
+    尺寸，UV 才对得上。但 PMA 贴图直接 resize 时，双线性会把图集空白处的透明黑混进
+    边缘像素的 RGB（RGB = 原色×A 再和 0 平均），拉回原尺寸后每个部件的边缘都残留一圈
+    比内部更暗/更灰的描边——叠在脸上就是五官周围那圈「白边」（暗边贴着亮的叠加层，
+    眼睛读成亮线）。
+
+    做法：先解预乘还原出颜色（色 × 1/A），让 Pillow 分别插值「颜色」和「alpha」，
+    再按 alpha 重新预乘。边缘因此保住皮肤本色，只剩 alpha 渐变，接缝自然消失。
+    """
+    from PIL import Image
+    import numpy as np
+
+    a = np.asarray(im).astype(np.float32)
+    alpha = a[..., 3:4] / 255.0
+    # 解预乘；alpha 极小的像素按 1/255 兜底，避免噪声被放大
+    color = np.clip(a[..., :3] / np.maximum(alpha, 1.0 / 255.0), 0, 255)
+    straight = Image.fromarray(
+        np.concatenate([color, a[..., 3:4]], axis=2).astype(np.uint8), "RGBA"
+    )
+    resized = straight.resize(target_size, Image.BILINEAR)
+    b = np.asarray(resized).astype(np.float32)
+    beta = b[..., 3:4] / 255.0
+    rgb = np.clip(b[..., :3] * beta, 0, 255)
+    return Image.fromarray(
+        np.concatenate([rgb, b[..., 3:4]], axis=2).astype(np.uint8), "RGBA"
+    )
 
 
 def _pma_clamp(im):
@@ -226,9 +249,11 @@ def convert(job, force=False, size=0):
                 im = im.convert("RGBA")
                 resized = False
                 if old_page in stretch_pages:
-                    # 压扁页：拉伸回 atlas 声明尺寸，UV 才能逐像素对齐
+                    # 压扁页：拉伸回 atlas 声明尺寸，UV 才能逐像素对齐。
+                    # 必须在「直通 alpha」空间重采样，见 _stretch_page_straight：
+                    # 直接在 PMA 数据上 resize 会把透明黑混进边缘，留下五官周围的白边。
                     im = _pma_zero_transparent(im)
-                    im = im.resize(stretch_pages[old_page], Image.LANCZOS)
+                    im = _stretch_page_straight(im, stretch_pages[old_page])
                     resized = True
                 if size and im.width > size:
                     im = im.resize((size, size), Image.LANCZOS)
