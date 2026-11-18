@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const FLAGS = path.resolve(HERE, '../build/cg_flags.json')
+const OVERRIDES_SRC = path.resolve(HERE, '../build/spine_overrides.json')
+const OVERRIDES_DST = path.resolve(HERE, '../public/data/spine_overrides.json')
 const NOTE =
   '人工标注：哪些 CG 其实不是剧情画面（活动封面 / 主视觉 / 标题图）。' +
   '只影响 CG 图鉴的展示标签，不影响剧情阅读器的 CG 关联。' +
@@ -88,8 +90,41 @@ function cleanDistAssets(): Plugin {
   }
 }
 
+/**
+ * 按模型覆盖的 Spine 渲染配置（spine_overrides.json）是人工维护的，放在 build/ 里入库；
+ * public/ 整个被 .gitignore（6.4G 素材），所以每次 dev / build 前把它同步一份进去，
+ * 前端仍按 /data/spine_overrides.json 取，nikke_extract 的静态渲染脚本也不用改路径。
+ * 改 build/spine_overrides.json 会即时同步并刷新页面。
+ */
+function spineOverridesPlugin(): Plugin {
+  const sync = () => {
+    try {
+      fs.mkdirSync(path.dirname(OVERRIDES_DST), { recursive: true })
+      fs.copyFileSync(OVERRIDES_SRC, OVERRIDES_DST)
+    } catch (e) {
+      console.warn('[spine-overrides] 同步失败：', e)
+    }
+  }
+  return {
+    name: 'spine-overrides',
+    // dev 与 build 都会走到，且早于 publicDir 被读取
+    configResolved() {
+      sync()
+    },
+    configureServer(server) {
+      server.watcher.add(OVERRIDES_SRC)
+      server.watcher.on('change', (file) => {
+        if (path.resolve(file) === OVERRIDES_SRC) {
+          sync()
+          server.ws.send({ type: 'full-reload' })
+        }
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), cleanDistAssets()],
+  plugins: [react(), cgFlagsPlugin(), spineOverridesPlugin(), cleanDistAssets()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',

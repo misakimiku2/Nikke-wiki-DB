@@ -351,7 +351,8 @@ def main():
                 done_mb = sum(x.get("bytes", 0) for x in ok) / 1048576
                 print(f"  {i}/{len(jobs)}  {done_mb:.0f} MB  {time.time()-t0:.0f}s", flush=True)
 
-    names = sorted({r["name"] for r in ok})
+    built = sorted({r["name"] for r in ok})
+    names = built
     # 部分重建（--only/--limit）时合并旧索引，避免把全量列表覆盖成本轮子集
     partial = bool(args.only or args.limit)
     old_meta = {}
@@ -408,6 +409,14 @@ def main():
     print(f"  索引 {META}")
     for e in errors[:8]:
         print("  !", e)
+
+    # 素材不入库，留一份构建上下文（游戏版本指纹 + commit），排障时对着看
+    try:
+        from build_meta import write_meta
+        write_meta(kind=args.kind, only=args.only, models=len(built), pages=pages,
+                   note=f"本轮构建 {len(jobs)} 个模型，失败 {len(errors)}")
+    except Exception as e:  # 元信息写不出来不该让构建失败
+        print("  ! build-meta 写入失败：", e)
 
 
 if __name__ == "__main__":

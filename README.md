@@ -14,8 +14,8 @@ React 18 + Vite + TypeScript 前端，数据层是预生成的 SQLite + JSON，�
 | 目录 | 内容 |
 |---|---|
 | `web/` | 前端源码。`src/` 下有 8 个页面路由组件、`components/` 与 `theme.ts` |
-| `build/` | 数据构建脚本（Python），把上游解包结果压成站点可用的 DB 与 JSON |
-| `public/` | **不入库**。构建产物：CG 三档图、角色立绘 / 头像、Spine 模型、`data/*.json` |
+| `build/` | 数据构建脚本（Python）+ **人工维护的配置**（`cg_flags.json`、`spine_overrides.json`、`ref_characters.json`），把上游解包结果压成站点可用的 DB 与 JSON |
+| `public/` | **不入库**，全部是生成物：CG 三档图、角色立绘 / 头像、Spine 模型、`data/*.json`、`build-meta.json` |
 | `data/nikke.db` | **不入库**。`build_db.py` 生成的 SQLite（约 138 MB） |
 | `dist/` | **不入库**。`npm run build` 输出，约 2.1 GB，直接用于静态托管 |
 
@@ -165,12 +165,20 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
   互相覆盖，只剩背景（历史踩坑）。其余 10 个背景段多为纯色板/特效，未逐一验证叠加观感，
   暂只播角色段；要新加照上面方式先离线渲染确认。
   ⚠️ 素材不入库，重建见 `nikke_extract` 的 `export_char_cutins.py` / `build_char_spine.py --kind skillcut`。
-- **图集尺寸错配自动修正**：少数模型的 atlas 声明尺寸与 bundle 里实际纹理不符，
-  最典型是贝斯蒂:战术升级 c094 第二页声明 2048×1398、实际只有 2048×1024——region 坐标按
-  1398 排布但 UV 按 1024 归一化，导致脸部糊上眼睛皮肤碎片、贴图错位、后脑空缺。
-  `build_char_spine.py` 的 `rescale_atlas_pages()` 在构建时检测每页比例失配 >5% 的，
-  按比例缩放该页所有 bounds/offsets 并改写 size 声明（2~3px 的 2 的幂取整差异不动）。
-  改动后需 `force` 重建受影响的模型（脚本会打印 `[atlas fix]` 日志）。
+- **图集尺寸错配的两种情形**（`build_char_spine.py` 的 `rescale_atlas_pages()`，
+  比例失配 >5% 才介入，2~3px 的 2 的幂取整差异不动）：
+  - **实际 < 声明（压扁页）**：如 c094 第二页声明 2048×1398、实际只有 2048×1024。
+    坐标按声明排布，所以必须把贴图拉伸回声明尺寸，atlas 原样保留（脚本打印 `[atlas fix]`）。
+    拉伸要在「直通 alpha」空间做（`_stretch_page_straight`：解预乘 → 颜色/alpha 分别插值 →
+    重新预乘）；直接在 PMA 数据上 resize 会把透明黑混进边缘 RGB，拉回后每个部件边缘残留
+    一圈暗描边，紧贴偏亮的五官叠加层就成了眼睛/鼻子周围那圈白边。
+  - **实际 > 声明（放大页）**：如 c094_01 青涩新生声明 1930、实际 2048²，整页被等比放大到
+    2 的幂画布、内容跟着拉伸。归一化 UV（bounds ÷ 声明尺寸）采样时会自动乘到实际像素，
+    **atlas 一个字都不能改**（脚本打印 `[atlas keep]`）。早先这里按比例缩放 bounds/offsets，
+    部件世界尺寸会整体放大（c094_01 多 6%，裙摆/丝袜错位），rotate:90/270 的 region
+    取样区还会偏掉、采到隔壁黑色 sprite，表现为边缘冒出的黑色三角碎片。
+  改完要 `--force` 重建受影响的模型：站姿 c094_01/c200_00/c223_01/c230_00/c840_00/
+  c840_01/c912_00，战斗 c150_aim_00/c150_aim_02/c150_cover_01，大招 c082_00_skillcut。
 - **静态立绘一律用官方图**：`public/charhd` 是旧管线把站姿模型渲染成单帧的合成图，
   姿势/表情/上色都和官方立绘对不上（阿妮斯那张最明显），页面已不再引用，仅保留作归档。
 - **好感剧情（个人剧情 + 咨询）**：详情页底部 `storybox` 区块，按角色内容显示
@@ -247,6 +255,16 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
   `cd web && npx vite build --outDir ../dist_new`，然后 `mv dist dist_old && mv dist_new dist`
 
 素材与产物都不进 git，所以 CI 里没有素材可构建——部署方式是**本地构建后上传产物**。
+
+为此留了两个约定：
+
+- **素材来源可追溯**：每次跑 `build_char_spine.py` / `build_spine_models.py` 会重写
+  `public/build-meta.json`（构建时间、git 分支/commit/是否有未提交改动、游戏资源池
+  指纹、上一轮构建了哪些模型）。部署后直接访问 `/build-meta.json` 就能核对
+  「线上这份素材是哪来的」，出问题时贴这个文件比贴截图有用。也可以 `python build/build_meta.py` 手动刷新。
+- **人工配置不放在 `public/`**：`spine_overrides.json` 已移到 `build/`（和 `cg_flags.json` 一致），
+  vite 在 dev / build 前由 `spineOverridesPlugin` 拷一份到 `public/data/`，改完即时同步并刷新页面。
+  前端仍按 `/data/spine_overrides.json` 取，`nikke_extract` 的静态渲染脚本读的也是这份产物，路径不用改。
 
 ## 备注
 

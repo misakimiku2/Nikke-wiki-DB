@@ -181,6 +181,13 @@ def main():
     for e in errors[:6]:
         print("  !", e)
 
+    # 素材不入库，留一份构建上下文（游戏版本指纹 + commit），排障时对着看
+    try:
+        from build_meta import write_meta
+        write_meta(kind="spine", models=len(names), note=f"CG/场景 Spine 素材，失败 {len(errors)}")
+    except Exception as e:  # 元信息写不出来不该让构建失败
+        print("  ! build-meta 写入失败：", e)
+
 
 if __name__ == "__main__":
     main()
