@@ -102,6 +102,11 @@ python build/export_web.py                # → public/data        其余聚合 
 node build/export_char_messages.mjs       # → public/data/char_messages.json 角色巴拉短信（依赖 characters.json）
 node build/export_story_sms.mjs           # → public/data/story_sms.json 剧情内嵌短信映射（依赖 story/<id>.json）
 
+# 4.5 剧情卡封面（必须排在 export_web.py 之后：它会写回 story_index.json 的 cover）
+python build/build_story_covers.py            # 评分选图 + 生成 public/cover/
+python build/build_story_covers.py --report   # 只看选图会怎么变，不写文件
+python build/build_story_covers.py --only 1,2 # 只重选指定单元
+
 # 5. 自检与前端构建
 python build/verify.py                    # 校验各产物是否齐备
 cd web && npm run build                   # → dist/

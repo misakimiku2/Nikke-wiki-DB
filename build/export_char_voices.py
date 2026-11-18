@@ -72,8 +72,29 @@ CN_ROOT = Path(os.environ.get(
     r"C:/Program Files/GAME/胜利女神：新的希望(2002017)/nikke_Data/runtime_data/saus/zh_cn",
 ))
 CN_AB = CN_ROOT / "ab"
+# 国服日语池：客户端按语音语言切换整个池子，切到日语时才有（结构同 zh_cn）
+CN_JA_AB = CN_ROOT.parent / "ja" / "ab"
 # 国服自己的翻译，和语音一起使用（国际服的 zh-CN 文本与国服配音可能不一致）
 CN_LOCALE = CN_ROOT.parent / "saus" / "lss" / "Locale_Character.lss"
+
+# ---- 表外语音（2026-11 国服 G23.x 聊斋版本引入）----
+# 国服专属皮肤的语音套组：国际服语音分组表（CharacterVoiceGroupTable）里没有，
+# 按本体角色同后缀条目克隆生成记录；音频来自国服 zh/ja 池。
+# 注意：c010_01 白色诺言不在列——实测其 42 条音频与本体拉毗逐字节相同
+# （国服皮肤包只是重打包本体录音，这也是国际服表从未收录它的原因），挂上去纯属重复。
+CN_SKIN_SETS = ["c082_80", "c233_80", "c260_80"]
+CN_SKIN_CHAR = {"c082_80": 82, "c233_80": 233, "c260_80": 260}
+CN_SKIN_LABELS = {
+    "c082_80": "黄发垂髫",
+    "c233_80": "宴桃源",
+    "c260_80": "蝶恋花语",
+}
+# 国服先行角色（整体不在国际服数据里）：ref = 借用标题/类别的参照角色前缀。
+# 需要先把这些角色加进 char_images.json（public/data）才能挂到站点。
+CN_FIRST_CHARS: list[dict] = [
+    # {"prefix": "c8004", "cid": 8004, "ref": "c102"},   # 婴宁
+    # {"prefix": "c8005", "cid": 8005, "ref": "c102"},   # 画皮
+]
 
 sys.path.insert(0, str(SRC / "scripts"))
 import export_cg_v2 as v2  # noqa: E402
@@ -110,6 +131,7 @@ CATS = [
     ("upgrade", "获得与成长"),
     ("field", "野外"),
     ("battle", "战斗"),
+    ("title", "登录"),
 ]
 
 # 每条语音之间插入的静音。
@@ -158,6 +180,8 @@ def normalize_wav(raw: bytes) -> tuple[bytes, float]:
 
 
 def cat_of(desc: str) -> str:
+    if desc.startswith("titlecall"):
+        return "title"
     if desc.startswith("lobby_"):
         return "lobby"
     if desc.startswith("outpost_"):
@@ -196,6 +220,51 @@ def parse_voice_table() -> list[dict]:
             "cat": cat_of(short),
             "prefix": VOICE_RE.match(vid).group(1),
         })
+    return out
+
+
+def synthesize_records(recs: list[dict]) -> list[dict]:
+    """表外语音合成：国服皮肤套组（克隆本体同后缀条目）+ 全员登录语音（titlecall）。
+
+    titlecall 官方不走语音分组表（引擎按 cXXX_titlecall_1 直取），两边 Locale 表
+    也长期没有文本键，因此合成记录仅有音频无文本。合成记录的音频仍需在池里
+    找得到，找不到会被可用性过滤自然丢弃。
+    """
+    out = list(recs)
+    by_prefix: dict[str, dict[str, dict]] = {}
+    for r in recs:
+        by_prefix.setdefault(r["prefix"], {})[r["id"][len(r["prefix"]) + 1:]] = r
+
+    def add(prefix: str, suffix: str, base: dict | None = None,
+            title: str | None = None, cat: str | None = None) -> None:
+        vid = f"{prefix}_{suffix}"
+        if any(r["id"] == vid for r in out):
+            return
+        # 克隆记录只继承 desc（标题由 main 里按 desc 查 Locale_System 得出，与本体一致）；
+        # 显式给定 title 的（登录语音等）写入 record，优先于 desc 推导。
+        rec = {
+            "order": len(out),
+            "desc": base["desc"] if base else f"synthetic_{suffix}",
+            "id": vid,
+            "loc": vid,
+            "cat": cat or (base["cat"] if base else "battle"),
+            "prefix": prefix,
+        }
+        if title:
+            rec["title"] = title
+        out.append(rec)
+
+    for pref in CN_SKIN_SETS:
+        base_pref = pref.rsplit("_", 1)[0]
+        for suffix, base in sorted(by_prefix.get(base_pref, {}).items()):
+            add(pref, suffix, base=base)
+    for pref in sorted(set(by_prefix) | set(CN_SKIN_SETS)):
+        add(pref, "titlecall_1", title="登录", cat="title")
+    for ch in CN_FIRST_CHARS:
+        ref = by_prefix.get(ch.get("ref", ""), {})
+        for suffix in sorted(ref):
+            add(ch["prefix"], suffix, title=ref[suffix]["title"], cat=ref[suffix]["cat"])
+        add(ch["prefix"], "titlecall_1", title="登录", cat="title")
     return out
 
 
@@ -277,9 +346,9 @@ def scan_audio(voice_ids: set[str]) -> dict[str, tuple[str, int]]:
     return found
 
 
-def scan_audio_cn(voice_ids: set[str]) -> dict[str, tuple[str, int]]:
-    """国服中文语音 ID -> (nab 路径, AudioClip path_id)。"""
-    files = sorted(CN_AB.glob("*.nab")) if CN_AB.exists() else []
+def scan_audio_cn(voice_ids: set[str], root: Path = CN_AB) -> dict[str, tuple[str, int]]:
+    """国服语音池（nab）扫描：语音 ID -> (nab 路径, AudioClip path_id)。"""
+    files = sorted(root.glob("*.nab")) if root.exists() else []
     found: dict[str, tuple[str, int]] = {}
     t0 = time.time()
     for n, p in enumerate(files, 1):
@@ -429,6 +498,7 @@ def main():
 
     print("1/4 解析语音表…")
     recs = parse_voice_table()
+    recs = synthesize_records(recs)
     print(f"  {len(recs)} 条语音记录")
 
     print("2/4 读取本地化文本…")
@@ -451,19 +521,33 @@ def main():
         r["ja"] = txt.get("ja", "")
         r["cn"] = cn_lines.get(r["loc"], "")
         d = sysdesc.get(r["desc"], {})
-        r["title"] = d.get("zh") or r["desc"].replace("voice_description_", "")
+        # 合成记录可能已带标题（登录语音等表外条目），优先保留
+        r["title"] = d.get("zh") or r.get("title") or r["desc"].replace("voice_description_", "")
+    # 国服先行内容没有国际服文本时，直接用国服文本作为展示文本
+    for r in recs:
+        if not r["zh"] and r.get("cn"):
+            r["zh"] = r["cn"]
 
     def cv_pair(cid: int) -> tuple[str | None, str | None]:
         ja = clean_cv((lines.get(f"{cid}_cv_ja") or {}).get("zh"))
         cn = clean_cv(cn_lines.get(f"{cid}_cv_zh_cn"))
         return ja, cn
 
-    print("3/4 扫描日语语音包…")
+    print("3/4 扫描语音包…")
     voice_ids = {r["id"] for r in recs}
     audio = scan_audio(voice_ids)
+    # 国服池：中文（zh_cn）与日语（ja，客户端切到日语语音时才在）。
+    # 国服先行/专属内容的音频只存在于国服池，国际服池找不到的 ID 在这里补上。
+    cn_audio = scan_audio_cn(voice_ids) if not args.no_cn else {}
+    cn_ja_audio = scan_audio_cn(voice_ids, CN_JA_AB) if CN_JA_AB.exists() else {}
 
     _, resolve = char_map()
-    chars = sorted({resolve(r["prefix"]) for r in recs if resolve(r["prefix"]) is not None})
+
+    def resolve_any(pref: str) -> int | None:
+        r = resolve(pref)
+        return r if r is not None else CN_SKIN_CHAR.get(pref)
+
+    chars = sorted({resolve_any(r["prefix"]) for r in recs if resolve_any(r["prefix"]) is not None})
     if args.only:
         want = {int(x) for x in args.only.split(",") if x.strip()}
         chars = [c for c in chars if c in want]
@@ -472,8 +556,9 @@ def main():
     char_set = set(chars)
     print(f"  目标角色 {len(chars)} 个")
 
-    # 只保留有音频、且角色页存在的记录
-    usable = [r for r in recs if r["id"] in audio and resolve(r["prefix"]) in char_set]
+    # 只保留有音频、且角色页存在的记录（仅中文可用的表外条目也放行，见下方分组）
+    usable = [r for r in recs if (r["id"] in audio or r["id"] in cn_ja_audio or r["id"] in cn_audio)
+              and resolve_any(r["prefix"]) in char_set]
     print(f"  可用语音 {len(usable)} 条")
 
     ffmpeg = ffmpeg_exe()
@@ -484,7 +569,8 @@ def main():
     # 按 bundle 聚合，一个 bundle 只解一次
     by_bundle: dict[str, list[dict]] = {}
     for r in usable:
-        by_bundle.setdefault(audio[r["id"]][0], []).append(r)
+        if r["id"] in audio:
+            by_bundle.setdefault(audio[r["id"]][0], []).append(r)
 
     cat = sqlite3.connect(v2.manifest_path("ja"))
     table = v2.cidx_map("ja")
@@ -526,11 +612,31 @@ def main():
     cat.close()
     print(f"  写出 {len(raw_paths)} 个 WAV，{time.time()-t0:.0f}s")
 
+    # 国服 ja 池补充提取（国际服没有的音频：国服专属皮肤套组等）
+    cn_ja_records = [r for r in usable if r["id"] not in raw_paths and r["id"] in cn_ja_audio]
+    if cn_ja_records:
+        print(f"  国服 ja 池补充提取 {len(cn_ja_records)} 条…")
+        w, durs = extract_cn_wavs(cn_ja_records,
+                                  {r["id"]: cn_ja_audio[r["id"]] for r in cn_ja_records}, tmp)
+        for r in cn_ja_records:
+            if r["id"] in w:
+                raw_paths[r["id"]] = w[r["id"]]
+                r["dur"] = durs.get(r["id"], 0.0)
+        print(f"  合计 {len(raw_paths)} 个日语 WAV")
+
     # 按角色聚合，保留表内顺序
     grouped: dict[int, list[dict]] = {}
     for r in usable:
-        cid = resolve(r["prefix"])
-        if cid is None or r["id"] not in raw_paths or r.get("dur", 0) <= 0:
+        cid = resolve_any(r["prefix"])
+        if cid is None:
+            continue
+        if r["id"] not in raw_paths:
+            # 仅中文可用的表外条目（登录语音国服先配、国际服池无对应日语）：
+            # 日语时间轴上零宽占位（s == e），前端日配模式按 e > s 过滤跳过
+            if r["id"] not in cn_audio or not is_cn_dub(*cv_pair(cid)):
+                continue
+            r["dur"] = 0.0
+        elif r.get("dur", 0) <= 0:
             continue
         grouped.setdefault(cid, []).append(r)
     for cid in grouped:
@@ -539,7 +645,8 @@ def main():
         last = len(grouped[cid]) - 1
         for i, r in enumerate(grouped[cid]):
             r["start"] = t
-            t += r["dur"] + (GAP if i < last else 0.0)
+            # 零宽占位条目不占雪碧图空间，也不插静音
+            t += r["dur"] + (GAP if i < last and r["dur"] > 0 else 0.0)
 
     # 同角色多套皮肤各有独立语音时，标出来源皮肤，避免「在大厅点击时I」重复出现
     art = {}
@@ -547,6 +654,8 @@ def main():
         art = json.loads(CHAR_ART.read_text(encoding="utf-8"))
 
     def skin_label(pref: str) -> str:
+        if pref in CN_SKIN_LABELS:
+            return CN_SKIN_LABELS[pref]
         info = art.get(pref) or art.get(pref + "_00") or {}
         return info.get("n") or pref
 
@@ -570,16 +679,15 @@ def main():
                 payload[cid] = item
 
     # 国服中文语音：能对上多少提取多少，缺的角色保持纯日语
-    if not args.no_cn and CN_AB.exists():
-        print("\n附加：扫描国服中文语音包…")
-        cn_audio = scan_audio_cn({r["id"] for r in usable})
+    if not args.no_cn and cn_audio:
+        print("\n附加：国服中文语音提取…")
         cn_records = [r for r in usable if r["id"] in cn_audio]
         cn_wavs, cn_durs = extract_cn_wavs(cn_records, cn_audio, tmp)
         cn_grouped: dict[int, list[dict]] = {}
         for r in usable:
             if r["id"] not in cn_wavs or cn_durs.get(r["id"], 0) <= 0:
                 continue
-            cid = resolve(r["prefix"])
+            cid = resolve_any(r["prefix"])
             if cid is None or str(cid) not in payload:
                 continue
             ja_cv, cn_cv = cv_pair(cid)

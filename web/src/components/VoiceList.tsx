@@ -43,7 +43,9 @@ function cacheBuffer(key: string, buf: AudioBuffer) {
 }
 
 const hasZhClip = (v: CharVoice) => v.zs != null && v.ze != null
-const cnCatCount = (c: CharVoiceCat) => c.v.reduce((a, v) => a + (hasZhClip(v) ? 1 : 0), 0)
+// 登录语音（titlecall）部分角色只有中文音频（国服先配、国际服池无对应日语），
+// 这类条目 s == e == 0，日配模式下不可播放，列表与计数都要跳过。
+const hasJaClip = (v: CharVoice) => v.e > v.s
 
 export default function VoiceList({
   data,
@@ -76,11 +78,37 @@ export default function VoiceList({
   const missingLove = missingVoices.filter((v) => /_Lobby_(?:Touch|Stay)_Love_/.test(v.id)).length
   const currentCv = lang === 'zh' ? data.cvz : data.cvj
 
+  // 皮肤筛选：g 有值的条目来自独立皮肤的语音套组。与类别同一行内单选：
+  // 选皮肤时清空类别，选类别时清空皮肤。
+  const skinOptions = useMemo(() => {
+    const seen: string[] = []
+    for (const c of data.cats) for (const v of c.v) if (v.g && !seen.includes(v.g)) seen.push(v.g)
+    return seen
+  }, [data])
+  const [skin, setSkin] = useState<string | null>(null)
+
   const voices = useMemo(() => {
-    const pick = (list: CharVoice[]) => (lang === 'zh' ? list.filter(hasZhClip) : list)
-    if (cat === 'all') return pick(data.cats.flatMap((c) => c.v))
-    return pick(data.cats.find((c) => c.k === cat)?.v ?? [])
-  }, [data, cat, lang])
+    const vis = lang === 'zh' ? hasZhClip : hasJaClip
+    const flat = data.cats.flatMap((c) => c.v)
+    if (skin) return flat.filter((v) => vis(v) && v.g === skin)
+    if (cat !== 'all') return (data.cats.find((c) => c.k === cat)?.v ?? []).filter(vis)
+    return flat.filter(vis)
+  }, [data, cat, skin, lang])
+  const jaTotal = useMemo(
+    () => data.cats.reduce((a, c) => a + c.v.filter(hasJaClip).length, 0),
+    [data],
+  )
+
+  // 每个 chip 的计数 = 点击它之后会看到的条数
+  const flatVoices = data.cats.flatMap((c) => c.v)
+  const chipCount = (list: CharVoice[]) => list.filter(lang === 'zh' ? hasZhClip : hasJaClip).length
+  const allCount = chipCount(flatVoices)
+  const catChips = data.cats
+    .map((c) => ({ k: c.k, n: c.n, count: chipCount(c.v) }))
+    .filter((c) => c.count > 0)
+  const skinChips = skinOptions
+    .map((g) => ({ g, count: chipCount(flatVoices.filter((v) => v.g === g)) }))
+    .filter((c) => c.count > 0)
 
   const clipOf = (v: CharVoice, l: 'zh' | 'ja'): Clip => {
     if (l === 'zh' && data.fz && v.zs != null && v.ze != null) {
@@ -239,20 +267,30 @@ export default function VoiceList({
     <div className="voice">
       <div className="voice-bar">
         <div className="voice-cats">
-          <button className={cat === 'all' ? 'on' : ''} onClick={() => { setCat('all'); stop() }}>
-            全部 <b>{lang === 'zh' ? (data.zc ?? 0) : data.n}</b>
+          <button
+            className={cat === 'all' && !skin ? 'on' : ''}
+            onClick={() => { setCat('all'); setSkin(null); stop() }}
+          >
+            全部 <b>{allCount}</b>
           </button>
-          {data.cats
-            .filter((c) => lang === 'ja' || cnCatCount(c) > 0)
-            .map((c) => (
-              <button
-                key={c.k}
-                className={cat === c.k ? 'on' : ''}
-                onClick={() => { setCat(c.k); stop() }}
-              >
-                {c.n} <b>{lang === 'zh' ? cnCatCount(c) : c.v.length}</b>
-              </button>
-            ))}
+          {catChips.map((c) => (
+            <button
+              key={c.k}
+              className={!skin && cat === c.k ? 'on' : ''}
+              onClick={() => { setCat(c.k); setSkin(null); stop() }}
+            >
+              {c.n} <b>{c.count}</b>
+            </button>
+          ))}
+          {skinChips.map((s) => (
+            <button
+              key={s.g}
+              className={skin === s.g ? 'on' : ''}
+              onClick={() => { setSkin(s.g); setCat('all'); stop() }}
+            >
+              {s.g} <b>{s.count}</b>
+            </button>
+          ))}
         </div>
         <div className="voice-opts">
           <div className="voice-langs">
@@ -269,7 +307,7 @@ export default function VoiceList({
               onClick={() => changeLang('ja')}
               title="日语配音"
             >
-              日配 <b>{data.n}</b>
+              日配 <b>{jaTotal}</b>
             </button>
           </div>
           <button

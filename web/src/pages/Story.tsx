@@ -102,7 +102,13 @@ export default function Story() {
               <div className="story-cover">
                 {u.cover
                   ? <img src={`/cover/${u.cover}.webp`} alt="" loading="lazy" />
-                  : <span className="story-cover-fallback">{u.title.slice(0, 2)}</span>}
+                  : (
+                    /* 没有可用 CG 的剧情用排印式封面兜底：首字描边水印。
+                       标题、句数已在卡片正文里，这里不再重复。 */
+                    <span className="story-cover-fallback" aria-hidden>
+                      <span className="scf-mark">{u.title.slice(0, 1)}</span>
+                    </span>
+                  )}
                 <span className="story-no">
                   {u.chapter !== null && u.chapter !== undefined
                     ? String(u.chapter).padStart(2, '0')

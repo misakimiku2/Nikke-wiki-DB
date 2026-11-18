@@ -38,20 +38,26 @@ function resolveCg(list: StoryCgRef[]): Frame {
 }
 
 /**
- * 阅读 CG 背景：右侧大区域，四边渐变遮罩。
+ * 阅读 CG 背景：桌面在右侧大区域，移动端（≤980px）铺满整个阅读区。
  * 透明度完全由滚动进度驱动（无定时动画）——滚轮往下滚渐显、往回滚渐隐。
  * bg 层 + 前景层双层合成；动态 CG 的前景层在静态合成图加载后换成实时 Spine 模型。
  * 点击背景跳到 CG 二级查看页。
  *
  * 显示区间按「行」切分：段落在第 N 行切到某张 CG 时，这张图从该行一直显示到
  * 下一次切换（或本段结束），而不是整段都顶着一张图。
+ *
+ * 容器不透明度 = JS 写入的滚动进度 --cov × CSS 上限 --rb-max：
+ * 移动端背景铺在正文后面，上限压得更低保证可读性（数值见 index.css）。
  */
 function StoryCgBg({
   frames,
   onOpen,
+  btnGate,
 }: {
   frames: Frame[]
   onOpen: (name: string) => void
+  /** 额外显示门槛（移动端 HUD 收起时为 false），paint 每帧读 ref */
+  btnGate?: React.MutableRefObject<boolean>
 }) {
   const btnRef = useRef<HTMLButtonElement>(null)
   const fgSlots = [useRef<HTMLImageElement>(null), useRef<HTMLImageElement>(null)]
@@ -107,8 +113,8 @@ function StoryCgBg({
 
     const FADE = 0.55 // 渐变区占视口高度的比例
     // 两层（背景图 + 人物切片）各自必须保持不透明，否则会「透过人物看到背景」。
-    // 整体淡入淡出只施加在合成后的容器上。
-    const MAX_ALPHA = 0.55
+    // 整体淡入淡出只施加在合成后的容器上；不透明度上限 --rb-max 按断点/主题在 CSS 里定，
+    // JS 只负责写入 0~1 的滚动进度（--cov），移动端正文压在图上，上限比桌面低得多。
 
     // 双槽交叉换图：写入非活动槽，返回新活动槽下标
     const swap = (slots: typeof fgSlots, active: React.MutableRefObject<number>, hash: string) => {
@@ -155,8 +161,7 @@ function StoryCgBg({
       }
 
       // 合成后的统一不透明度：两层先不透明地叠好，再整体淡入/淡出
-      const alpha = Math.min(1, bestCov) * MAX_ALPHA
-      if (layersRef.current) layersRef.current.style.opacity = String(alpha)
+      if (layersRef.current) layersRef.current.style.setProperty('--cov', String(Math.min(1, bestCov)))
 
       const btn = btnRef.current
       const setFg = (hash: string | null, hasSpine: boolean, name: string | null) => {
@@ -183,7 +188,10 @@ function StoryCgBg({
           if (name) img.dataset.cg = name
         }
         if (btn) {
-          btn.style.opacity = hash ? String(Math.min(1, bestCov)) : '0'
+          const show = !!hash && bestCov > 0.01 && (btnGate?.current ?? true)
+          btn.style.opacity = show ? String(Math.min(1, bestCov)) : '0'
+          // 淡出状态下别再吃点击（移动端按钮浮在正文之上，透明时不能挡操作）
+          btn.style.pointerEvents = show ? 'auto' : 'none'
           if (name) btn.dataset.cg = name
         }
         if (!hash) curFg.current = null
@@ -203,7 +211,7 @@ function StoryCgBg({
       if (!frame) {
         setFg(null, false, null)
         setBg(null, null)
-        if (btn) btn.style.opacity = '0'
+        if (btn) { btn.style.opacity = '0'; btn.style.pointerEvents = 'none' }
         if (spineLayerRef.current) spineLayerRef.current.style.opacity = '0'
         return
       }
@@ -230,24 +238,29 @@ function StoryCgBg({
   }, [])
 
   return (
-    <div className="reader-bg">
-      {/* 渐隐 mask 只作用于画面层，右上角按钮保持完整可见。
-          容器统一控制不透明度，内部两层始终不透明，避免人物透出背景。 */}
-      <div className="reader-bg-layers" ref={layersRef} style={{ opacity: 0 }}>
-        {[0, 1].map((i) => (
-          <img key={`b${i}`} ref={bgSlots[i]} alt="" className="slot slot-bg"
-            onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg) onOpen(cg) }} />
-        ))}
-        {[0, 1].map((i) => (
-          <img key={`f${i}`} ref={fgSlots[i]} alt="" className="slot slot-fg"
-            onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg) onOpen(cg) }} />
-        ))}
-        {spineName && (
-          <div key={spineKey} ref={spineLayerRef} className="slot-spine" style={{ opacity: 0 }}>
-            <SpinePlayer name={spineName} controls={false} fitMode="cover" onReady={onModelReady} />
-          </div>
-        )}
+    <>
+      <div className="reader-bg">
+        {/* 渐隐 mask 只作用于画面层。容器统一控制不透明度，内部两层始终不透明，
+            避免人物透出背景。 */}
+        <div className="reader-bg-layers" ref={layersRef} style={{ '--cov': 0 } as React.CSSProperties}>
+          {[0, 1].map((i) => (
+            <img key={`b${i}`} ref={bgSlots[i]} alt="" className="slot slot-bg"
+              onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg) onOpen(cg) }} />
+          ))}
+          {[0, 1].map((i) => (
+            <img key={`f${i}`} ref={fgSlots[i]} alt="" className="slot slot-fg"
+              onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg) onOpen(cg) }} />
+          ))}
+          {spineName && (
+            <div key={spineKey} ref={spineLayerRef} className="slot-spine" style={{ opacity: 0 }}>
+              <SpinePlayer name={spineName} controls={false} fitMode="cover" onReady={onModelReady} />
+            </div>
+          )}
+        </div>
       </div>
+      {/* 查看按钮必须挂在 .reader-bg 之外：.reader-bg 是 z-index 0 且 pointer-events:none
+          的层叠上下文，移动端正文层（z-index 1）盖满全屏，真实触摸的命中测试到不了
+          上下文内部的按钮（JS click 能触发、手指点不动的根因）。fixed + 高 z-index 悬空。 */}
       <button
         ref={btnRef}
         className="reader-bg-open"
@@ -260,7 +273,7 @@ function StoryCgBg({
       >
         ⤢
       </button>
-    </div>
+    </>
   )
 }
 
@@ -401,6 +414,45 @@ export default function StoryReader() {
   const [panelCat, setPanelCat] = useState('')
   useEffect(() => { if (detail) setPanelCat(detail.cat) }, [detail])
 
+  // 窄屏（≤980px，与 CSS 断点一致）下背景层铺满正文区，可用开关关闭；
+  // 桌面端布局不遮挡正文，保持常开。
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 980px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 980px)')
+    const fn = (e: MediaQueryListEvent) => setNarrow(e.matches)
+    mq.addEventListener('change', fn)
+    return () => mq.removeEventListener('change', fn)
+  }, [])
+
+  // 移动端 CG 背景开关，记在 localStorage（默认开）
+  const [bgOn, setBgOn] = useState(() => {
+    try { return localStorage.getItem('reader-cgbg') !== '0' } catch { return true }
+  })
+  const toggleBg = () => {
+    setBgOn((v) => {
+      const next = !v
+      try { localStorage.setItem('reader-cgbg', next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  // 移动端 HUD 收起/展开（默认收起：悬浮键会压住正文右下角）
+  const [hudOpen, setHudOpen] = useState(() => {
+    try { return localStorage.getItem('reader-hud') === '1' } catch { return false }
+  })
+  const hudOpenRef = useRef(hudOpen)
+  hudOpenRef.current = hudOpen
+  const toggleHud = () => {
+    setHudOpen((v) => {
+      const next = !v
+      try { localStorage.setItem('reader-hud', next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+    // ⤢ 的显隐由 paint 每帧驱动，切收展后主动触发一次重绘
+    window.dispatchEvent(new Event('resize'))
+  }
+
   useEffect(() => {
     setDetail(null)
     if (!id) return
@@ -477,8 +529,10 @@ export default function StoryReader() {
     const raf = requestAnimationFrame(() => {
       const el = document.getElementById(`L${target}`)
       if (!el) return
-      // 手动算偏移，避开 sticky 头
-      const y = el.getBoundingClientRect().top + window.scrollY - 190
+      // 手动算偏移，避开顶栏 + 头部（头部高度按元素实测，移动端更高）
+      const head = document.querySelector<HTMLElement>('.reader-head')
+      const offset = head ? head.offsetHeight + 76 : 190
+      const y = el.getBoundingClientRect().top + window.scrollY - offset
       window.scrollTo({ top: Math.max(0, y) })
       el.classList.add('hit')
     })
@@ -543,6 +597,14 @@ export default function StoryReader() {
           chapterIndex={chapterIndex}
           backTo={backTo}
         />
+        {/* 移动端目录入口：竖签在窄屏隐藏，列表页同样用右下角 HUD */}
+        {narrow && (
+          <div className="reader-hud">
+            <button className="hud-btn" onClick={() => rememberNav(true)} title="展开剧情目录">
+              目录
+            </button>
+          </div>
+        )}
         <div className="reader">
         <div className="reader-head">
           <Link to={backTo} className="reader-back">← 剧情目录</Link>
@@ -595,6 +657,9 @@ export default function StoryReader() {
     )
   }
 
+  // 背景层显隐：桌面常开；移动端按开关渲染（关掉时不挂载 Spine 模型，省电省内存）
+  const showBg = chapterHasCg && (!narrow || bgOn)
+
   return (
     <>
       <ReaderNav
@@ -608,14 +673,48 @@ export default function StoryReader() {
         chapterIndex={chapterIndex}
         backTo={backTo}
       />
-    <div className={`reader ${chapterHasCg ? 'has-cg' : ''}`}>
+    <div className={`reader ${showBg ? 'has-cg' : ''}`}>
       {/* 背景层：透明度跟随滚动进度，动态 CG 直接播实时模型，点击进入二级查看页 */}
-      {chapterHasCg && (
+      {showBg && (
         <StoryCgBg
           key={chapterIndex ?? 'all'}
           frames={frames}
           onOpen={(cgName) => navigate(`/cg/${encodeURIComponent(cgName)}`)}
+          btnGate={hudOpenRef}
         />
+      )}
+
+      {/* 移动端阅读 HUD（≤980px 渲染）：头部不再 sticky，滚走后靠它访问目录/背景开关。
+          默认收起只留切换键，展开才显示 CG 开关与目录（悬浮键会压住正文右下角）。
+          ⤢ 查看 CG 的悬浮按钮固定在展开组之上（见 CSS .reader-bg-open）。 */}
+      {narrow && (
+        <div className="reader-hud">
+          {hudOpen && chapterHasCg && (
+            <button
+              type="button"
+              className={`hud-btn${bgOn ? ' on' : ''}`}
+              onClick={toggleBg}
+              aria-pressed={bgOn}
+              title="阅读背景开关（关闭后仅保留正文，更省电）"
+            >
+              CG
+            </button>
+          )}
+          {hudOpen && (
+            <button className="hud-btn" onClick={() => rememberNav(true)} title="展开剧情目录">
+              目录
+            </button>
+          )}
+          <button
+            type="button"
+            className="hud-btn hud-toggle"
+            onClick={toggleHud}
+            aria-expanded={hudOpen}
+            title={hudOpen ? '收起悬浮按钮' : '展开悬浮按钮'}
+          >
+            {hudOpen ? '⌄' : '⌃'}
+          </button>
+        </div>
       )}
 
       <div className="reader-head">

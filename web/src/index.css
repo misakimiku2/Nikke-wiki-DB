@@ -1668,8 +1668,10 @@ img { display: block; }
 .cc-units button.on {
   background: var(--text); color: var(--bg); border: 1px solid var(--text);
 }
+/* 咨询的会话切换按钮（01-20）：底部横线与下方对话分开 */
 .cc-pills {
-  display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 0;
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
 }
 .cc-pills button {
   min-width: 38px; padding: 6px 0; cursor: pointer; text-align: center;
@@ -1938,6 +1940,13 @@ img { display: block; }
 .mc-sys span { display: inline-block; padding: 3px 10px; border: 1px dashed var(--line); }
 .mc-foot { padding-top: 4px; }
 
+/* 角色页里对话流直接铺在分组内，不再嵌套小盒子（咨询 / 巴拉短信共用；
+   手机上嵌套框的左右空白太占宽度）。剧情正文里的内嵌短信不受影响。 */
+.storybox .cc-feed {
+  margin: 0; padding: 16px;
+  background: transparent; border: 0;
+}
+
 /* 剧情正文里的内嵌巴拉短信 */
 .story-sms-inline {
   margin: 18px 0 8px;
@@ -1968,6 +1977,8 @@ img { display: block; }
 @media (max-width: 760px) {
   .cc-msg { max-width: 94%; }
   .cc-choice { max-width: 94%; }
+  .storybox .cc-feed { padding: 14px 10px 12px; }
+  .cc-pills { padding: 10px 10px; }
 }
 
 /* ================= 其他 ================= */
@@ -2015,14 +2026,51 @@ img { display: block; }
   transition: transform .35s;
 }
 .story-grid .story-card:hover .story-cover img { transform: scale(1.04); }
+/* 无 CG 剧情的排印式封面：居中的首字描边水印 + 红色短线。
+   之前只放两个小字，卡片看起来像加载失败的空框；标题交给卡片正文，
+   避免同一张卡里标题出现两次。 */
 .story-grid .story-cover-fallback {
   position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
-  font-size: 11px; letter-spacing: .18em; color: var(--dim-2);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px;
+  overflow: hidden;
   background:
-    radial-gradient(circle at 50% 25%, rgba(255,45,85,.10), transparent 62%),
-    linear-gradient(135deg, var(--surface-2), var(--surface));
+    repeating-linear-gradient(135deg,
+      rgba(255,255,255,.022) 0 1px, transparent 1px 9px),
+    radial-gradient(circle at 50% 38%, rgba(255,45,85,.13), transparent 62%),
+    linear-gradient(160deg, var(--surface-2), var(--surface));
+  transition: background .35s;
+}
+/* 首字：大幅描边水印 */
+.story-grid .story-cover-fallback .scf-mark {
+  font-size: 96px; font-weight: 900; line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(255,255,255,.13);
+  pointer-events: none; user-select: none;
+  transition: -webkit-text-stroke-color .2s;
+}
+.story-grid .story-card:hover .story-cover-fallback .scf-mark {
+  -webkit-text-stroke-color: rgba(255,45,85,.48);
+}
+/* 水印下的红色短线，给空封面一个视觉锚点 */
+.story-grid .story-cover-fallback::after {
+  content: ""; display: block; width: 26px; height: 2px;
+  background: var(--red); opacity: .55;
+  transition: opacity .2s, width .2s;
+}
+.story-grid .story-card:hover .story-cover-fallback::after { opacity: 1; width: 40px; }
+[data-theme="light"] .story-grid .story-cover-fallback {
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(23,22,15,.055) 0 1px, transparent 1px 9px),
+    radial-gradient(circle at 50% 38%, rgba(216,31,63,.10), transparent 62%),
+    linear-gradient(160deg, var(--surface-2), var(--surface));
+}
+[data-theme="light"] .story-grid .story-cover-fallback .scf-mark {
+  -webkit-text-stroke-color: rgba(23,22,15,.22);
+}
+[data-theme="light"] .story-grid .story-card:hover .story-cover-fallback .scf-mark {
+  -webkit-text-stroke-color: rgba(216,31,63,.5);
 }
 .story-grid .story-no {
   position: absolute; top: 10px; left: 10px;
@@ -2240,8 +2288,7 @@ img { display: block; }
   font-size: 15px; font-weight: 800; letter-spacing: .04em;
   color: var(--dim); padding-bottom: 10px; margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
-  transition: border-color .35s;
-}
+  transition: border-color .35s;}
 .line { margin-bottom: 20px; }
 .line .spk {
   display: block; font-size: 13.5px; font-weight: 800;
@@ -2260,6 +2307,38 @@ img { display: block; }
   border-top: 1px solid var(--line);
   flex-wrap: wrap;
   transition: border-color .35s;
+}
+
+/* ---------- 阅读器移动端排版（≤620px） ----------
+   sticky 头压缩到 ~150px 高，标题/计数/导航按钮不再挤成一行；
+   正文与底栏按钮加大触区。 */
+@media (max-width: 620px) {
+  .reader { padding: 0 16px 110px; }
+  .reader-head {
+    padding: 12px 16px;
+    padding-left: calc(50vw - 50% + 16px);
+    padding-right: calc(50vw - 50% + 16px);
+    margin-bottom: 24px;
+  }
+  .reader-back { display: inline-block; padding: 4px 0; }
+  .reader-title { margin-top: 8px; gap: 8px 12px; }
+  .reader-title h1 { font-size: 23px; min-width: 0; overflow-wrap: anywhere; }
+  .reader-count { margin-left: auto; font-size: 11px; }
+  .reader-nav { margin-top: 10px; gap: 8px; }
+  .reader-nav .nav-btn {
+    flex: 1; text-align: center; padding: 8px 6px;
+    font-size: 11px; white-space: nowrap;
+  }
+  .reader-sub { font-size: 11px; }
+  .seg { margin-bottom: 34px; }
+  .line { margin-bottom: 15px; }
+  .line p { font-size: 16.5px; line-height: 1.85; }
+  .reader-foot { margin-top: 44px; padding-top: 22px; gap: 10px; }
+  /* 底栏按钮整行堆叠：触区大，长标题（下一话：xxx）不挤压 */
+  .reader-foot .btn {
+    flex: 1 1 100%; justify-content: center;
+    padding: 12px 14px; font-size: 11.5px;
+  }
 }
 
 /* 亮色主题细节校正 */
@@ -2984,6 +3063,8 @@ img { display: block; }
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
+  /* 合成画面整体不透明度上限：桌面 .55；移动端/浅色主题在各媒体查询里覆盖 */
+  --rb-max: .55;
 }
 /* 透明度由滚动进度逐帧驱动（JS 写 style.opacity），不加定时动画 */
 .reader-bg .slot {
@@ -2999,9 +3080,12 @@ img { display: block; }
 
 /* 四边渐隐到透明，而不是用不透明底色从四周盖住画面。
    两条线性渐变取交集：左右各渐隐 26%，上方 20%、下方 34%（更宽，
-   把模型自带的矩形背景板下缘也一起淡掉）。 */
+   把模型自带的矩形背景板下缘也一起淡掉）。
+   容器不透明度 = JS 写入的滚动进度(--cov) × 上限(--rb-max，定义在 .reader-bg 上)：
+   桌面背景不压正文用 .55；移动端整幅图垫在正文后面，上限压低保可读性。 */
 .reader-bg-layers {
   position: absolute; inset: 0;
+  opacity: calc(var(--cov, 0) * var(--rb-max));
   -webkit-mask-image:
     linear-gradient(90deg, transparent 0%, #000 26%, #000 74%, transparent 100%),
     linear-gradient(180deg, transparent 0%, #000 20%, #000 66%, transparent 100%);
@@ -3013,8 +3097,10 @@ img { display: block; }
 }
 /* 旧版「四边底色渐变」遮罩全部停用 */
 .reader-bg::before { content: none; }
+/* ⤢ 打开 CG 查看器：fixed 悬空于 .reader-bg 之外（见 StoryReader 里注释的命中测试原因）。
+   桌面位置 = 背景 top 62px + 原 absolute 18px 偏移。 */
 .reader-bg-open {
-  position: absolute; right: 18px; top: 18px;
+  position: fixed; right: 18px; top: 80px;
   width: 38px; height: 38px; cursor: pointer;
   display: grid; place-items: center;
   background: rgba(7,7,10,.72); border: 1px solid rgba(255,255,255,.25);
@@ -3027,8 +3113,62 @@ img { display: block; }
   background: rgba(244, 241, 232, .85); border-color: rgba(23, 22, 15, .3); color: var(--text);
 }
 
-/* 窄屏隐藏背景区，保正文 */
-@media (max-width: 980px) { .reader-bg { display: none; } }
+/* 移动端 / 窄屏：背景层不再隐藏，铺满整个阅读区垫在正文后面。
+   上限压低（正文直接压在图上），遮罩只留上下渐隐（左右已无空间可让）。
+   头部不再 sticky（正文全屏沉浸，滚走即消失），目录竖签改为右下角 HUD。 */
+@media (max-width: 980px) {
+  .reader-bg {
+    inset: 62px 0 0 0;
+    --rb-max: .42;
+  }
+  .reader-bg-layers {
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 58%, transparent 100%);
+    mask-image: linear-gradient(180deg, transparent 0%, #000 10%, #000 58%, transparent 100%);
+  }
+  .reader-head { position: relative; top: auto; }
+  .reader-nav-edge { display: none; }
+
+  /* —— 右下角阅读 HUD：目录 / CG 开关集中一处 —— */
+  .reader-hud {
+    position: fixed;
+    right: 14px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: 12;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .hud-btn {
+    width: 42px; height: 42px;
+    display: grid; place-items: center;
+    font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+    font-size: 11px; letter-spacing: .08em;
+    color: var(--text-2);
+    background: rgba(var(--scrim), .82);
+    border: 1px solid var(--line-2);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .hud-btn:hover { color: var(--text); border-color: var(--dim-2); }
+  .hud-btn.on { color: var(--red); border-color: var(--red-line); }
+  [data-theme="light"] .hud-btn {
+    background: rgba(244, 241, 232, .88);
+    border-color: rgba(23, 22, 15, .3);
+    color: var(--text);
+  }
+  [data-theme="light"] .hud-btn.on { color: var(--red); }
+
+  /* ⤢ 查看当前 CG：悬浮在展开态 HUD 三键（toggle/目录/CG 开关）之上。
+     z-index 14 高于 HUD(12)/sticky 头(10)/正文(1)：移动端正文铺满全屏，
+     只有脱离正文层级的 fixed 按钮才能被真实触摸命中。
+     HUD 收起时按钮显隐由 JS 写 0（btnGate），位置无需变化。 */
+  .reader-bg-open {
+    top: auto;
+    bottom: calc(166px + env(safe-area-inset-bottom, 0px));
+    right: 14px;
+    z-index: 14;
+  }
+  /* 浅色主题下图片垫底更淡，正文靠白色光晕兜底（见下方 has-cg 规则） */
+  [data-theme="light"] .reader-bg { --rb-max: .34; }
+}
 
 /* 有背景时正文可读性 */
 .reader.has-cg .line p { text-shadow: 0 1px 6px rgba(0,0,0,.92), 0 0 2px rgba(0,0,0,.7); }
@@ -3037,6 +3177,17 @@ img { display: block; }
 [data-theme="light"] .reader.has-cg .line .spk { text-shadow: none; }
 .reader.has-cg .seg-title { text-shadow: 0 1px 5px rgba(0,0,0,.8); }
 [data-theme="light"] .reader.has-cg .seg-title { text-shadow: none; }
+
+/* 移动端正文整幅压在 CG 上：浅色主题改用白色光晕兜底，深色文字才能从浅图里浮出来 */
+@media (max-width: 980px) {
+  [data-theme="light"] .reader.has-cg .line p {
+    text-shadow: 0 1px 6px rgba(246,243,235,.95), 0 0 2px rgba(246,243,235,.85);
+  }
+  [data-theme="light"] .reader.has-cg .line .spk,
+  [data-theme="light"] .reader.has-cg .seg-title {
+    text-shadow: 0 1px 5px rgba(246,243,235,.95);
+  }
+}
 
 /* sticky 头玻璃底：不透明度足够高，正文滚动穿过时不可见 */
 .reader.has-cg .reader-head {

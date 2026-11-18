@@ -404,6 +404,11 @@ function pickChips(anims: string[], defs = CHIP_DEFS): { label: string; anim: st
   return out
 }
 
+/** 姿态标签的默认展开态：移动端（与详情页单列布局同断点）收起，给舞台上的模型腾地方 */
+function defaultModesOpen(): boolean {
+  return window.innerWidth > 1000
+}
+
 export default function CharacterDetail() {
   const { id } = useParams()
   const [list, setList] = useState<Character[] | null>(null)
@@ -436,8 +441,9 @@ export default function CharacterDetail() {
   const [specTexts, setSpecTexts] = useState<SpecTexts>({ weapon: {}, cls: {}, element: {}, corp: {}, squad: {} })
   /** 概览卡展开态：默认 6 项，右下角箭头展开其余 */
   const [specOpen, setSpecOpen] = useState(false)
-  /** 姿态标签展开态：收起时标签向左滑出，只留左上角的展开按钮 */
-  const [modesOpen, setModesOpen] = useState(true)
+  /** 姿态标签展开态：收起时标签向左滑出，只留左上角的展开按钮。
+      移动端（与详情页单列布局同断点）默认收起，给舞台上的模型腾地方 */
+  const [modesOpen, setModesOpen] = useState(defaultModesOpen)
   /** 皮肤切换区展开态：默认收起，只留底部居中的展开按钮 */
   const [skinsOpen, setSkinsOpen] = useState(false)
   /** 概览卡字段说明弹窗（与技能词条弹窗同款样式） */
@@ -558,7 +564,7 @@ export default function CharacterDetail() {
     setModelReady(false)
     setModelError(false)
     setSpecOpen(false)
-    setModesOpen(true)
+    setModesOpen(defaultModesOpen())
     setSkinsOpen(false)
     setLevel(1)
     setLimitBreak(3)
