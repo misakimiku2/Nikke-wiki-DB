@@ -17,10 +17,14 @@ export default function Search() {
 
   useEffect(() => {
     loadStoryIndex().then(setUnits).catch(() => {})
-    // 索引 9 MB，进页面才拉
-    fetch('/data/search-index.json')
+    // 索引按连续 unit 区间拆成多个分片（见 build/export_search.py），进页面才拉。
+    // 分片序号顺序即全量顺序，按序拼接后与单文件时代逐行一致。
+    fetch('/data/search/manifest.json')
       .then((r) => r.json())
-      .then(setIdx)
+      .then((m: { shards: { file: string }[] }) =>
+        Promise.all(m.shards.map((s) => fetch(`/data/search/${s.file}`).then((r) => r.json()))),
+      )
+      .then((parts: Row[][]) => setIdx(parts.flat()))
       .catch(() => setIdx([]))
   }, [])
 
@@ -72,7 +76,7 @@ export default function Search() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        {!idx && <div className="search-hint">首次使用需要载入 9 MB 索引，之后会缓存</div>}
+        {!idx && <div className="search-hint">首次使用需要载入搜索索引（压缩后约 9 MB），之后会缓存</div>}
         {idx && debounced && (
           <div className="search-hint">
             {results.length >= LIMIT ? `已显示前 ${LIMIT} 条，请输入更精确的关键词` : `找到 ${nf(results.length)} 条`}
