@@ -758,8 +758,8 @@ export default function CharacterDetail() {
 
   const desc = (c.desc || '').split('\n').filter(Boolean)
   const palette = tintFor(c.id)
-  /** 校准模式：URL hash 带 calib=1 时在大招视图显示背景板微调面板（人工对齐采数） */
-  const calibMode = /[?&]calib=1/.test(window.location.hash)
+  /** 校准模式：URL query 带 calib=1 时在大招视图显示背景板微调面板（人工对齐采数） */
+  const calibMode = /[?&]calib=1/.test(window.location.search)
 
   /** 概览卡条目：游戏元数据（部队/企业/武器/爆裂/兵种/属性）优先，缺失的自动跳过；popup = 点击弹窗内容 */
   const meta = charMeta[String(c.id)]
