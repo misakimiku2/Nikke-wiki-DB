@@ -265,6 +265,9 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
 - **人工配置不放在 `public/`**：`spine_overrides.json` 已移到 `build/`（和 `cg_flags.json` 一致），
   vite 在 dev / build 前由 `spineOverridesPlugin` 拷一份到 `public/data/`，改完即时同步并刷新页面。
   前端仍按 `/data/spine_overrides.json` 取，`nikke_extract` 的静态渲染脚本读的也是这份产物，路径不用改。
+- **站点根文件**（`_redirects` SPA 回退 / `robots.txt` / `_headers` 缓存头）同样入库在 `build/site/`，
+  由 `siteFilesPlugin` 同步进 `public/`。这三个文件只在部署时生效，但放在 `public/` 里就等于不进版本库
+  （`public/` 整个被 ignore），`git status` 也看不见——想改就改 `build/site/` 下的那份。
 
 ## 备注
 

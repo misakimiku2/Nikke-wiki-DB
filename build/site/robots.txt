@@ -1,0 +1,11 @@
+# 源文件在 build/site/（入库），由 web/vite.config.ts 的 site-files 插件拷到 public/。
+# 别直接改 public/robots.txt——那份是副本，每次 dev / build 都会被这里覆盖。
+#
+# 现状：全站先拦收录。等预渲染出来的静态 HTML 有真实 title / description / 摘要，
+# 并且 sitemap.xml 生成好之后，再换成下面这段（把 <域名> 换成正式域名）：
+#
+#   User-agent: *
+#   Allow: /
+#   Sitemap: https://<域名>/sitemap.xml
+User-agent: *
+Disallow: /

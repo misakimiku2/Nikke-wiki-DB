@@ -1,0 +1,7 @@
+# Cloudflare Pages / Netlify 通用的 SPA 回退：
+# /characters/94 这种深链接被直接打开、刷新或被别人转发时，交给 index.html 由前端路由接管，
+# 否则会 404（Pages 找不到 characters/94 这个文件）。
+#
+# 源文件在 build/site/（入库），由 web/vite.config.ts 的 site-files 插件拷到 public/。
+# 别直接改 public/_redirects——那份是副本，public/ 整个在 .gitignore 里，改了也不会进版本库。
+/*    /index.html   200

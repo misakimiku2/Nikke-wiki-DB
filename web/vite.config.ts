@@ -8,6 +8,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const FLAGS = path.resolve(HERE, '../build/cg_flags.json')
 const OVERRIDES_SRC = path.resolve(HERE, '../build/spine_overrides.json')
 const OVERRIDES_DST = path.resolve(HERE, '../public/data/spine_overrides.json')
+const SITE_SRC = path.resolve(HERE, '../build/site')
+const SITE_DST = path.resolve(HERE, '../public')
 const NOTE =
   '人工标注：哪些 CG 其实不是剧情画面（活动封面 / 主视觉 / 标题图）。' +
   '只影响 CG 图鉴的展示标签，不影响剧情阅读器的 CG 关联。' +
@@ -123,8 +125,46 @@ function spineOverridesPlugin(): Plugin {
   }
 }
 
+/**
+ * 站点根文件（_redirects / robots.txt / _headers）同样是人工维护的，所以也放在 build/site/ 入库。
+ * public/ 整个被 .gitignore，文件放在里面等于永远不进版本库——这次另一个 Agent 写 _redirects
+ * 时正好踩到了，`git status` 里完全看不到它们。dev / build 前把这些文件同步进 public/，
+ * 部署时认的就是 public/ 里（再由 vite 拷到 dist/）的那一份。
+ */
+function siteFilesPlugin(): Plugin {
+  const sync = () => {
+    try {
+      if (!fs.existsSync(SITE_SRC)) return
+      for (const f of fs.readdirSync(SITE_SRC)) {
+        const src = path.join(SITE_SRC, f)
+        if (!fs.statSync(src).isFile()) continue
+        fs.copyFileSync(src, path.join(SITE_DST, f))
+      }
+    } catch (e) {
+      console.warn('[site-files] 同步失败：', e)
+    }
+  }
+  return {
+    name: 'site-files',
+    // dev 与 build 都会走到，且早于 publicDir 被读取
+    configResolved() {
+      sync()
+    },
+    configureServer(server) {
+      if (!fs.existsSync(SITE_SRC)) return
+      server.watcher.add(SITE_SRC)
+      server.watcher.on('change', (file) => {
+        if (path.resolve(file).startsWith(SITE_SRC + path.sep)) {
+          sync()
+          server.ws.send({ type: 'full-reload' })
+        }
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), spineOverridesPlugin(), cleanDistAssets()],
+  plugins: [react(), cgFlagsPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',

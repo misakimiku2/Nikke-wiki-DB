@@ -1,0 +1,17 @@
+# Cloudflare Pages 的响应头配置（其他平台不认这个文件名，不影响部署）。
+# 源文件在 build/site/（入库），由 web/vite.config.ts 的 site-files 插件拷到 public/。
+#
+# 只给两类文件设规则，其余走 Pages 默认（HTML 默认就是 max-age=0 + must-revalidate，
+# 素材默认带 ETag，够用）。素材目录（/spine_char /char /img ...）故意不写长缓存：
+# 重建模型时文件名不变，缓存太久会让改过的角色在别人浏览器里停在旧贴图上。
+
+# 文件名带内容 hash 的构建产物，改了名字就变了，可以永久缓存
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 构建脚本会重写的 JSON（角色、CG、剧情、build-meta、spine_overrides…），短缓存
+/data/*.json
+  Cache-Control: public, max-age=300
+
+/build-meta.json
+  Cache-Control: public, max-age=300
