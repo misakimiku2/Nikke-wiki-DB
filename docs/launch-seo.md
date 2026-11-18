@@ -23,7 +23,11 @@
 - **部署脚本** ✅ `build/deploy_pages.sh`（构建 → 25 MiB/20000 文件体检 → `wrangler pages deploy dist`）。
 - **待办（需要人）**：① ~~部署~~ ✅ 2026-11-19 已上线 **https://nikke-db-wiki.pages.dev**
   （项目名 `nikke-db-wiki`，canonical/sitemap 为带尾斜杠形式以对齐 Pages 的 308 规范化，见 `e6f45d3`）；
-  ② 到 Google Search Console 提交 `https://nikke-db-wiki.pages.dev/sitemap.xml`（百度按放弃处理）。
+  ② ~~GSC 所有权验证~~ ✅ 2026-11-19 HTML 标记法验证通过。**验证标记在 `web/index.html` 里，
+  删掉或改动这行会让验证状态失效**（已加注释防误删）；剩最后一步——
+  在 GSC 左侧「站点地图」提交 `https://nikke-db-wiki.pages.dev/sitemap.xml`。
+  收录等待期（Google 数天～两周，2452 页分批进索引）内不要改 URL 结构；
+  日常更新流程见 README「部署与日常更新」。百度按放弃处理。
 
 原任务描述保留如下，字段名/做法细节仍可参考。
 
