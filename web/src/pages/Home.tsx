@@ -2,6 +2,19 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { loadStats, nf, type Stats } from '../data'
 
+/**
+ * Hero 台词轮播：全部是本站收录的游戏原文（见 /data/story/），出处随台词标注。
+ * 台词选自主线第 50 章「决战」与活动剧情「Marian」。
+ */
+const HERO_QUOTES = [
+  { text: '……这里，就是地面。', src: '玛丽亚-2 · 活动剧情「Marian」' },
+  { text: '方舟平安无事地升上地面，女王被击败了。', src: '尤尔夏 · 主线第50章「决战」' },
+  { text: '因为记忆会成为推动你向前迈进的力量。', src: '玛丽亚博士 · 活动剧情「Marian」' },
+  { text: '……终于看见了地平线的另一侧，那巨大女神像的小小身影。', src: '旁白 · 主线第50章「决战」' },
+  { text: '您明明不用分享自己的名字，却还是执意将自己的名字分给了我……', src: '玛丽亚-102 · 活动剧情「Marian」' },
+  { text: '莱彻和莱彻一起，妮姬和妮姬一起。人类和人类一起。', src: '匹诺曹 · 主线第50章「决战」' },
+]
+
 const WALL = [
   {
     to: '/characters',
@@ -31,9 +44,13 @@ const WALL = [
 
 export default function Home() {
   const [s, setS] = useState<Stats | null>(null)
+  const [qi, setQi] = useState(0)
 
   useEffect(() => {
     loadStats().then(setS).catch(() => {})
+    // 台词轮播：7 秒换一条
+    const timer = window.setInterval(() => setQi((v) => (v + 1) % HERO_QUOTES.length), 7000)
+    return () => window.clearInterval(timer)
   }, [])
 
   const val = (k: string) => (s ? nf((s as unknown as Record<string, number>)[k]) : '—')
@@ -43,21 +60,25 @@ export default function Home() {
       <section className="hero">
         <div className="hero-bg" />
         <div className="hero-in">
-          <div className="eyebrow">LOCAL DATABASE · CN</div>
+          <div className="eyebrow">ONLINE DATABASE · CN</div>
           <h1>
             NIKKE
             <em>资料库</em>
           </h1>
           <p className="hero-desc">
-            从客户端本地解包的角色、剧情与影像资料库。
-            没有搬运、没有二手数据，游戏更新即同步。
+            <span className="hero-quote" key={qi}>
+              「{HERO_QUOTES[qi].text}」
+            </span>
+            <span className="hero-quote-src" key={`s${qi}`}>
+              ── {HERO_QUOTES[qi].src} · 游戏原文
+            </span>
           </p>
           <div className="hero-actions">
             <Link to="/characters" className="btn primary">
               开始浏览 <span>→</span>
             </Link>
-            <Link to="/search" className="btn">
-              搜台词
+            <Link to="/notice" className="btn">
+              网站公告
             </Link>
           </div>
 
@@ -110,8 +131,8 @@ export default function Home() {
             <div className="wall-grid" />
             <div className="wall-in">
               <div className="wall-idx">04 / SEARCH</div>
-              <div className="wall-title">台词搜索</div>
-              <div className="wall-meta">{val('lines')} 条台词可全文检索</div>
+              <div className="wall-title">全站搜索</div>
+              <div className="wall-meta">角色 / CG / 剧情 / 台词，全站可检索</div>
             </div>
             <span className="wall-arrow">→</span>
           </Link>

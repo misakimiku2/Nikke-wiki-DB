@@ -20,7 +20,8 @@ React 18 + Vite + TypeScript 前端，数据层是预生成的 SQLite + JSON，�
 | `dist/` | **不入库**。`npm run build` 输出，约 2.1 GB，直接用于静态托管 |
 
 前端路由：`/` 首页、`/characters` 角色列表、`/characters/:id` 角色详情、
-`/story` 剧情列表、`/story/:id` 剧情阅读、`/cg` CG 画廊、`/cg/:name` 单图查看、`/search` 搜索。
+`/story` 剧情列表、`/story/:id` 剧情阅读、`/cg` CG 画廊、`/cg/:name` 单图查看、`/search` 全站搜索、
+`/notice` 公告列表、`/notice/:slug` 公告详情（slug 发布后不要改，免得外链失效）。
 
 ## 数据来源：上游仓库
 
@@ -269,6 +270,7 @@ bash build/deploy_pages.sh   # 构建（tsc + vite + 预渲染 SEO 页）→ 体
 |---|---|
 | 角色 / 剧情 / CG 数据（游戏版本更新） | 对应 build / export 脚本重建 `public/`，流程见上文「构建」章节 |
 | 前端界面 / 文案 / 样式 | `web/src/` |
+| 发布网站公告 / 更新日志 | `web/src/notices.ts`（数组头部加一条，slug 保持稳定） |
 | 站点根配置（robots / SPA 回退 / 缓存头） | `build/site/`（入库源文件，`public/` 里的是同步副本） |
 | 人工标注（模型覆盖 / CG 封面标记） | `build/spine_overrides.json` / `build/cg_flags.json` |
 | 详情页 SEO（标题 / 摘要 / OG 规则） | `build/prerender_seo.mjs` |

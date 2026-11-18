@@ -190,6 +190,7 @@ const urls = [
   '/characters',
   '/story',
   '/cg',
+  '/notice',
   ...chars.map((c) => `/characters/${c.id}/`),
   ...storyUnits.map((u) => `/story/${u.id}/`),
   ...cgItems.map((g) => `/cg/${g.n}/`),

@@ -152,16 +152,13 @@ img { display: block; }
   height: 62px; display: flex; align-items: center; gap: 26px;
 }
 .brand {
-  display: flex; align-items: center; gap: 11px;
-  font-size: 15px; font-weight: 900; letter-spacing: .14em;
-  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; text-transform: uppercase;
+  display: flex; align-items: center;
 }
-.brand-mark {
-  width: 22px; height: 22px; position: relative; flex-shrink: 0;
-  background: var(--red);
-  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
-  transition: background .35s ease;
+/* 顶栏游戏字标：官方 NIKKE logo（白色透明底），浅色主题反相成黑色 */
+.brand-logo {
+  height: 30px; width: auto; display: block;
 }
+[data-theme="light"] .brand-logo { filter: invert(1); }
 .nav { display: flex; gap: 4px; margin-left: auto; }
 .nav a {
   padding: 8px 15px; font-size: 12px; font-weight: 700;
@@ -267,6 +264,26 @@ img { display: block; }
 .hero-desc {
   max-width: 480px; font-size: 14px; line-height: 1.85;
   color: var(--text-2); margin-bottom: 38px;
+}
+/* Hero 台词轮播：游戏原文 + 出处，切换时渐显 */
+.hero-quote {
+  display: block; margin-bottom: 2px;
+  font-size: 18px; font-weight: 700; letter-spacing: .02em;
+  color: var(--text); line-height: 1.6;
+  animation: heroQuoteIn .55s ease both;
+}
+.hero-quote-src {
+  display: block; margin-bottom: 12px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .12em; color: var(--dim-2);
+  animation: heroQuoteIn .55s .08s ease both;
+}
+@keyframes heroQuoteIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-quote, .hero-quote-src { animation: none; }
 }
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 .btn {
@@ -2249,6 +2266,10 @@ img { display: block; }
 [data-theme="light"] .line.narr p { color: #55523f; }
 [data-theme="light"] .story-no { color: var(--dim-2); }
 [data-theme="light"] .story-card:hover .story-no { color: var(--red); }
+/* 上面两条校正本意是阅读器的章节号，但会命中卡片角标：
+   悬停时角标变红底、文字也被改成红色，红字红底看不见。网格角标恢复白字。 */
+[data-theme="light"] .story-grid .story-no { color: #fff; }
+[data-theme="light"] .story-grid .story-card:hover .story-no { color: #fff; }
 
 /* ================= 搜索 ================= */
 .search-hero { margin-bottom: 30px; }
@@ -2287,6 +2308,171 @@ img { display: block; }
 .result-spk { color: var(--cyan); font-weight: 700; }
 .result-where { color: var(--dim-2); }
 .result-jump { margin-left: auto; color: var(--dim-2); }
+.result-sub {
+  font-size: 12px; color: var(--dim); margin-left: 12px;
+}
+
+/* 全站搜索的结果分组 */
+.sgroup { margin-bottom: 36px; scroll-margin-top: 74px; }
+.sgroup-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 12px; padding-bottom: 9px;
+  border-bottom: 1px solid var(--line);
+}
+.sgroup-kind {
+  font-size: 13px; font-weight: 800; letter-spacing: .12em; color: var(--text);
+}
+.sgroup-kind::before {
+  content: ''; display: inline-block; width: 7px; height: 7px;
+  background: var(--red); margin-right: 9px; transform: translateY(-1px) rotate(45deg);
+}
+.sgroup-cnt {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .1em; color: var(--dim-2);
+}
+
+/* 搜索分组分页条 */
+.pager {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin-top: 18px;
+}
+.pager .chip { padding: 8px 14px; font-size: 11px; }
+.pager .chip:disabled { opacity: .35; cursor: default; }
+.pager .chip:disabled:hover { color: var(--dim-2); border-color: var(--line-2); }
+.pager-info {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .1em; color: var(--dim-2);
+}
+
+/* ================= 公告 ================= */
+
+/* 右下角 CG 装饰：浅色用 Marian_05（阳光水面），深色用 Marian_12（暗蓝夜色）。
+   以右下角为锚点尽量铺满视口，radial mask 向左上渐隐融进页面；
+   公告卡片自带不透明底色压在上面，文字可读性不受影响；纯装饰不挡交互。 */
+.notice-deco {
+  position: fixed; right: 0; bottom: 0; z-index: 0;
+  width: max(64vw, 96vh); aspect-ratio: 1;
+  background: url('/img/m/7ef67c0f551bafb3.webp') no-repeat right bottom / cover;
+  opacity: .82;
+  pointer-events: none; user-select: none;
+  -webkit-mask-image: radial-gradient(120% 120% at 100% 100%, #000 52%, transparent 94%);
+  mask-image: radial-gradient(120% 120% at 100% 100%, #000 52%, transparent 94%);
+}
+[data-theme="light"] .notice-deco {
+  background-image: url('/img/m/ec039079e903c59a.webp');
+  opacity: .6;
+}
+@media (max-width: 980px) { .notice-deco { display: none; } }
+
+/* 手机端收紧卡片：内边距与字号降一档，摘要行数由 React 减到 1 行，尽量压矮 */
+@media (max-width: 620px) {
+  .notice-list { gap: 8px; }
+  .notice-item { padding: 11px 14px 10px; }
+  .notice-top { gap: 8px; margin-bottom: 5px; }
+  .notice-tag { padding: 2px 8px; }
+  .notice-item h3 { font-size: 14px; margin-bottom: 5px; }
+  .notice-item li { font-size: 12px; line-height: 1.6; padding-left: 12px; margin-bottom: 0; }
+  .notice-item li::before { top: .55em; width: 4px; height: 4px; }
+  .notice-link { margin-top: 6px; }
+  .notice-item li.notice-img img { max-height: 220px; }
+}
+
+.notice-list {
+  display: flex; flex-direction: column; gap: 16px; max-width: 860px;
+}
+.notice-item {
+  background: var(--surface); border: 1px solid var(--line);
+  padding: 24px 28px 22px;
+  clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+}
+.notice-item.latest { border-color: var(--line-2); }
+.notice-top {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.notice-date {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .1em; color: var(--dim-2);
+}
+.notice-tag {
+  font-size: 10px; letter-spacing: .16em; padding: 3px 11px;
+  color: var(--cyan); border: 1px solid var(--line-2);
+}
+.notice-new {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .16em; color: var(--bg); background: var(--red);
+  padding: 3px 9px;
+}
+/* 公告卡片右侧背景配图：绝对定位贴右缘，向左渐隐融入卡片，
+   不占文档流高度（手机端也不额外撑高）；文字内容压在其上 */
+.notice-item { position: relative; }
+.notice-bgimg {
+  position: absolute; top: 0; right: 0; bottom: 0; width: 46%;
+  z-index: 0; pointer-events: none;
+  opacity: .24;
+  -webkit-mask-image: linear-gradient(to left, #000 18%, transparent 84%);
+  mask-image: linear-gradient(to left, #000 18%, transparent 84%);
+  transition: opacity .2s;
+}
+/* 图片上再垫一层卡片底色渐变：亮色图也不会压过文字 */
+.notice-bgimg::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(to left, transparent 30%, var(--surface) 96%);
+}
+.notice-item:hover .notice-bgimg { opacity: .4; }
+[data-theme="light"] .notice-bgimg { opacity: .2; }
+[data-theme="light"] .notice-item:hover .notice-bgimg { opacity: .34; }
+.notice-bgimg img {
+  width: 100%; height: 100%; object-fit: cover; object-position: right center;
+  display: block;
+}
+.notice-item > .notice-top,
+.notice-item > h3,
+.notice-item > ul,
+.notice-item > .notice-link { position: relative; z-index: 1; }
+[data-theme="light"] .notice-bgimg { opacity: .28; }
+[data-theme="light"] .notice-item:hover .notice-bgimg { opacity: .42; }
+
+/* 公告详情内嵌配图 + 图注 */
+.notice-item li.notice-img { display: block; padding-left: 0; margin-top: 14px; }
+.notice-item li.notice-img::before { display: none; }
+.notice-item li.notice-img img {
+  display: block; max-height: 320px; width: auto; max-width: 100%;
+  border: 1px solid var(--line);
+}
+.notice-cap {
+  display: block; margin-top: 6px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .08em; color: var(--dim-2);
+}
+/* 公告列表翻页滚动锚点 */
+#notice-top { scroll-margin-top: 74px; }
+.notice-item h3 {
+  margin: 0 0 12px; font-size: 17px; font-weight: 800; letter-spacing: .02em; color: var(--text);
+}
+.notice-item h3 a {
+  color: var(--text); text-decoration: none;
+  transition: color .15s;
+}
+.notice-item h3 a:hover { color: var(--red); }
+.notice-link {
+  display: inline-flex; align-items: center; margin-top: 14px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .12em; color: var(--cyan);
+}
+.notice-link:hover { color: var(--text); }
+.notice-item ul {
+  margin: 0; padding: 0; list-style: none;
+}
+.notice-item li {
+  position: relative; padding-left: 16px; margin-bottom: 8px;
+  font-size: 13.5px; line-height: 1.75; color: var(--dim);
+}
+.notice-item li:last-child { margin-bottom: 0; }
+.notice-item li::before {
+  content: ''; position: absolute; left: 2px; top: .72em;
+  width: 5px; height: 5px; transform: rotate(45deg);
+  background: var(--red); opacity: .55;
+}
 
 /* 搜索定位标记（持久，不闪） */
 .line.hit {
@@ -3256,17 +3442,13 @@ img { display: block; }
    这里压缩尺寸 + 禁止导航换行；极窄屏只留六边形 logo。 */
 @media (max-width: 620px) {
   .topbar-in { padding: 0 12px; gap: 10px; }
-  .brand { gap: 7px; font-size: 12px; letter-spacing: .06em; }
-  .brand-mark { width: 19px; height: 19px; }
+  .brand-logo { height: 24px; }
   .nav { gap: 2px; }
   .nav a {
     padding: 6px 7px; font-size: 11px; letter-spacing: .02em;
     white-space: nowrap;
   }
   .theme-toggle { width: 32px; height: 32px; }
-}
-@media (max-width: 360px) {
-  .brand-text { display: none; }
 }
 
 /* 姿态切换按钮在 390px 上文字不能换行（避免立绘/射击/掩体/大招被挤成竖排） */
@@ -3612,4 +3794,19 @@ body.immersive-mode .cv-shell .cv-hint { display: none !important; }
 body.immersive-mode .cv-shell .cv-main {
   position: fixed; inset: 0; z-index: 1000;
   width: 100vw; height: 100vh; height: 100dvh;
+}
+
+/* ================= 主题切换圆形扩散（View Transitions） =================
+   新主题的快照从点击处圆形扩散铺开，旧主题快照垫底；不支持该 API 的浏览器
+   走原有的整体颜色渐变。切换进行中禁掉页面自身的颜色 transition，
+   避免遮罩里出现半新半旧的中间色。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
 }

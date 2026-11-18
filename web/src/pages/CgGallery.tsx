@@ -105,7 +105,86 @@ export default function CgGallery() {
     })
   }, [data, cat, onlyLinked, onlyCover, q, flags])
 
-  useEffect(() => setLimit(PAGE), [cat, onlyLinked, onlyCover, q])
+  useEffect(() => {
+    if (skipLimitReset.current) {
+      skipLimitReset.current = false
+      return
+    }
+    setLimit(PAGE)
+  }, [cat, onlyLinked, onlyCover, q])
+
+  // ---- 返回恢复 ----
+  // 无限加载的渲染条数（limit）决定页面高度；点进查看器再返回时组件重挂载、
+  // limit 回到初值，页面高度骤减，浏览器的滚动位置恢复对不上就被钳回顶部。
+  // 离开页面时把渲染进度 / 滚动位置 / 筛选状态存进 sessionStorage（按 history
+  // idx 键控），返回（或刷新）时 idx 一致才恢复，其余情况按全新访问处理。
+  const histIdx = () => {
+    const st = window.history.state as { idx?: number } | null
+    return typeof st?.idx === 'number' ? st.idx : null
+  }
+  // 卸载时 history.state 已经是新页面（查看器）的 idx，必须在挂载期间记下自己的
+  const idxRef = useRef<number | null>(histIdx())
+  const saveRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    idxRef.current = histIdx()
+  })
+  const skipLimitReset = useRef(false)
+
+  // 挂载期间接管浏览器滚动恢复：popstate 时浏览器的延迟恢复会跟我们自己的
+  // scrollTo 打架（它按旧高度钳制后把位置改掉），这里改成手动管理。
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual'
+    return () => {
+      if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'auto'
+    }
+  }, [])
+
+  useEffect(() => {
+    const save = () => {
+      const idx = idxRef.current
+      if (idx == null) return
+      try {
+        sessionStorage.setItem(
+          'cg-gallery-restore',
+          JSON.stringify({ idx, limit, y: window.scrollY, q, cat, onlyLinked, onlyCover }),
+        )
+      } catch {
+        /* ignore */
+      }
+    }
+    // 每次渲染刷新保存函数（闭包里带最新状态）；pagehide 用 ref 调最新的
+    saveRef.current = save
+  })
+  useEffect(() => {
+    const onPageHide = () => saveRef.current()
+    window.addEventListener('pagehide', onPageHide)
+    return () => window.removeEventListener('pagehide', onPageHide)
+  }, [])
+
+  // 恢复：数据就绪后执行一次；筛选状态先还原（并跳过它们触发的 limit 重置），
+  // 下一帧再恢复滚动位置——此时网格已按恢复后的条数渲染，高度对得上。
+  useEffect(() => {
+    if (!data) return
+    let saved: { idx: number; limit: number; y: number; q: string; cat: string; onlyLinked: boolean; onlyCover: boolean }
+    try {
+      const raw = sessionStorage.getItem('cg-gallery-restore')
+      if (!raw) return
+      saved = JSON.parse(raw)
+      sessionStorage.removeItem('cg-gallery-restore')
+    } catch {
+      return
+    }
+    if (saved.idx !== histIdx()) return
+    skipLimitReset.current = true
+    setQ(saved.q)
+    setCat(saved.cat)
+    setOnlyLinked(saved.onlyLinked)
+    setOnlyCover(saved.onlyCover)
+    setLimit(saved.limit)
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => window.scrollTo(0, saved.y))
+    })
+  }, [data])
 
   // ?cg=<hash> 分享链接直接跳到对应的二级查看页
   useEffect(() => {
@@ -226,9 +305,14 @@ export default function CgGallery() {
                 <button
                   key={it.h}
                   className={`cg-cell ${editMode ? 'pick' : ''} ${marked ? 'marked' : ''}`}
-                  onClick={() => (editMode
-                    ? toggleFlag(it.n)
-                    : navigate(`/cg/${encodeURIComponent(it.n)}`))}
+                onClick={() => {
+                  if (editMode) {
+                    toggleFlag(it.n)
+                    return
+                  }
+                  saveRef.current() // 进查看器前先存渲染进度与滚动位置
+                  navigate(`/cg/${encodeURIComponent(it.n)}`)
+                }}
                   title={editMode ? `${it.n}（点击${marked ? '取消' : '标为'}封面）` : `${it.n} · 打开查看器`}
                 >
                   <img src={`/img/s/${it.h}.webp`} alt={it.n} loading="lazy" />

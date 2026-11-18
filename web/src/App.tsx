@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { Link, NavLink, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import Home from './pages/Home'
 import Characters from './pages/Characters'
@@ -6,6 +7,7 @@ import CharacterDetail from './pages/CharacterDetail'
 import Story from './pages/Story'
 import StoryReader from './pages/StoryReader'
 import Search from './pages/Search'
+import Notice, { NoticeDetail } from './pages/Notice'
 import CgGallery from './pages/CgGallery'
 import CgView from './pages/CgView'
 import { applyTheme, getInitialTheme, type Theme } from './theme'
@@ -32,14 +34,61 @@ export default function App() {
     applyTheme(theme)
   }, [theme])
 
+  /**
+   * 切换主题。支持 View Transitions 的浏览器从点击处做圆形遮罩向四周扩散；
+   * 不支持的浏览器回退为原有的整体渐变。
+   */
+  const toggleTheme = (e: MouseEvent<HTMLButtonElement>) => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    // 圆心取点击处；键盘触发（clientX/Y 为 0）时取按钮中心
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX || rect.left + rect.width / 2
+    const y = e.clientY || rect.top + rect.height / 2
+
+    // 清掉 URL 上的 theme 参数，否则刷新会被它覆盖
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('theme')) {
+      url.searchParams.delete('theme')
+      window.history.replaceState(null, '', url.toString())
+    }
+
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => { finished: Promise<void>; ready: Promise<void> }
+    }
+    if (!doc.startViewTransition || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setTheme(next)
+      return
+    }
+
+    // 切换期间关掉页面自己的颜色渐变，圆形遮罩里呈现的才是干净的新主题
+    const root = document.documentElement
+    root.classList.add('theme-switching')
+    const vt = doc.startViewTransition(() => {
+      flushSync(() => setTheme(next))
+    })
+    vt.ready
+      .then(() => {
+        const maxR = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
+        try {
+          root.animate(
+            { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${maxR}px at ${x}px ${y}px)`] },
+            { duration: 520, easing: 'cubic-bezier(.4, 0, .2, 1)', pseudoElement: '::view-transition-new(root)' },
+          )
+        } catch {
+          /* WAAPI 不支持 pseudoElement 时退回默认交叉淡入 */
+        }
+      })
+      .catch(() => {})
+    vt.finished.finally(() => root.classList.remove('theme-switching'))
+  }
+
   return (
     <>
       <ScrollToTop />
       <header className="topbar">
         <div className="topbar-in">
           <Link to="/" className="brand">
-            <span className="brand-mark" />
-            <span className="brand-text">NIKKE.DB</span>
+            <img className="brand-logo" src="/site-logo.webp" alt="NIKKE 资料库" />
           </Link>
           <nav className="nav">
             <NavLink to="/" end className={({ isActive }) => (isActive ? 'on' : '')}>
@@ -60,16 +109,7 @@ export default function App() {
           </nav>
           <button
             className="theme-toggle"
-            onClick={() => {
-              const next = theme === 'dark' ? 'light' : 'dark'
-              setTheme(next)
-              // 清掉 URL 上的 theme 参数，否则刷新会被它覆盖
-              const url = new URL(window.location.href)
-              if (url.searchParams.has('theme')) {
-                url.searchParams.delete('theme')
-                window.history.replaceState(null, '', url.toString())
-              }
-            }}
+            onClick={toggleTheme}
             title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}
             aria-label="切换主题"
           >
@@ -84,6 +124,8 @@ export default function App() {
         <Route path="/story" element={<Story />} />
         <Route path="/story/:id" element={<StoryReader />} />
         <Route path="/search" element={<Search />} />
+        <Route path="/notice" element={<Notice />} />
+        <Route path="/notice/:slug" element={<NoticeDetail />} />
         <Route path="/cg" element={<CgGallery />} />
         <Route path="/cg/:name" element={<CgView />} />
         <Route path="*" element={<Stub code="404" title="页面不存在" note="回到首页" />} />

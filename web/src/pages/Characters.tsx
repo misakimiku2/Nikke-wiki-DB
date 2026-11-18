@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   accentFor, charPortrait, loadCharImages, loadCharMeta, loadCharMi, loadCharSpine,
   loadCharacters, mainBase, nf, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor,
@@ -43,7 +43,9 @@ export default function Characters() {
   const [mi, setMi] = useState<Set<string>>(new Set())
   const [spine, setSpine] = useState<Set<string>>(new Set())
   const [meta, setMeta] = useState<CharMetaMap>({})
-  const [q, setQ] = useState('')
+  // 搜索关键词同步进 URL（replace，不打历史）：从角色详情返回时恢复搜索现场
+  const [params, setParams] = useSearchParams()
+  const [q, setQ] = useState(() => params.get('q') || '')
   const [sort, setSort] = useState<SortMode>('squad')
   const [panelOpen, setPanelOpen] = useState(false)
   const [filters, setFilters] = useState<Filters>({ corp: [], weapon: [], burst: [], cls: [], element: [] })
@@ -55,6 +57,17 @@ export default function Characters() {
     loadCharSpine().then(setSpine).catch(() => {})
     loadCharMeta().then(setMeta).catch(() => {})
   }, [])
+
+  // q 写回 URL（replace）：返回 / 刷新 / 分享链接都能带着搜索词
+  useEffect(() => {
+    if ((params.get('q') || '') === q) return
+    const next = new URLSearchParams(params)
+    if (q) next.set('q', q)
+    else next.delete('q')
+    setParams(next, { replace: true })
+    // params 不进依赖：本 effect 自己写的 URL 不应触发重跑
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q])
 
   /**
    * 悬停预热：鼠标在卡片上停 350ms 就把站姿模型的 atlas / skel / 图集页拉进缓存，
