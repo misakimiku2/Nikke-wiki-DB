@@ -2747,6 +2747,14 @@ img { display: block; }
   color: #2ee6ff; border: 1px solid rgba(46,230,255,.55);
   letter-spacing: .06em;
 }
+/* 连图集：本卡代表一集（N = 集内总张数），点开后可在查看器里浏览各帧 */
+.cg-set {
+  position: absolute; right: 7px; top: 7px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9px;
+  padding: 2px 6px; background: rgba(7,7,10,.78);
+  color: #f4f2ed; border: 1px solid rgba(255,255,255,.35);
+  letter-spacing: .06em;
+}
 
 /* 标注模式：点卡片即切换 */
 .cg-cell.pick { cursor: copy; }
@@ -3184,6 +3192,20 @@ img { display: block; }
 .cv-more:hover { color: var(--text); border-color: var(--red); }
 .cv-dir-empty { padding: 24px 10px; text-align: center; color: var(--dim); font-size: 12px; }
 
+/* 当前所在的集在目录里展开：封面行下的成员子项 */
+.cv-dir-set {
+  flex: none; font-size: 9px; font-weight: 800; letter-spacing: .04em;
+  color: var(--text-2); border: 1px solid var(--line-2); padding: 1px 4px;
+}
+.cv-dir-sub {
+  margin: 0 0 4px 14px; padding-left: 8px;
+  border-left: 1px solid var(--line-2);
+}
+.cv-dir-subitem { padding: 4px 6px; margin-bottom: 1px; }
+.cv-dir-subitem img { width: 30px; height: 30px; }
+.cv-dir-subitem .cv-dir-name { font-size: 10px; }
+.cv-dir-subitem.on { box-shadow: inset 2px 0 0 var(--red); }
+
 /* ---- 中：查看区 ---- */
 .cv-stage {
   position: relative; flex: 1; min-height: 0; overflow: hidden;
@@ -3360,6 +3382,14 @@ img { display: block; }
 }
 .cv-sub { margin-top: 8px; font-size: 11px; color: var(--dim); }
 .cv-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+/* 被并入主 CG 的条目（直接 URL 访问时）的去向提示 */
+.cv-absorbed {
+  margin-top: 12px; padding: 8px 10px; font-size: 11px; line-height: 1.5;
+  color: var(--dim); background: var(--bg-2); border-left: 2px solid var(--line-2);
+  word-break: break-word;
+}
+.cv-absorbed a { color: var(--cyan); text-decoration: none; }
+.cv-absorbed a:hover { color: var(--red); }
 .cv-tag {
   font-size: 10px; padding: 4px 8px;
   color: var(--text-2); border: 1px solid var(--line-2);
@@ -3372,6 +3402,37 @@ img { display: block; }
 }
 .cv-nav-btns button:hover:not(:disabled) { color: var(--text); border-color: var(--red); }
 .cv-nav-btns button:disabled { opacity: .3; cursor: default; }
+/* 同作品集：封面页列出被并入的连图/分层条目，点缩略图直达单张查看 */
+.cv-set { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.cv-set h2 {
+  font: 700 10.5px/1 ui-monospace, "Microsoft YaHei", monospace;
+  letter-spacing: .14em; color: var(--dim); margin-bottom: 10px;
+}
+.cv-set-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.cv-set-item {
+  display: block; min-width: 0; position: relative; text-decoration: none;
+  background: var(--surface-2); border: 1px solid var(--line);
+  transition: border-color .15s, background .15s;
+}
+.cv-set-item:hover { border-color: var(--red); background: var(--bg-2); }
+/* 当前正在看的那张 */
+.cv-set-item.on { border-color: var(--red); background: var(--bg-2); box-shadow: inset 0 0 0 1px var(--red); }
+.cv-set-item.on .cv-set-name { color: var(--text); }
+/* 集封面标记 */
+.cv-set-cover {
+  position: absolute; left: 4px; top: 4px;
+  font: 700 8.5px/1 ui-monospace, "Microsoft YaHei", monospace;
+  letter-spacing: .06em; padding: 2px 4px;
+  color: #fff; background: var(--red); border: 1px solid rgba(255,255,255,.35);
+}
+.cv-set-item img {
+  display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover;
+  background: var(--bg-2);
+}
+.cv-set-name {
+  display: block; padding: 5px 6px; font-size: 9.5px; line-height: 1.3;
+  color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .cv-links { padding: 18px 18px 24px; }
 .cv-links h2 {
   font: 700 10.5px/1 ui-monospace, "Microsoft YaHei", monospace;
@@ -3412,6 +3473,10 @@ img { display: block; }
 .reader-bg-open { z-index: 5; }
 
 /* ---- 响应式 ---- */
+/* 窄屏抽屉的遮罩与关闭按钮：桌面布局不存在，只在 ≤980px 媒体查询里启用 */
+.cv-drawer-backdrop { display: none; }
+.cv-drawer-close { display: none; }
+
 @media (max-width: 1240px) {
   .cv-shell { grid-template-columns: 220px minmax(0, 1fr) 264px; }
   .cv-shell.cv-left-off { grid-template-columns: 0px minmax(0, 1fr) 264px; }
@@ -3420,19 +3485,83 @@ img { display: block; }
   .cv-dir-item img { width: 34px; height: 34px; }
 }
 @media (max-width: 980px) {
+  /* 窄屏重排：目录/信息不再堆叠在查看器下方，改成覆盖式抽屉——
+     舞台 + 控制条独占首屏，点「目录 / 信息」按钮滑出对应抽屉。
+     收起态复用 cv-left-off / cv-right-off 类，语义与桌面一致（有类 = 收起），
+     移动端差别只在默认收起 + transform 滑入滑出。 */
   .cv-shell,
   .cv-shell.cv-left-off,
   .cv-shell.cv-right-off,
   .cv-shell.cv-left-off.cv-right-off {
-    grid-template-columns: 1fr;
-    height: auto; min-height: calc(100vh - 62px);
+    display: flex; flex-direction: column;
+    height: calc(100vh - 62px);
+    height: calc(100dvh - 62px); /* 移动浏览器地址栏收放时 vh 不准，用动态视口 */
+    min-height: 0;
   }
-  .cv-shell.cv-left-off .cv-dir,
-  .cv-shell.cv-right-off .cv-info { display: none; }
-  .cv-dir { order: 2; max-height: 260px; border-right: 0; border-top: 1px solid var(--line); }
-  .cv-main { order: 1; height: 68vh; min-height: 420px; }
-  .cv-info { order: 3; border-left: 0; border-top: 1px solid var(--line); }
-  .cv-dir-list { max-height: 190px; }
+  .cv-main { flex: 1; min-height: 0; }
+  .cv-dir {
+    position: fixed; top: 62px; bottom: 0; left: 0; z-index: 60;
+    width: min(82vw, 330px);
+    overflow: hidden; border-right: 1px solid var(--line-2);
+    box-shadow: 12px 0 32px rgba(0, 0, 0, .45);
+    transform: translateX(-105%); visibility: hidden;
+    transition: transform .26s ease, visibility .26s;
+  }
+  .cv-info {
+    position: fixed; top: 62px; bottom: 0; right: 0; z-index: 60;
+    width: min(88vw, 350px);
+    border-left: 1px solid var(--line-2);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, .45);
+    transform: translateX(105%); visibility: hidden;
+    transition: transform .26s ease, visibility .26s;
+  }
+  .cv-shell:not(.cv-left-off) .cv-dir,
+  .cv-shell:not(.cv-right-off) .cv-info {
+    transform: translateX(0); visibility: visible;
+  }
+  /* 任一抽屉展开时才显示遮罩（点遮罩收起，见 CgView 的 onClick） */
+  .cv-shell:not(.cv-left-off) .cv-drawer-backdrop,
+  .cv-shell:not(.cv-right-off) .cv-drawer-backdrop {
+    display: block; position: fixed; inset: 62px 0 0; z-index: 55;
+    background: rgba(4, 5, 9, .55);
+    animation: cvFadeIn .18s ease;
+  }
+  .cv-drawer-close {
+    display: grid; place-items: center;
+    width: 28px; height: 28px; flex: none;
+    font-size: 15px; line-height: 1; cursor: pointer;
+    color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line-2);
+  }
+  .cv-drawer-close:hover { color: var(--text); border-color: var(--red); }
+  .cv-info-head { position: relative; padding-right: 46px; }
+  .cv-info .cv-drawer-close { position: absolute; top: 14px; right: 14px; }
+  /* 触屏目录条目加大热区 */
+  .cv-dir-item { padding: 7px 8px; }
+  .cv-dir-item img { width: 44px; height: 44px; }
+  /* 集内子项保持紧凑，但热区仍按触屏放宽 */
+  .cv-dir-subitem { padding: 6px 6px; }
+  .cv-dir-subitem img { width: 34px; height: 34px; }
+}
+@keyframes cvFadeIn { from { opacity: 0; } }
+
+/* —— 手机（≤620px）进一步紧凑化 —— */
+@media (max-width: 620px) {
+  .cv-dir { width: min(88vw, 340px); }
+  .cv-info { width: min(92vw, 360px); }
+  /* iOS：输入框 font-size < 16px 时聚焦会自动放大整页 */
+  .cv-search { font-size: 16px; padding: 8px 34px 8px 11px; }
+  /* 触屏没有滚轮，操作提示是噪音 */
+  .cv-hint { display: none; }
+  .cv-controls { padding: 8px 10px 10px; gap: 8px; }
+  .cv-buttons { gap: 6px; }
+  .cv-btn { padding: 6px 8px; }
+  .cv-stage-top { left: 8px; right: 8px; }
+  .cv-panel-toggle { padding: 6px 8px; }
+  .cv-badge { padding: 5px 7px; }
+  .cv-stage-idx { padding: 5px 6px; }
+  .cv-loading, .cv-error, .cv-toast { white-space: normal; text-align: center; max-width: 94%; }
+  /* 键盘快捷键说明对触屏无意义 */
+  .cv-keys { display: none; }
 }
 
 /* ================= 移动端顶栏适配 =================
@@ -3684,13 +3813,14 @@ img { display: block; }
     border-radius: 2px;
     -webkit-tap-highlight-color: transparent;
   }
-  .cg-tag, .cg-dyn, .cg-badge {
+  .cg-tag, .cg-dyn, .cg-badge, .cg-set {
     font-size: 8px;
     padding: 1.5px 5px;
   }
   .cg-tag { top: 5px; left: 5px; }
   .cg-dyn { bottom: 5px; left: 5px; }
   .cg-badge { bottom: 5px; right: 5px; }
+  .cg-set { top: 5px; right: 5px; }
   .cg-more { padding: 24px 0; }
 
   .empty {
@@ -3788,6 +3918,7 @@ body.immersive-mode .detail-page .detail-visual .stage { height: 100%; }
 body.immersive-mode .cv-shell { display: block; }
 body.immersive-mode .cv-shell .cv-dir,
 body.immersive-mode .cv-shell .cv-info,
+body.immersive-mode .cv-shell .cv-drawer-backdrop,
 body.immersive-mode .cv-shell .cv-controls,
 body.immersive-mode .cv-shell .cv-stage-top,
 body.immersive-mode .cv-shell .cv-hint { display: none !important; }

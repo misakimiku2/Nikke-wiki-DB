@@ -4,7 +4,7 @@ import { Pager, pageParam } from '../components/Pager'
 import {
   accentFor, charPortrait, loadCgIndex, loadCharImages, loadCharMeta, loadCharMi, loadCharacters,
   loadStoryIndex, mainBase, nf, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON,
-  tintFor, whereOf,
+  tintFor, visibleCgs, whereOf,
   type CgIndex, type CharImages, type CharMetaMap, type Character, type StoryUnit,
 } from '../data'
 
@@ -157,8 +157,12 @@ export default function Search() {
   const cgHits = useMemo(() => {
     if (!cg || debounced.length < 1) return []
     const k = debounced.toLowerCase()
-    return cg.items.filter((it) => (cgText[it.n] || '').includes(k))
+    // 合并收录：X_bg / 图集贴图页 / 动态背景帧不再作为独立结果出现
+    return visibleCgs(cg.items, cg.merges).filter((it) => (cgText[it.n] || '').includes(k))
   }, [cg, cgText, debounced])
+
+  // 头部统计用合并后的 CG 总数
+  const cgTotal = useMemo(() => (cg ? visibleCgs(cg.items, cg.merges).length : 0), [cg])
 
   const unitHits = useMemo(() => {
     if (debounced.length < 1) return []
@@ -202,7 +206,7 @@ export default function Search() {
         <div className="meta">
           {loading
             ? 'LOADING INDEX…'
-            : `${nf(chars.length)} CHARS · ${nf(cg!.total)} CG · ${nf(units.length)} UNITS · ${nf(idx!.length)} LINES`}
+            : `${nf(chars.length)} CHARS · ${nf(cgTotal)} CG · ${nf(units.length)} UNITS · ${nf(idx!.length)} LINES`}
         </div>
       </div>
 

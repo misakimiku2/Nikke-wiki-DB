@@ -1075,6 +1075,13 @@ export type ViewTransform = { scale: number; tx: number; ty: number }
 export type SpineOverride = {
   hiddenSlots?: string[]
   /**
+   * 舞台裁剪：把实时渲染裁进这些槽位包围盒的并集（世界坐标，跟随缩放/平移）。
+   * 用于「画作框 + 会飘出框外的动画部件」的 CG（如 BowWowParadise 的警戒带）：
+   * 官方观感里所有内容都收在画框内，而骨架包围盒会把框外部分一起算进去。
+   * 槽位名可用精确名或 /正则/；用 URL ?debugslots=1 探针找槽位名。
+   */
+  stageClipSlots?: string[]
+  /**
    * 多镜大招每张场景背景的初始世界基准。sceneBgBases[i] 对应第 i+1 张图：
    * side_i = 基准边长 × sideMul，中心 = 校准中心 + (cxOffPct, cyOffPct)%
    * × side_i（世界坐标，y 向上）。用于给不同取景的场景图一个接近正确的
@@ -1282,14 +1289,99 @@ export type CgIndex = {
   total: number
   items: CgItem[]
   links: Record<string, CgLink[]>
+  /** 合并收录表（cg_merges.json，由 build/gen_cg_merges.mjs 生成）：
+      主 CG 名 → 随它收录的重复条目（图集贴图页 / 动态背景帧），不再单独展示 */
+  merges?: Record<string, string[]>
 }
 
 let cacheCg: CgIndex | null = null
 
+async function loadCgMerges(): Promise<Record<string, string[]>> {
+  try {
+    return await getJSON<Record<string, string[]>>('/data/cg_merges.json')
+  } catch {
+    return {}
+  }
+}
+
 export async function loadCgIndex(): Promise<CgIndex> {
   if (cacheCg) return cacheCg
-  cacheCg = await getJSON<CgIndex>('/data/cg_index.json')
+  const [idx, merges] = await Promise.all([
+    getJSON<CgIndex>('/data/cg_index.json'),
+    loadCgMerges(),
+  ])
+  cacheCg = { ...idx, merges }
   return cacheCg
+}
+
+/**
+ * 合并收录：同一张作品被拆成多条 CG 的情况，浏览序列（图鉴/目录/搜索/
+ * 上一张下一张）只保留主条目；直接 URL / 分享链接仍可访问被并的条目。
+ * 两类来源：
+ *  - 命名规则：X 与 X_bg 拆成「人物层 + 背景板」（ACPUFreeze_01/_bg 这类），
+ *    存在同名主 CG 时合并；孤儿 _bg（Main_01_bg）保持独立。剧情阅读器的
+ *    同款配对约定见 resolveCg()。
+ *  - cg_merges.json：主CG图集里的贴图页（BowWowParadise_01_2 这类）与
+ *    目检确认的动态背景帧（Chap_04_02/03），由生成脚本维护。
+ */
+export function visibleCgs(
+  items: CgItem[],
+  merges: Record<string, string[]> = {},
+): CgItem[] {
+  const names = new Set(items.map((x) => x.n))
+  const hidden = new Set<string>()
+  for (const it of items) {
+    if (it.n.endsWith('_bg') && names.has(it.n.slice(0, -3))) hidden.add(it.n)
+  }
+  for (const list of Object.values(merges)) {
+    if (!Array.isArray(list)) continue // 跳过 _note 之类的说明字段
+    for (const n of list) hidden.add(n)
+  }
+  return items.filter((it) => !hidden.has(it.n))
+}
+
+/** 主 CG 名 → 它合并的独立背景板条目（无则 null） */
+export function mergedBgOf(items: CgItem[], name: string): CgItem | null {
+  return items.find((x) => x.n === `${name}_bg`) || null
+}
+
+/** 主 CG 名 → 本集成员（合并收录的重复条目 / 连续画面帧；非封面返回空数组） */
+export function setMembersOf(
+  merges: Record<string, string[]> | undefined,
+  name: string,
+): string[] {
+  const list = merges?.[name]
+  return Array.isArray(list) ? list : []
+}
+
+/** 条目 → 它被并入的封面名（本身是封面或独立条目时返回 null） */
+export function coverOf(
+  merges: Record<string, string[]> | undefined,
+  name: string,
+): string | null {
+  for (const [cover, list] of Object.entries(merges || {})) {
+    if (Array.isArray(list) && list.includes(name)) return cover
+  }
+  return null
+}
+
+/**
+ * 封面集（自身 + 全部成员）的剧情段落并集，按 unit:line 去重。
+ * 静态连图集的封面常常不是剧情里出现的那一帧（l 可能为 0），
+ * 信息面板与「有剧情」筛选都应以整集为准。
+ */
+export function setLinks(index: CgIndex, name: string): CgLink[] {
+  const seen = new Set<string>()
+  const out: CgLink[] = []
+  for (const n of [name, ...setMembersOf(index.merges, name)]) {
+    for (const lk of index.links[n] || []) {
+      const k = `${lk.u}:${lk.i}`
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(lk)
+    }
+  }
+  return out
 }
 
 export const CG_CATS = [

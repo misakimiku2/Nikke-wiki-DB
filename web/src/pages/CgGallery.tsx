@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  CG_CATS, loadCgIndex, loadSpineModels, nf, type CgIndex,
+  CG_CATS, loadCgIndex, loadSpineModels, nf, setLinks, visibleCgs, type CgIndex,
 } from '../data'
 
 const PAGE = 60
@@ -90,20 +90,40 @@ export default function CgGallery() {
     if (!editMode && saveState === 'saved') setSaveState('idle')
   }, [editMode, saveState])
 
+  // 合并收录后的可见条目：X_bg / 图集贴图页 / 动态背景帧不再单独出卡
+  const pool = useMemo(() => (data ? visibleCgs(data.items, data.merges) : []), [data])
+
+  // 封面集信息：成员数 + 整集去重后的剧情段落数。
+  // 连图集的封面常常不是剧情里出现的那一帧（自身 l 可能为 0），
+  // 「有剧情」筛选与角标按整集统计。
+  const setInfo = useMemo(() => {
+    const m = new Map<string, { size: number; links: number }>()
+    if (!data) return m
+    for (const [cover, list] of Object.entries(data.merges || {})) {
+      if (!Array.isArray(list) || list.length === 0) continue
+      m.set(cover, { size: list.length, links: setLinks(data, cover).length })
+    }
+    return m
+  }, [data])
+
+  const linkCountOf = useCallback(
+    (it: { n: string; l: number }) => setInfo.get(it.n)?.links ?? it.l,
+    [setInfo],
+  )
+
   const filtered = useMemo(() => {
-    if (!data) return []
     const k = q.trim().toLowerCase()
     // 搜「封面 / 主视觉」当标签用，和名称/活动键搜索并存
     const tagHit = k.length >= 2 && '封面主视觉cover'.includes(k)
-    return data.items.filter((it) => {
+    return pool.filter((it) => {
       if (cat !== 'all' && it.c !== cat) return false
-      if (onlyLinked && it.l === 0) return false
+      if (onlyLinked && linkCountOf(it) === 0) return false
       if (onlyCover && !flags.has(it.n)) return false
       if (k && !(it.n.toLowerCase().includes(k) || it.s.toLowerCase().includes(k)
         || (tagHit && flags.has(it.n)))) return false
       return true
     })
-  }, [data, cat, onlyLinked, onlyCover, q, flags])
+  }, [pool, cat, onlyLinked, onlyCover, q, flags, linkCountOf])
 
   useEffect(() => {
     if (skipLimitReset.current) {
@@ -239,7 +259,7 @@ export default function CgGallery() {
           <div className="idx">03 / GALLERY</div>
           <h2>CG 图鉴</h2>
         </div>
-        <div className="meta">{nf(data.total)} IMAGES</div>
+        <div className="meta">{nf(pool.length)} IMAGES</div>
       </div>
 
       <div className="toolbar">
@@ -318,7 +338,10 @@ export default function CgGallery() {
                   <img src={`/img/s/${it.h}.webp`} alt={it.n} loading="lazy" />
                   {marked && <span className="cg-tag">封面</span>}
                   {(it.d === 1 || spine.has(it.n)) && <span className="cg-dyn">动</span>}
-                  {it.l > 0 && <span className="cg-badge">{it.l}</span>}
+                  {setInfo.get(it.n) && (
+                    <span className="cg-set">集 {setInfo.get(it.n)!.size + 1}</span>
+                  )}
+                  {linkCountOf(it) > 0 && <span className="cg-badge">{linkCountOf(it)}</span>}
                 </button>
               )
             })}

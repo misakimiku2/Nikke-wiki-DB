@@ -69,6 +69,12 @@
         }
       ],
       "comment": "海伦浴后大招双背景（calib 实测拟合）：第一镜直接套 bone 的完整仿射（t=0 基准 side 4081.9，俯冲到 3.22× 时与校准值误差 <15 世界单位）；第二镜为 3.11/5.33 两帧，插值由 hl2_Body_1 的缩放进度驱动（该骨负责人物下沉+放大 1.27→1.68），避免按时间线性插值导致中间帧与人物脱节。sceneFx 为从 bundle 粒子图集裁出的窗光/星芒/尘埃 PoC。"
+    },
+    "EventScene_BowWowParadise_01": {
+      "stageClipSlots": [
+        "ZZZ"
+      ],
+      "comment": "警戒带(String1/2/3)动画会飘出白框板(ZZZ)到黑底舞台；官方观感里所有内容收在画框内。stageClipSlots 把实时渲染裁进 ZZZ 包围盒，取景也按画框算（URL ?debugslots=1 可导出槽位包围盒）。"
     }
   }
 }

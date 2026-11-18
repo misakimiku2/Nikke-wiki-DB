@@ -505,6 +505,42 @@ export default function SpinePlayer({
           }
         }
 
+        // ---- 舞台裁剪（画作框类 CG）----
+        // overrides.stageClipSlots 指定的槽位（如 BowWowParadise 的白框板 ZZZ），
+        // 其包围盒并集就是「画作边界」：实时渲染用 gl.scissor 裁进这个矩形，
+        // 动画部件（警戒带等）不再飘到框外黑底上，观感与官方图一致。
+        const clipSlotObjs: any[] = (() => {
+          const cfg = overrides[name]?.stageClipSlots
+          if (!cfg?.length) return []
+          const exact = new Set<string>()
+          const patterns: RegExp[] = []
+          for (const rule of cfg) {
+            if (rule.startsWith('/') && rule.endsWith('/')) {
+              try { patterns.push(new RegExp(rule.slice(1, -1), 'i')) } catch { /* ignore */ }
+            } else exact.add(rule)
+          }
+          return skeleton.slots.filter((s: any) => {
+            const n = String(s.data?.name || '')
+            return exact.has(n) || patterns.some((r) => r.test(n))
+          })
+        })()
+        /** 裁剪槽位的包围盒并集（世界坐标 x0,y0,x1,y1；无可见内容时 null） */
+        const clipRectOf = (): [number, number, number, number] | null => {
+          let x0 = 0, y0 = 0, x1 = 0, y1 = 0, any = false
+          for (const s of clipSlotObjs) {
+            const b = slotBBox(s)
+            if (!b) continue
+            if (!any) {
+              [x0, y0, x1, y1] = b
+              any = true
+            } else {
+              x0 = Math.min(x0, b[0]); y0 = Math.min(y0, b[1])
+              x1 = Math.max(x1, b[2]); y1 = Math.max(y1, b[3])
+            }
+          }
+          return any ? [x0, y0, x1, y1] : null
+        }
+
         state = new AnimationState(new AnimationStateData(data))
         animNames = data.animations.map((a: any) => a.name)
         state.timeScale = speed
@@ -662,6 +698,17 @@ export default function SpinePlayer({
         const idleFirst = visibleAnims.find(isIdleName) || visibleAnims[0] || animNames[0] || ''
         const first = (pickDefaultAnim && pickDefaultAnim(animNames, name)) || idleFirst
         setAnim(first)
+
+        // 临时调试：URL 带 debugslots 时导出全部槽位的包围盒（定位画框/背景板用），
+        // 并在每次 apply 后推送裁剪框的实时视图信息（外层画红框对照用）
+        const DEBUG_PROBE = new URLSearchParams(window.location.search).has('debugslots')
+        if (DEBUG_PROBE) {
+          skeleton.updateWorldTransform()
+          ;(window as any).__slotInfo = skeleton.slots.map((s: any) => {
+            const b = slotBBox(s)
+            return { slot: String(s.data?.name || ''), att: String(s.getAttachment()?.name || ''), bbox: b }
+          })
+        }
 
         // 相机 / 视图
         const offset = new Vector2()
@@ -942,11 +989,21 @@ export default function SpinePlayer({
           setCalibCut(sceneCut === Infinity ? null : sceneCut)
         }
         if (!framed) {
-          skeleton.getBounds(offset, size, [])
-          bw = Math.max(1, size.x)
-          bh = Math.max(1, size.y)
-          cx0 = offset.x + bw / 2
-          cy0 = offset.y + bh / 2
+          // 配了舞台裁剪的模型：按画作框取景。骨架 getBounds 会把飘出框外的
+          // 动画部件（警戒带等）一起算进去，取景被拉远、画作反而变小。
+          const clip = clipRectOf()
+          if (clip) {
+            bw = Math.max(1, clip[2] - clip[0])
+            bh = Math.max(1, clip[3] - clip[1])
+            cx0 = (clip[0] + clip[2]) / 2
+            cy0 = (clip[1] + clip[3]) / 2
+          } else {
+            skeleton.getBounds(offset, size, [])
+            bw = Math.max(1, size.x)
+            bh = Math.max(1, size.y)
+            cx0 = offset.x + bw / 2
+            cy0 = offset.y + bh / 2
+          }
         }
         // 场景背景板：安静半场典型范围 ×1.15（max 维度），中心=典型中心——
         // 与角色本体成比例，随相机跟拍在画面里平移；舞台 overflow hidden 裁边。
@@ -1013,6 +1070,8 @@ export default function SpinePlayer({
         })()
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
+        /** 舞台裁剪矩形（帧缓冲像素，GL 原点左下）；null = 不裁剪。apply() 每帧重算 */
+        let scissorPx: [number, number, number, number] | null = null
         /** 相机跟拍开关：大招默认开启，用户拖拽/滚轮接管后关闭，复位恢复 */
         let follow = dir === 'spine_skillcut' && framed
 
@@ -1030,6 +1089,32 @@ export default function SpinePlayer({
           cam.viewportHeight = H / z
           cam.update()
           gl.viewport(0, 0, canvas.width, canvas.height)
+
+          // 舞台裁剪框：画作框槽位的世界包围盒 → 帧缓冲像素（GL 原点在左下）。
+          // 世界 → 屏幕：sx = (wx - cx)·z + W/2，sy_css = H/2 - (wy - cy)·z
+          scissorPx = null
+          if (clipSlotObjs.length) {
+            const r = clipRectOf()
+            if (r) {
+              const dpr = canvas.width / Math.max(1, W)
+              const px = (wx: number) => ((wx - view.cx) * z + W / 2) * dpr
+              const pyCss = (wy: number) => H / 2 - (wy - view.cy) * z
+              const x0 = Math.max(0, px(r[0]))
+              const x1 = Math.min(canvas.width, px(r[2]))
+              const yTop = pyCss(r[3])
+              const yBot = pyCss(r[1])
+              const y0 = Math.max(0, canvas.height - yBot * dpr)
+              const y1 = Math.min(canvas.height, canvas.height - yTop * dpr)
+              const w = x1 - x0
+              const h = y1 - y0
+              if (w > 0 && h > 0) scissorPx = [x0, y0, w, h]
+            }
+          }
+          if (DEBUG_PROBE) {
+            ;(window as any).__clipDebug = {
+              W, H, fitScale, zoom: view.zoom, cx: view.cx, cy: view.cy, scissorPx,
+            }
+          }
 
           // 场景背景层：世界矩形 → 屏幕矩形（与骨架共用同一相机）。
           // 多镜大招有两张板，按切镜点只显示当前那张
@@ -1461,8 +1546,14 @@ export default function SpinePlayer({
             }
           }
           apply()
+          // 清屏必须关掉 scissor：否则框外区域不会被清，上一帧内容会残留拖影
+          gl.disable(gl.SCISSOR_TEST)
           gl.clearColor(0, 0, 0, 0)
           gl.clear(gl.COLOR_BUFFER_BIT)
+          if (scissorPx) {
+            gl.enable(gl.SCISSOR_TEST)
+            gl.scissor(scissorPx[0], scissorPx[1], scissorPx[2], scissorPx[3])
+          }
           scene.begin()
           // 按 z 序绘制：z<0 的 BG 层在下，主模型居中，z>0 的 FG 层（帘子）在上。
           const below = extraLayers.filter((L) => L.z < 0)
@@ -1479,6 +1570,7 @@ export default function SpinePlayer({
             scene.drawSkeleton(L.skeleton, L.premultiplied)
           }
           scene.end()
+          gl.disable(gl.SCISSOR_TEST)
         }
 
         /**
@@ -1501,10 +1593,15 @@ export default function SpinePlayer({
             canvas.height = ch
             canvas.style.width = W + 'px'
             canvas.style.height = H + 'px'
-            fitScale = (fitMode === 'cover'
-              ? Math.max(W / bw, H / bh)
-              : Math.min(W / bw, H / bh)) * (fitMode === 'cover' ? 0.96 : 1)
           }
+          // fitScale 必须每次都重算，不能只在画布尺寸变化时算：
+          // 动态 CG 之间切换时 React 复用同一个 <canvas> 节点，像素尺寸与
+          // 上一张完全一致 → sizeChanged 恒为 false，fitScale 会停留在
+          // 新闭包的初始值 1，模型按错误基准渲染（过大且缩不小），只有
+          // 等侧栏开关改变舞台尺寸后才恢复。比例计算本身是纯算术，无谓省。
+          fitScale = (fitMode === 'cover'
+            ? Math.max(W / bw, H / bh)
+            : Math.min(W / bw, H / bh)) * (fitMode === 'cover' ? 0.96 : 1)
           if (resetView) {
             view.zoom = 1
             view.cx = cx0

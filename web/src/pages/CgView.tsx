@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import ImageViewer, { type ImageViewerApi } from '../components/ImageViewer'
 import PlayPauseIcon from '../components/PlayPauseIcon'
@@ -6,14 +6,17 @@ import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Imm
 import { usePageTitle } from '../usePageTitle'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
-  loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, nf, whereOf,
-  type CgIndex, type SpineOverride, type StoryUnit, type ViewTransform,
+  coverOf, loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, mergedBgOf, nf,
+  setLinks, setMembersOf, visibleCgs, whereOf,
+  type CgIndex, type CgItem, type SpineOverride, type StoryUnit, type ViewTransform,
 } from '../data'
 
 const EMPTY: SpineStatus = {
   ready: false, playing: true, time: 0, duration: 0, speed: 1, zoom: 1, anim: '', anims: [],
 }
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
+/** 窄屏断点：与 index.css 里 CG 查看器的抽屉布局断点保持一致 */
+const NARROW = '(max-width: 980px)'
 
 function fmtTime(t: number): string {
   if (!Number.isFinite(t) || t < 0) return '0:00.0'
@@ -38,12 +41,13 @@ export default function CgView() {
   const [limit, setLimit] = useState(160)
   const [modelReady, setModelReady] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
-  const [showModel, setShowModel] = useState(true)
   const [status, setStatus] = useState<SpineStatus>(EMPTY)
   const [stillScale, setStillScale] = useState(1)
   const [toast, setToast] = useState<string | null>(null)
-  const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
+  // 窄屏（≤980px）是抽屉布局：目录/信息默认收起，靠舞台顶部按钮开合；
+  // 桌面端维持原来的默认展开
+  const [leftOpen, setLeftOpen] = useState(() => !window.matchMedia(NARROW).matches)
+  const [rightOpen, setRightOpen] = useState(() => !window.matchMedia(NARROW).matches)
   /** 沉浸全屏：隐藏顶栏与页面其它元素，只留舞台 */
   const immersive = useImmersive()
 
@@ -85,19 +89,36 @@ export default function CgView() {
   useEffect(() => {
     setModelReady(false)
     setModelError(null)
-    setShowModel(true)
     setStatus(EMPTY)
     setStillScale(1)
     setToast(null)
     seeking.current = false
+    // 窄屏抽屉：切 CG 后自动收起，让新 CG 直接可见
+    if (window.matchMedia(NARROW).matches) {
+      setLeftOpen(false)
+      setRightOpen(false)
+    }
   }, [name])
+
+  // 跨越窄屏断点（旋转 / 拖窗口）时恢复该布局的默认开合：
+  // 回到桌面时两侧面板展开，回到窄屏时抽屉全部收起
+  useEffect(() => {
+    const mq = window.matchMedia(NARROW)
+    const onChange = () => {
+      setLeftOpen(!mq.matches)
+      setRightOpen(!mq.matches)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const cur = useMemo(() => index?.items.find((x) => x.n === name) || null, [index, name])
   usePageTitle(cur?.n)
   const isSpine = spine.has(name)
-  const useModel = isSpine && modelReady && showModel
+  const useModel = isSpine && modelReady
   const canAnimate = useModel && status.duration > 0
-  const links = index?.links[name] || []
+  /** 剧情段落：封面按整集（自身 + 成员）取并集，连图集的封面常常不是剧情里出现的那一帧 */
+  const links = useMemo(() => (index ? setLinks(index, name) : []), [index, name])
   modeRef.current = useModel ? 'model' : 'still'
 
   // 切换显示模式 / 换 CG 时，把背景层恢复到对应模式的取景
@@ -108,14 +129,19 @@ export default function CgView() {
   /**
    * 有些动态 CG 的背景是独立导出的 *_bg.png（不在图集里），只在剧情阅读器里
    * 作为第二层叠上去。CG 查看器补同一个背景层，静态合成图和实时模型共用，
-   * 切换时背景不动，不会闪。配置支持写 CG 名或直接写图片 URL。
+   * 切换时背景不动，不会闪。取材优先级：overrides 显式配置（写 CG 名或直接
+   * 写图片 URL）→ 合并收录的独立背景 CG（X 与 X_bg 拆成两条的那种，自动垫底）。
    */
   const bgSrc = useMemo(() => {
+    if (!index) return null
     const spec = overrides[name]?.background
-    if (!spec || !index) return null
-    if (spec.startsWith('/')) return spec
-    const h = index.items.find((x) => x.n === spec)?.h
-    return h ? `/img/l/${h}.webp` : null
+    if (spec) {
+      if (spec.startsWith('/')) return spec
+      const h = index.items.find((x) => x.n === spec)?.h
+      return h ? `/img/l/${h}.webp` : null
+    }
+    const bg = mergedBgOf(index.items, name)
+    return bg ? `/img/l/${bg.h}.webp` : null
   }, [overrides, name, index])
 
   const unitMap = useMemo(() => {
@@ -124,34 +150,108 @@ export default function CgView() {
     return m
   }, [units])
 
+  // 合并收录后的可见 CG：目录、上一张/下一张、计数都基于它，
+  // X_bg 与图集贴图页（cg_merges.json）不再作为独立条目出现在浏览序列里
+  const pool = useMemo(() => visibleCgs(index?.items || [], index?.merges), [index])
+
+  // 当前 CG 是否是被并入某主 CG 的条目（直接 URL 访问时给出去向提示）
+  const absorbedBy = useMemo(() => coverOf(index?.merges, name), [index, name])
+
+  // 当前 CG 所属的集：封面页与成员页都算，没有集则为 null。
+  // 有了它，进入集内任意一张后左侧目录能保持展开、右侧能一直看到整集。
+  const setCover = useMemo(() => {
+    if (!index?.merges) return null
+    if (setMembersOf(index.merges, name).length > 0) return name
+    return coverOf(index.merges, name)
+  }, [index, name])
+
+  // 集内全部条目（含封面），供左侧展开与右侧「相似画集」共用
+  const setItems = useMemo(() => {
+    if (!index || !setCover) return [] as CgItem[]
+    return [setCover, ...setMembersOf(index.merges, setCover)]
+      .map((n) => index.items.find((x) => x.n === n))
+      .filter((x): x is CgItem => !!x)
+  }, [index, setCover])
+
+  // 左侧目录展开时列在封面下面的成员（不含封面本身）
+  const setMembers = useMemo(
+    () => setItems.filter((x) => x.n !== setCover),
+    [setItems, setCover],
+  )
+
+  // 浏览锚点：被并入的条目按它所属的封面定位，成员页的上一张/下一张仍可用
+  const anchorName = absorbedBy ?? name
+
   const list = useMemo(() => {
-    const items = index?.items || []
     const k = q.trim().toLowerCase()
-    if (!k) return items
-    return items.filter((it) => it.n.toLowerCase().includes(k) || it.s.toLowerCase().includes(k))
-  }, [index, q])
+    if (!k) return pool
+    return pool.filter((it) => it.n.toLowerCase().includes(k) || it.s.toLowerCase().includes(k))
+  }, [pool, q])
 
   const visible = useMemo(() => list.slice(0, limit), [list, limit])
   useEffect(() => setLimit(160), [q])
 
-  // 切换 CG 后把目录里的当前项滚进可视区
+  /**
+   * 把目录滚到当前 CG：只在被遮住时补“最少”的滚动距离，已可见就完全不动。
+   * 之前写成「取能容纳整组的偏移量」，效果是把选中项底边对齐到面板底部——
+   * 用户手动滚过列表后再点条目，选中项会突然掉到最下方。
+   * 所在集整组放得下时以整组为目标（让展开的成员一起可见），
+   * 整组比视口还高时只保证当前项本身可见。
+   */
+  const scrollDirToCurrent = useCallback(() => {
+    const box = listRef.current
+    const on = box?.querySelector<HTMLElement>('.cv-dir-item.on')
+    if (!box || !on) return
+    const sub = on.closest('.cv-dir-sub') as HTMLElement | null
+    // 当前项是封面时，展开的成员组是它的下一个兄弟节点
+    const next = on.nextElementSibling as HTMLElement | null
+    const group = sub ?? (next?.classList.contains('cv-dir-sub') ? next : null)
+    const cover = (sub ? (sub.previousElementSibling as HTMLElement | null) : null) ?? on
+    const last = (group?.lastElementChild as HTMLElement | null) ?? on
+    const boxRect = box.getBoundingClientRect()
+    const rel = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect()
+      return {
+        top: r.top - boxRect.top + box.scrollTop,
+        bottom: r.bottom - boxRect.top + box.scrollTop,
+      }
+    }
+    const g = rel(cover)
+    const gBottom = rel(last).bottom
+    const PAD = 8
+    const fits = gBottom - g.top <= box.clientHeight - PAD * 2
+    const targetTop = fits ? g.top : rel(on).top
+    const targetBottom = fits ? gBottom : rel(on).bottom
+    const viewTop = box.scrollTop
+    const viewBottom = viewTop + box.clientHeight
+    if (targetTop < viewTop + PAD) {
+      box.scrollTop = Math.max(0, targetTop - PAD)
+    } else if (targetBottom > viewBottom - PAD) {
+      box.scrollTop = targetBottom - box.clientHeight + PAD
+    }
+  }, [])
+
+  // 切换 CG 后把目录里的当前项（含所在集）滚进可视区
   useEffect(() => {
-    const el = listRef.current?.querySelector<HTMLElement>('.cv-dir-item.on')
-    el?.scrollIntoView({ block: 'nearest' })
-  }, [name, visible])
+    scrollDirToCurrent()
+  }, [name, visible, scrollDirToCurrent])
+
+  // 窄屏抽屉是滑入的：打开时目录刚从屏幕外回来，需要重新定位
+  useEffect(() => {
+    if (!leftOpen) return
+    scrollDirToCurrent()
+  }, [leftOpen, scrollDirToCurrent])
 
   const go = useCallback((delta: number) => {
-    if (!index) return
-    const i = index.items.findIndex((x) => x.n === name)
-    const next = index.items[i + delta]
+    const i = pool.findIndex((x) => x.n === anchorName)
+    const next = pool[i + delta]
     if (next) navigate(`/cg/${encodeURIComponent(next.n)}`)
-  }, [index, name, navigate])
+  }, [pool, anchorName, navigate])
 
   const togglePlay = useCallback(() => {
     if (!isSpine || !modelReady) return
-    if (!showModel) { setShowModel(true); return }
     spineRef.current?.toggle()
-  }, [isSpine, modelReady, showModel])
+  }, [isSpine, modelReady])
 
   const resetView = useCallback(() => {
     if (useModel) spineRef.current?.resetView()
@@ -224,18 +324,30 @@ export default function CgView() {
   }
 
   const zoomText = `${(useModel ? status.zoom : stillScale).toFixed(1)}×`
-  const i = index.items.findIndex((x) => x.n === name)
+  const i = pool.findIndex((x) => x.n === anchorName)
   const pct = status.duration > 0
     ? Math.max(0, Math.min(100, status.time / status.duration * 100)) : 0
 
   return (
     <div className={`cv-shell ${leftOpen ? '' : 'cv-left-off'} ${rightOpen ? '' : 'cv-right-off'}`}>
       {immersive.active && <ImmersiveExitButton onClick={immersive.exit} />}
+      {/* 窄屏抽屉遮罩：任一抽屉展开时盖住舞台，点它收起（桌面恒隐藏） */}
+      <div
+        className="cv-drawer-backdrop"
+        onClick={() => { setLeftOpen(false); setRightOpen(false) }}
+        aria-hidden="true"
+      />
       {/* ---------- 左：目录 ---------- */}
       <aside className="cv-dir">
         <div className="cv-dir-head">
           <Link to="/cg" className="cv-back">← CG 图鉴</Link>
-          <span className="cv-dir-count">{nf(list.length)} / {nf(index.total)}</span>
+          <span className="cv-dir-count">{nf(list.length)} / {nf(pool.length)}</span>
+          <button
+            className="cv-drawer-close"
+            onClick={() => setLeftOpen(false)}
+            aria-label="收起目录"
+            title="收起目录"
+          >×</button>
         </div>
         <div className="cv-search-wrap">
           <input
@@ -247,18 +359,43 @@ export default function CgView() {
           {q && <button className="cv-search-x" onClick={() => setQ('')} aria-label="清空">×</button>}
         </div>
         <div className="cv-dir-list" ref={listRef}>
-          {visible.map((it) => (
-            <button
-              key={it.h}
-              className={`cv-dir-item ${it.n === name ? 'on' : ''}`}
-              title={it.n}
-              onClick={() => navigate(`/cg/${encodeURIComponent(it.n)}`)}
-            >
-              <img src={`/img/s/${it.h}.webp`} alt="" loading="lazy" />
-              <span className="cv-dir-name">{it.n}</span>
-              {spine.has(it.n) && <span className="cv-dir-dyn">动</span>}
-            </button>
-          ))}
+          {visible.map((it) => {
+            // 当前所在的集在目录里展开：封面行下面列出成员，点哪个就在集内切到哪张，
+            // 集上下文（左侧展开 + 右侧相似画集）始终保留
+            const expanded = setCover === it.n && setMembers.length > 0
+            // 所有集封面都标张数，方便在列表里认出哪些是合集（展开只针对当前集）
+            const mergedCount = index?.merges?.[it.n]
+            const setSize = Array.isArray(mergedCount) ? mergedCount.length + 1 : 0
+            return (
+              <Fragment key={it.h}>
+                <button
+                  className={`cv-dir-item ${it.n === name ? 'on' : ''}`}
+                  title={it.n}
+                  onClick={() => navigate(`/cg/${encodeURIComponent(it.n)}`)}
+                >
+                  <img src={`/img/s/${it.h}.webp`} alt="" loading="lazy" />
+                  <span className="cv-dir-name">{it.n}</span>
+                  {setSize > 0 && <span className="cv-dir-set">{setSize}</span>}
+                  {spine.has(it.n) && <span className="cv-dir-dyn">动</span>}
+                </button>
+                {expanded && (
+                  <div className="cv-dir-sub">
+                    {setMembers.map((m) => (
+                      <button
+                        key={m.h}
+                        className={`cv-dir-item cv-dir-subitem ${m.n === name ? 'on' : ''}`}
+                        title={m.n}
+                        onClick={() => navigate(`/cg/${encodeURIComponent(m.n)}`)}
+                      >
+                        <img src={`/img/s/${m.h}.webp`} alt="" loading="lazy" />
+                        <span className="cv-dir-name">{m.n}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
+            )
+          })}
           {list.length > limit && (
             <button className="cv-more" onClick={() => setLimit((v) => v + 160)}>
               加载更多（还有 {nf(list.length - limit)} 张）
@@ -314,7 +451,7 @@ export default function CgView() {
               </span>
             </div>
             <div className="cv-top-group">
-              <span className="cv-stage-idx">{i + 1} / {nf(index.total)}</span>
+              <span className="cv-stage-idx">{i + 1} / {nf(pool.length)}</span>
               <button
                 className="cv-panel-toggle"
                 onClick={() => setRightOpen((v) => !v)}
@@ -394,11 +531,6 @@ export default function CgView() {
             <button className="cv-btn" onClick={saveFrame} title="保存当前帧为 PNG（S）">
               ⤓ 保存当前帧
             </button>
-            {isSpine && modelReady && (
-              <button className="cv-btn" onClick={() => setShowModel((v) => !v)}>
-                {showModel ? '▣ 看静态合成' : '▶ 看实时模型'}
-              </button>
-            )}
             <button className="cv-btn" onClick={immersive.toggle} title="全屏查看（Esc 退出）">
               <ExpandIcon />
             </button>
@@ -409,6 +541,12 @@ export default function CgView() {
       {/* ---------- 右：信息与剧情段落 ---------- */}
       <aside className="cv-info">
         <div className="cv-info-head">
+          <button
+            className="cv-drawer-close"
+            onClick={() => setRightOpen(false)}
+            aria-label="收起信息"
+            title="收起信息"
+          >×</button>
           <div className="cv-kicker">CG / {cur.c.replace(/^\d+_/, '')}</div>
           <h1 className="cv-title">{cur.n}</h1>
           <div className="cv-sub">
@@ -420,12 +558,41 @@ export default function CgView() {
             </span>
             <span className="cv-tag">{links.length} 处剧情</span>
           </div>
+          {absorbedBy && (
+            <div className="cv-absorbed">
+              本图已并入{' '}
+              <Link to={`/cg/${encodeURIComponent(absorbedBy)}`}>{absorbedBy}</Link>
+            </div>
+          )}
         </div>
 
         <div className="cv-nav-btns">
           <button disabled={i <= 0} onClick={() => go(-1)}>‹ 上一张</button>
-          <button disabled={i < 0 || i >= index.total - 1} onClick={() => go(1)}>下一张 ›</button>
+          <button disabled={i < 0 || i >= pool.length - 1} onClick={() => go(1)}>下一张 ›</button>
         </div>
+
+        {/* 相似画集：连图/分层拆成的多条 CG 已并入同一集，封面与成员都在这里，
+            点任意一张在集内切换（左侧目录保持展开，回封面点标着「封面」的那张） */}
+        {setItems.length > 1 && (
+          <section className="cv-set">
+            <h2>相似画集（{setItems.length} 张）</h2>
+            <div className="cv-set-grid">
+              {setItems.map((m) => (
+                <Link
+                  key={m.n}
+                  className={`cv-set-item ${m.n === name ? 'on' : ''}`}
+                  to={`/cg/${encodeURIComponent(m.n)}`}
+                  title={m.n}
+                  aria-current={m.n === name ? 'page' : undefined}
+                >
+                  <img src={`/img/s/${m.h}.webp`} alt={m.n} loading="lazy" />
+                  {m.n === setCover && <span className="cv-set-cover">封面</span>}
+                  <span className="cv-set-name">{m.n}</span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="cv-links">
           <h2>对应剧情段落（{links.length}）</h2>

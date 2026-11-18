@@ -91,6 +91,7 @@ python build/export_char_voices.py        # → public/voice + public/data/char_
 python build/build_images.py              # → public/img         三档转码
 python build/export_cg.py                 # → public/data/cg_index.json
 python build/build_spine_models.py        # → public/spine       实时 Spine 模型
+node build/gen_cg_merges.mjs              # → build/cg_merges.json 合并收录表（图集贴图页自动识别 + 人工条目）
 
 # 4. 剧情与搜索
 python build/export_char_stories.py       # → public/data/char_stories.json 好感剧情映射
@@ -272,7 +273,7 @@ bash build/deploy_pages.sh   # 构建（tsc + vite + 预渲染 SEO 页）→ 体
 | 前端界面 / 文案 / 样式 | `web/src/` |
 | 发布网站公告 / 更新日志 | `web/src/notices.ts`（数组头部加一条，slug 保持稳定） |
 | 站点根配置（robots / SPA 回退 / 缓存头） | `build/site/`（入库源文件，`public/` 里的是同步副本） |
-| 人工标注（模型覆盖 / CG 封面标记） | `build/spine_overrides.json` / `build/cg_flags.json` |
+| 人工标注（模型覆盖 / CG 封面标记 / 合并收录） | `build/spine_overrides.json` / `build/cg_flags.json` / `build/cg_merges.json` |
 | 详情页 SEO（标题 / 摘要 / OG 规则） | `build/prerender_seo.mjs` |
 | 首页标题与描述 | `web/index.html` |
 
@@ -293,6 +294,8 @@ bash build/deploy_pages.sh   # 构建（tsc + vite + 预渲染 SEO 页）→ 体
 - **人工配置不放在 `public/`**：`spine_overrides.json` 已移到 `build/`（和 `cg_flags.json` 一致），
   vite 在 dev / build 前由 `spineOverridesPlugin` 拷一份到 `public/data/`，改完即时同步并刷新页面。
   前端仍按 `/data/spine_overrides.json` 取，`nikke_extract` 的静态渲染脚本读的也是这份产物，路径不用改。
+  同一插件也同步 `build/cg_merges.json`（CG 合并收录表，`node build/gen_cg_merges.mjs` 生成，
+  自动识别图集贴图页并保留人工条目）。
 - **站点根文件**（`_redirects` SPA 回退 / `robots.txt` / `_headers` 缓存头）同样入库在 `build/site/`，
   由 `siteFilesPlugin` 同步进 `public/`。这三个文件只在部署时生效，但放在 `public/` 里就等于不进版本库
   （`public/` 整个被 ignore），`git status` 也看不见——想改就改 `build/site/` 下的那份。

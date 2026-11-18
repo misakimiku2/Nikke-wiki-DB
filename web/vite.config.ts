@@ -8,6 +8,9 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const FLAGS = path.resolve(HERE, '../build/cg_flags.json')
 const OVERRIDES_SRC = path.resolve(HERE, '../build/spine_overrides.json')
 const OVERRIDES_DST = path.resolve(HERE, '../public/data/spine_overrides.json')
+/** CG 合并收录表（build/gen_cg_merges.mjs 生成，人工条目也在其中），同样从 build/ 同步 */
+const MERGES_SRC = path.resolve(HERE, '../build/cg_merges.json')
+const MERGES_DST = path.resolve(HERE, '../public/data/cg_merges.json')
 const SITE_SRC = path.resolve(HERE, '../build/site')
 const SITE_DST = path.resolve(HERE, '../public')
 const NOTE =
@@ -93,20 +96,23 @@ function cleanDistAssets(): Plugin {
 }
 
 /**
- * 按模型覆盖的 Spine 渲染配置（spine_overrides.json）是人工维护的，放在 build/ 里入库；
- * public/ 整个被 .gitignore（6.4G 素材），所以每次 dev / build 前把它同步一份进去，
- * 前端仍按 /data/spine_overrides.json 取，nikke_extract 的静态渲染脚本也不用改路径。
- * 改 build/spine_overrides.json 会即时同步并刷新页面。
+ * 按模型覆盖的 Spine 渲染配置（spine_overrides.json）与 CG 合并收录表（cg_merges.json）
+ * 都是人工维护的，放在 build/ 里入库；public/ 整个被 .gitignore（6.4G 素材），
+ * 所以每次 dev / build 前把这两份文件同步进去，前端仍按 /data/*.json 取，
+ * nikke_extract 的静态渲染脚本也不用改路径。改 build/ 下的源文件会即时同步并刷新页面。
  */
 function spineOverridesPlugin(): Plugin {
-  const sync = () => {
+  const pairs: Array<[string, string]> = [[OVERRIDES_SRC, OVERRIDES_DST], [MERGES_SRC, MERGES_DST]]
+  const syncOne = (src: string, dst: string) => {
     try {
-      fs.mkdirSync(path.dirname(OVERRIDES_DST), { recursive: true })
-      fs.copyFileSync(OVERRIDES_SRC, OVERRIDES_DST)
+      if (!fs.existsSync(src)) return
+      fs.mkdirSync(path.dirname(dst), { recursive: true })
+      fs.copyFileSync(src, dst)
     } catch (e) {
-      console.warn('[spine-overrides] 同步失败：', e)
+      console.warn('[spine-overrides] 同步失败：', src, e)
     }
   }
+  const sync = () => { for (const [src, dst] of pairs) syncOne(src, dst) }
   return {
     name: 'spine-overrides',
     // dev 与 build 都会走到，且早于 publicDir 被读取
@@ -114,12 +120,12 @@ function spineOverridesPlugin(): Plugin {
       sync()
     },
     configureServer(server) {
-      server.watcher.add(OVERRIDES_SRC)
+      for (const [src] of pairs) server.watcher.add(src)
       server.watcher.on('change', (file) => {
-        if (path.resolve(file) === OVERRIDES_SRC) {
-          sync()
-          server.ws.send({ type: 'full-reload' })
-        }
+        const hit = pairs.find(([src]) => path.resolve(file) === src)
+        if (!hit) return
+        syncOne(hit[0], hit[1])
+        server.ws.send({ type: 'full-reload' })
       })
     },
   }
