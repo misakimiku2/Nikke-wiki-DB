@@ -37,6 +37,8 @@ const exists = (rel) => fs.existsSync(path.join(PUB, rel))
 const SUMMARY_STYLE =
   'font-family:system-ui,-apple-system,sans-serif;line-height:1.7;max-width:720px;margin:0 auto;padding:48px 20px;color:#dfe3ea'
 
+// canonical / sitemap 统一带尾斜杠：Cloudflare Pages 对目录型静态页会把
+// /characters/94 308 到 /characters/94/，保持一致省得 Google 在两者之间打架。
 function renderPage({ title, description, canonicalPath, ogImage, bodyHtml }) {
   let html = template.replace(/<title>.*?<\/title>/s, `<title>${esc(title)}</title>`)
   const metas = [
@@ -101,7 +103,7 @@ const charCount = (() => {
 
     writePage(
       `characters/${c.id}`,
-      renderPage({ title: `${c.name} · NIKKE 资料库`, description: desc, canonicalPath: `/characters/${c.id}`, ogImage, bodyHtml: body }),
+      renderPage({ title: `${c.name} · NIKKE 资料库`, description: desc, canonicalPath: `/characters/${c.id}/`, ogImage, bodyHtml: body }),
     )
     n++
   }
@@ -143,7 +145,7 @@ const storyCount = (() => {
       renderPage({
         title: `${u.title} · ${u.label} · NIKKE 资料库`,
         description: desc,
-        canonicalPath: `/story/${u.id}`,
+        canonicalPath: `/story/${u.id}/`,
         ogImage,
         bodyHtml: body,
       }),
@@ -171,7 +173,7 @@ const cgCount = (() => {
       renderPage({
         title: `${g.n} · CG 图鉴 · NIKKE 资料库`,
         description: desc,
-        canonicalPath: `/cg/${g.n}`,
+        canonicalPath: `/cg/${g.n}/`,
         ogImage: g.h ? `/img/l/${g.h}.webp` : null,
         bodyHtml: body,
       }),
@@ -188,9 +190,9 @@ const urls = [
   '/characters',
   '/story',
   '/cg',
-  ...chars.map((c) => `/characters/${c.id}`),
-  ...storyUnits.map((u) => `/story/${u.id}`),
-  ...cgItems.map((g) => `/cg/${g.n}`),
+  ...chars.map((c) => `/characters/${c.id}/`),
+  ...storyUnits.map((u) => `/story/${u.id}/`),
+  ...cgItems.map((g) => `/cg/${g.n}/`),
 ]
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
