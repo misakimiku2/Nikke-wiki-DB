@@ -164,12 +164,25 @@ export default function CgGallery() {
       </div>
 
       <div className="toolbar">
-        <input
-          className="search"
-          placeholder="搜索 CG 名称或活动键"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        <div className="search-box">
+          <input
+            className="search"
+            placeholder="搜索 CG 名称或活动键"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          {q && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => setQ('')}
+              aria-label="清空搜索"
+              title="清空"
+            >
+              ×
+            </button>
+          )}
+        </div>
         <button className={`chip ${cat === 'all' ? 'on' : ''}`} onClick={() => setCat('all')}>
           全部
         </button>

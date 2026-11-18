@@ -183,7 +183,7 @@ export default function Characters() {
           )}
         </div>
         <div className="meta">
-          <h3>{c.name}</h3>
+          <h3 title={c.name}>{c.name}</h3>
           <div className="row">
             <span>{c.code}</span>
             <span className="lines" style={{ color: accentFor(c.id) }}>
@@ -212,12 +212,25 @@ export default function Characters() {
       </div>
 
       <div className="toolbar">
-        <input
-          className="search"
-          placeholder="搜索角色名 / 介绍，例：拉毗、反击部队"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        <div className="search-box">
+          <input
+            className="search"
+            placeholder="搜索角色名 / 介绍，例：拉毗、反击部队"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          {q && (
+            <button
+              type="button"
+              className="search-clear"
+              onClick={() => setQ('')}
+              aria-label="清空搜索"
+              title="清空"
+            >
+              ×
+            </button>
+          )}
+        </div>
         <div className="tool-sort" role="group" aria-label="排序方式">
           <button className={`chip ${sort === 'name' ? 'on' : ''}`} onClick={() => setSort('name')}>
             名称
