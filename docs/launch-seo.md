@@ -4,6 +4,29 @@
 > 目标读者：接手继续做的 Agent（也可以是三个月后的自己）。
 > 相关背景在 `README.md`（构建流程、目录约定、部署章节）。
 
+## 0. 执行进度（2026-11-19 更新）
+
+**A、B 两个任务包已全部做完**（详见下方原文），提交记录：A1 = `4116991`，B0 = `339e344`，B1–B4 见其后一笔。
+
+- **A1 拆索引** ✅ `public/data/search/{0..3}.json` + `manifest.json`，4 片各约 7 MB；
+  旧单文件不再生成（**注意 dist 不清空，历史残留要手删**，deploy 脚本的体检会拦）。
+- **A2 / A3** ✅ 深链接回退与 robots 先拦后放，源文件后来移到 `build/site/`（`63e7c7c`），见 README 约定。
+- **B0（新发现的隐藏前置）** ✅ 原来是 **HashRouter**，爬虫眼里全站只有一个 URL，B1 无从谈起；
+  已切 BrowserRouter（`main.tsx` + CharacterDetail 的 calib 正则两处）。
+- **B1 预渲染** ✅ `build/prerender_seo.mjs`（无第三方依赖），已接进 `web/package.json` 的 build 链，
+  每次 `npm run build` 自动产出 2452 页 + sitemap；角色页塞名字/简介/技能名，剧情页塞标题/首段，
+  CG 页塞名字/分类/缩略图；og:image 用 charhd（13 个角色无图则省略）。
+- **B2 sitemap** ✅ 2456 条（首页 + 3 列表页 + 2452 详情）。
+- **B3 放行** ✅ `web/index.html` 去掉 noindex 并补首页 description；robots.txt 换成 Allow + Sitemap。
+- **B4 usePageTitle** ✅ `web/src/usePageTitle.ts`，三个详情页已接入。
+- **B5 404 页** ⏭ 决定不做：保留 A2 的通配回退，未知路径由 SPA 内的 404 Stub 页接管（二者取一，取 SPA）。
+- **部署脚本** ✅ `build/deploy_pages.sh`（构建 → 25 MiB/20000 文件体检 → `wrangler pages deploy dist`）。
+- **待办（需要人）**：① `wrangler login` 后跑一次部署，**以 wrangler 输出的 URL 为准**，
+  若不是 `https://nikke-db.pages.dev`，改 `build/prerender_seo.mjs` 的 `SITE_URL` 和 `build/site/robots.txt`
+  两处后重新构建上传；② 提交 sitemap 到 Google Search Console。百度按放弃处理（境外托管 + 无备案）。
+
+原任务描述保留如下，字段名/做法细节仍可参考。
+
 ## 1. 需求（用户原话的意思）
 
 站点内容「差不多」之后就**公开上线，并让搜索引擎收录**，而不是无限期修复细节。

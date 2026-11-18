@@ -6,6 +6,7 @@ import {
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
 import StorySmsInline from '../components/StorySmsInline'
+import { usePageTitle } from '../usePageTitle'
 
 type Frame = {
   fg: string | null
@@ -379,6 +380,7 @@ export default function StoryReader() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [detail, setDetail] = useState<StoryDetail | null>(null)
+  usePageTitle(detail ? `${detail.title} · ${detail.label}` : null)
   const [index, setIndex] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
   const [smsData, setSmsData] = useState<StorySmsData | null>(null)

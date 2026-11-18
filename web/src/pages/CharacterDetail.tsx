@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { usePageTitle } from '../usePageTitle'
 import {
   accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
   loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
@@ -585,6 +586,7 @@ export default function CharacterDetail() {
   }, [pick, pose])
 
   const c = list?.find((x) => String(x.id) === id) || null
+  usePageTitle(c?.name)
   // 旧版渲染图（art 表里 old: true）不是皮肤，混在切换条里会让人以为是错图；
   // c010_01 这类曾被误标的，已按 ScenarioCharacterSettingTable / 皮肤表核实后恢复
   const vars = (c ? variantsOf(imgs, c.id) : []).filter((v) => !art[v]?.old)

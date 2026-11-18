@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import ImageViewer, { type ImageViewerApi } from '../components/ImageViewer'
 import PlayPauseIcon from '../components/PlayPauseIcon'
 import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Immersive'
+import { usePageTitle } from '../usePageTitle'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
   loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, nf, whereOf,
@@ -92,6 +93,7 @@ export default function CgView() {
   }, [name])
 
   const cur = useMemo(() => index?.items.find((x) => x.n === name) || null, [index, name])
+  usePageTitle(cur?.n)
   const isSpine = spine.has(name)
   const useModel = isSpine && modelReady && showModel
   const canAnimate = useModel && status.duration > 0
