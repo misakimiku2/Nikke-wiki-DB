@@ -176,6 +176,32 @@ def main():
 
     dump("story_index.json", {"total": len(units), "items": units})
 
+    # ---- 剧情 → 登场角色：按说话人归并出每个单元的角色卡清单 ----
+    # 同一角色的剧情 speaker 有多个变体（mary/mary_s、sephie/sephie_op、sky_op*），
+    # 在 characters 表里是同名的多行；按 name_zh 回链角色档案即可全部归并，
+    # 精确对上 character_entries.speaker_id 的行优先（咨询/剧情两套 speaker 并存时）。
+    # 指挥官(Self)、？？？这类没有角色卡的说话人 join 不上，自然排除。
+    sp2char = {}
+    for sp, eid in con.execute("""
+        SELECT c.speaker_id, e.id
+        FROM characters c
+        JOIN character_entries e ON e.name_zh = c.name_zh
+        ORDER BY (e.speaker_id = c.speaker_id) DESC, e.line_count DESC
+    """):
+        sp2char.setdefault(sp, eid)
+    cast = defaultdict(lambda: defaultdict(int))   # unit_id -> char_id -> 台词行数
+    for uid, sp in con.execute(
+            "SELECT unit_id, speaker_id FROM story_lines WHERE speaker_id IS NOT NULL"):
+        cid = sp2char.get(sp)
+        if cid:
+            cast[uid][cid] += 1
+    # 每个单元内按台词行数降序——话最多的排最前面
+    dump("story_cast.json", {
+        "total": len(cast),
+        "units": {str(uid): [cid for cid, _ in sorted(v.items(), key=lambda x: -x[1])]
+                  for uid, v in cast.items()},
+    })
+
     # ---- 首页统计 ----
     stats = {
         "characters": con.execute("SELECT COUNT(*) FROM character_entries").fetchone()[0],

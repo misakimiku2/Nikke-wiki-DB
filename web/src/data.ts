@@ -1271,6 +1271,16 @@ export async function loadStoryIndex(): Promise<StoryUnit[]> {
   return cacheUnits
 }
 
+/** 剧情单元 → 登场角色 id（export_web.py 按说话人归并生成，已按台词数降序） */
+let cacheCast: Record<string, number[]> | null = null
+
+export async function loadStoryCast(): Promise<Record<string, number[]>> {
+  if (cacheCast) return cacheCast
+  const d = await getJSON<{ units: Record<string, number[]> }>('/data/story_cast.json')
+  cacheCast = d.units
+  return cacheCast
+}
+
 const unitCache = new Map<string, StoryDetail>()
 
 export async function loadStoryUnit(id: string | number): Promise<StoryDetail> {

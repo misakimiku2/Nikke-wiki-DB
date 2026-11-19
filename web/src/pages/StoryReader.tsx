@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  accentFor, loadCharacters, loadStoryIndex, loadStorySms, loadStoryUnit, nf,
-  type Character, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
+  accentFor, charPortrait, loadCharImages, loadCharMi, loadCharacters, loadStoryCast,
+  loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
+  type CharImages, type Character, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
 import StorySmsInline from '../components/StorySmsInline'
@@ -398,6 +399,10 @@ export default function StoryReader() {
   const [index, setIndex] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
   const [smsData, setSmsData] = useState<StorySmsData | null>(null)
+  // 章节目录页顶部的登场角色卡：story_cast.json 给出本单元的角色（按台词数降序）
+  const [cast, setCast] = useState<Character[]>([])
+  const [imgs, setImgs] = useState<CharImages>({})
+  const [mi, setMi] = useState<Set<string>>(new Set())
 
   // 左侧目录面板：展开状态记在 localStorage，窄屏默认收起
   const [navOpen, setNavOpen] = useState(() => {
@@ -461,6 +466,21 @@ export default function StoryReader() {
     loadStoryIndex().then(setIndex).catch(() => {})
     loadCharacters().then(setChars).catch(() => {})
   }, [id])
+
+  // 登场角色卡：单元 → 角色 id（story_cast.json）→ 角色档案；头像素材顺手预热
+  useEffect(() => {
+    loadCharImages().then(setImgs).catch(() => {})
+    loadCharMi().then(setMi).catch(() => {})
+  }, [])
+  useEffect(() => {
+    if (!detail || chars.length === 0) return
+    loadStoryCast().then((units) => {
+      const byId = new Map(chars.map((c) => [c.id, c]))
+      setCast((units[String(detail.id)] || [])
+        .map((cid) => byId.get(cid))
+        .filter((c): c is Character => !!c))
+    }).catch(() => setCast([]))
+  }, [detail, chars])
 
   // 内嵌短信：所有剧情单元都可能带 Messenger 段，按单元/段落分组
   useEffect(() => {
@@ -631,6 +651,31 @@ export default function StoryReader() {
         <div className="reader-body chapters">
           {eventHeroSlug(detail.id) && (
             <EventHero detail={detail} slug={eventHeroSlug(detail.id)!} />
+          )}
+          {cast.length > 0 && (
+            <section className="story-cast">
+              <h2 className="cast-heading">登场角色</h2>
+              <div className="cast-row">
+                {cast.map((c) => {
+                  const base = mainBase(imgs, c.id)
+                  const src = charPortrait(base, mi)
+                  return (
+                    <Link
+                      key={c.id}
+                      to={`/characters/${c.id}`}
+                      className="cast-card"
+                      style={{ ['--tint' as string]: accentFor(c.id) }}
+                    >
+                      <span className="cast-visual">
+                        {src ? <img src={src} alt={c.name} loading="lazy" />
+                          : <span className="cast-fallback">{c.name.slice(0, 1)}</span>}
+                      </span>
+                      <span className="cast-name" title={c.name}>{c.name}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            </section>
           )}
           {detail.segments.map((seg, i) => {
             const preview = seg.l[0]?.[2]?.replace(/\n/g, ' ') || ''
