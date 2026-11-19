@@ -1156,6 +1156,24 @@ export default function SpinePlayer({
         })()
         let fitScale = 1
         const view = { zoom: 1, cx: cx0, cy: cy0 }
+        /** 自动取景缩放（override zoomKeys 按时间插值）：抵消骨架动画自带的
+            推近（c530 段3 角色骨骼放大 ~1.9×，定格特写占满画面看不清人）。
+            与用户手动 view.zoom 相乘，双击复位只复位手动档 */
+        let autoZoom = 1
+        const zoomKeys = overrides[name]?.zoomKeys
+        const autoZoomOf = (t: number): number => {
+          if (!zoomKeys || !zoomKeys.length) return 1
+          const arr = [...zoomKeys].sort((a, b) => a.t - b.t)
+          if (t <= arr[0].t) return arr[0].zoom
+          if (t >= arr[arr.length - 1].t) return arr[arr.length - 1].zoom
+          for (let i = 0; i < arr.length - 1; i++) {
+            if (t >= arr[i].t && t <= arr[i + 1].t) {
+              const f = (t - arr[i].t) / (arr[i + 1].t - arr[i].t || 1)
+              return arr[i].zoom + (arr[i + 1].zoom - arr[i].zoom) * f
+            }
+          }
+          return 1
+        }
         /** 舞台裁剪矩形（帧缓冲像素，GL 原点左下）；null = 不裁剪。apply() 每帧重算 */
         let scissorPx: [number, number, number, number] | null = null
         /** 相机跟拍开关：大招默认开启，用户拖拽/滚轮接管后关闭，复位恢复 */
@@ -1166,7 +1184,7 @@ export default function SpinePlayer({
           if (!el || !scene) return
           const W = Math.max(1, el.clientWidth)
           const H = Math.max(1, el.clientHeight)
-          const z = fitScale * view.zoom
+          const z = fitScale * view.zoom * autoZoom
           const cam = scene.camera
           cam.position.set(view.cx, view.cy, 0)
           cam.up.set(0, 1, 0)
@@ -1234,7 +1252,7 @@ export default function SpinePlayer({
           // 让外层独立背景层与人物共用同一取景、一起缩放平移。
           // contain 模式不留白，背景图才能和人物严格同框；cover 模式保留 0.96。
           const fitPad = fitMode === 'cover' ? 0.96 : 1
-          const s = view.zoom * fitPad
+          const s = view.zoom * autoZoom * fitPad
           const dx = (cx0 - view.cx) * z
           const dy = (view.cy - cy0) * z
           bgTransform = {
@@ -1630,6 +1648,7 @@ export default function SpinePlayer({
         /** 把当前姿态画一帧。渲染循环和「尺寸变化后立即补帧」共用。 */
         const drawFrame = () => {
           if (!scene || !state || !skeleton) return
+          autoZoom = autoZoomOf(currentTime())
           state.apply(skeleton)
           applyHiddenSlots(skeleton)
           skeleton.updateWorldTransform()

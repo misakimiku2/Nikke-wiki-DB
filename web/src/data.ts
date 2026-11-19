@@ -1106,6 +1106,13 @@ export type SpineOverride = {
    */
   sceneBlurCut?: number
   /**
+   * 自动取景缩放关键帧（秒 → 倍率，线性插值）：抵消骨架动画自带的推近。
+   * 与用户手动缩放相乘，双击复位只复位手动档。c530 段3 角色骨骼放大
+   * ~1.9×，定格特写占满画面看不清人，配 [{t:2.64,zoom:1},{t:4,zoom:.66}]
+   * 让镜头在人物定格前拉远。
+   */
+  zoomKeys?: Array<{ t: number; zoom: number }>
+  /**
    * 场景背景板绑定的骨骼名（默认 camera）。c352_02 的运镜真正落在 `bone`
    * （camera → bone → hl1_body/水花）：镜头推进和俯冲特写都在 bone 上，
    * 绑 camera 只能跟到 1.15× 的慢推，角色俯冲到 3.2× 时背景就错位了。
