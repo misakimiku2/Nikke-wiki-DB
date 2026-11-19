@@ -4092,3 +4092,158 @@ body.immersive-mode .cv-shell .cv-main {
 .theme-switching *::after {
   transition: none !important;
 }
+
+/* ================= 活动主视觉（分层动态封面） =================
+   客户端开屏页是 1080x1920 的竖版画布，这里把同一套分层贴图按百分比
+   还原到 .eh-stage 上：云层慢速漂移、气球＋角色浮动、彩虹呼吸、Logo
+   入场后微浮。所有位移都用百分比，容器缩放时比例不变。 */
+.event-hero {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 26px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(130% 110% at 0% 0%, rgba(116, 198, 226, .12), transparent 58%),
+    linear-gradient(200deg, var(--surface-2), var(--surface));
+  overflow: hidden;
+}
+.eh-art { position: relative; }
+.eh-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1080 / 1920;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #a9d6e2;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .06);
+}
+.eh-layer { position: absolute; display: block; pointer-events: none; user-select: none; }
+
+/* 天空：两张同图叠出景深，慢速反向漂移 */
+.eh-sky {
+  left: -49.5%; top: -3.1%; width: 199%; height: 112%;
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  animation: eh-sky 26s ease-in-out infinite alternate;
+}
+.eh-char {
+  left: -10.1%; top: 1.35%; width: 137.5%;
+  filter: drop-shadow(0 18px 30px rgba(20, 40, 60, .18));
+  transform-origin: 52% 44%;
+  animation: eh-float 7.5s ease-in-out infinite;
+}
+.eh-flare {
+  left: 5.6%; top: -6.3%; width: 129.6%;
+  mix-blend-mode: screen;
+  transform-origin: 58% 42%;
+  animation: eh-flare 9s ease-in-out infinite;
+}
+.eh-basket {
+  left: -21.1%; top: 25.1%; width: 142.2%;
+  filter: drop-shadow(0 -10px 26px rgba(20, 40, 60, .16));
+  animation: eh-basket 11s ease-in-out infinite;
+}
+.eh-logo {
+  left: 17%; top: 51.2%; width: 64.8%;
+  animation:
+    eh-logo-in .95s cubic-bezier(.16, .9, .3, 1) both,
+    eh-logo-float 6.5s ease-in-out 1s infinite;
+}
+.eh-dots { left: -7.4%; top: 77.1%; width: 38.9%; opacity: .9; animation: eh-dots 13s ease-in-out infinite; }
+
+/* 上升的光点：位置固定，靠位移和透明度循环 */
+.eh-spark {
+  position: absolute; width: 5px; height: 5px; border-radius: 50%;
+  background: #fff; opacity: 0;
+  box-shadow: 0 0 10px 3px rgba(255, 255, 255, .75);
+}
+.eh-spark-1 { left: 62%; top: 58%; animation: eh-spark 8s ease-in-out infinite; }
+.eh-spark-2 { left: 78%; top: 40%; width: 4px; height: 4px; animation: eh-spark 10s ease-in-out 2.4s infinite; }
+.eh-spark-3 { left: 30%; top: 66%; width: 3px; height: 3px; animation: eh-spark 9s ease-in-out 4.6s infinite; }
+
+@keyframes eh-sky {
+  from { transform: translate3d(-1.4%, 1.1%, 0) scale(1.02); }
+  to   { transform: translate3d(1.4%, -1.1%, 0) scale(1.07); }
+}
+@keyframes eh-float {
+  0%, 100% { transform: translateY(0) rotate(-.55deg); }
+  50%      { transform: translateY(-1.7%) rotate(.65deg); }
+}
+@keyframes eh-flare {
+  0%, 100% { opacity: .5; transform: rotate(-10deg) scale(1); }
+  50%      { opacity: .92; transform: rotate(-6deg) scale(1.07); }
+}
+@keyframes eh-basket {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(.7%) scale(1.012); }
+}
+@keyframes eh-logo-in {
+  from { opacity: 0; transform: translateY(6%) scale(.93); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes eh-logo-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-1.1%); }
+}
+@keyframes eh-dots {
+  0%, 100% { opacity: .72; transform: translate3d(0, 0, 0); }
+  50%      { opacity: .95; transform: translate3d(1.2%, -1%, 0); }
+}
+@keyframes eh-spark {
+  0%   { opacity: 0; transform: translate3d(0, 0, 0) scale(.6); }
+  18%  { opacity: .9; }
+  70%  { opacity: .55; }
+  100% { opacity: 0; transform: translate3d(-14px, -120px, 0) scale(1.1); }
+}
+
+.eh-poster { width: 100%; display: block; border-radius: 12px; }
+
+.eh-info { min-width: 0; }
+.eh-kicker {
+  display: inline-block;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 11px; letter-spacing: .22em; color: var(--dim);
+  border: 1px solid var(--line-2); padding: 4px 9px;
+}
+.eh-title {
+  margin: 14px 0 10px;
+  font-size: clamp(26px, 3.4vw, 42px); line-height: 1.04;
+  letter-spacing: -.02em; font-weight: 900;
+  background: linear-gradient(96deg, #8be0ff 4%, #ffe27a 38%, #ff9ec4 68%, #9cf7c1 96%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.eh-meta {
+  display: flex; flex-wrap: wrap; gap: 8px 14px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 12px; letter-spacing: .04em; color: var(--dim);
+}
+.eh-meta span { position: relative; }
+.eh-meta span + span::before {
+  content: "/"; position: absolute; left: -9px; color: var(--dim-2);
+}
+.eh-lede {
+  margin: 16px 0 20px; max-width: 62ch;
+  font-size: 14px; line-height: 1.85; color: var(--text-2);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.eh-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 820px) {
+  .event-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px; padding: 14px;
+  }
+  .eh-art { max-width: 300px; margin: 0 auto; width: 100%; }
+  .eh-title { font-size: 26px; }
+  .eh-lede { -webkit-line-clamp: 2; margin: 12px 0 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .event-hero .eh-layer,
+  .event-hero .eh-spark,
+  .event-hero .eh-logo { animation: none !important; }
+  .eh-spark { opacity: .5; }
+}

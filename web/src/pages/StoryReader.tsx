@@ -6,6 +6,7 @@ import {
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
 import StorySmsInline from '../components/StorySmsInline'
+import EventHero, { eventHeroSlug } from '../components/EventHero'
 import { usePageTitle } from '../usePageTitle'
 
 type Frame = {
@@ -628,6 +629,9 @@ export default function StoryReader() {
         </div>
 
         <div className="reader-body chapters">
+          {eventHeroSlug(detail.id) && (
+            <EventHero detail={detail} slug={eventHeroSlug(detail.id)!} />
+          )}
           {detail.segments.map((seg, i) => {
             const preview = seg.l[0]?.[2]?.replace(/\n/g, ' ') || ''
             return (
