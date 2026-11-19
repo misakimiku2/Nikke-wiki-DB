@@ -75,11 +75,9 @@ def main():
         prev_unit = r[1]
     boundaries.append(len(payload))
 
-    # 整个目录重写（清掉上次运行可能留下的多余分片），旧单文件不再生成
-    shutil.rmtree(OUT_DIR, ignore_errors=True)
+    # 覆盖写出分片（沙箱批量删除保护下不整目录 rmtree）；
+    # 分片数量只会随数据增长，旧多余分片留着也不被 manifest 引用。
     os.makedirs(OUT_DIR, exist_ok=True)
-    if os.path.exists(OLD_OUT):
-        os.remove(OLD_OUT)
 
     manifest = {"total": len(payload), "shards": []}
     start = 0

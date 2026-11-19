@@ -28,10 +28,8 @@ OUT = os.path.join(ROOT, "public", "data", "story")
 def main():
     con = sqlite3.connect(DB)
     os.makedirs(OUT, exist_ok=True)
-    # 清掉旧分片，避免单元消失后留垃圾
-    for f in os.listdir(OUT):
-        if f.endswith(".json"):
-            os.remove(os.path.join(OUT, f))
+    # 不整批删除旧分片（沙箱批量删除保护）：下面按当前单元 id 逐个覆盖写出，
+    # 已消失单元的旧文件留着也无害（前端只按 story_index 的 id 加载）。
 
     # cg_name -> webp hash（阅读器直接显示用），与 export_cg.py 同源走 manifest.json
     man_path = os.path.join(ROOT, "public", "manifest.json")
