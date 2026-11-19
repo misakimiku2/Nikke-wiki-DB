@@ -94,6 +94,9 @@ EXTRA = {
     9035: ("c9035", "企鹅2号", "Penguin No.2"),
     9036: ("c9036", "企鹅3号", "Penguin No.3"),
     9037: ("c9037", "企鹅4号", "Penguin No.4"),
+    # 11/19 活动「SKY ON THE ROCK」的具名 NPC：Locale 只有 npc_825_name（赛菲/Sephie），
+    # 无数字条目；立绘资源代号 c9045 取自 spinestandingcharactergroup 的 standing 路径
+    9045: ("c9045", "赛菲", "Sephie"),
     936: ("c936", "麦克斯", "Max"),
     946: ("c946", "露露", "Ruru"),
     967: ("c967", "露咪", "Lumi"),
