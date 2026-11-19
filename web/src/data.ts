@@ -823,6 +823,10 @@ export type SkillcutIndex = {
   bg: Set<string>
   /** 多镜大招的第二张场景图（切镜后换用） */
   bg2: Set<string>
+  /** 三镜大招的第三张场景图（第二个切点后换用） */
+  bg3: Set<string>
+  /** 同段镜头内的贴图状态切换（sceneBlurCut 时刻起显示） */
+  bg4: Set<string>
 }
 
 let cacheSkillcut: SkillcutIndex | null = null
@@ -830,16 +834,18 @@ let cacheSkillcut: SkillcutIndex | null = null
 export async function loadCharSkillcut(): Promise<SkillcutIndex> {
   if (cacheSkillcut) return cacheSkillcut
   try {
-    const d = await getJSON<{ bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[]; bg2s?: string[] }>(
+    const d = await getJSON<{ bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[]; bg2s?: string[]; bg3s?: string[]; bg4s?: string[] }>(
       '/data/char_spine_skillcut.json')
     cacheSkillcut = {
       bySkin: d.bySkin || {},
       byChar: d.byChar || {},
       bg: new Set(d.bgs || []),
       bg2: new Set(d.bg2s || []),
+      bg3: new Set(d.bg3s || []),
+      bg4: new Set(d.bg4s || []),
     }
   } catch {
-    cacheSkillcut = { bySkin: {}, byChar: {}, bg: new Set(), bg2: new Set() }
+    cacheSkillcut = { bySkin: {}, byChar: {}, bg: new Set(), bg2: new Set(), bg3: new Set(), bg4: new Set() }
   }
   return cacheSkillcut
 }
@@ -1088,6 +1094,17 @@ export type SpineOverride = {
    * 初始摆放，之后用校准模式（URL calib=1）微调。
    */
   sceneBgBases?: Array<{ sideMul?: number; cxOffPct?: number; cyOffPct?: number }>
+  /**
+   * 多镜切镜点（秒，升序）：槽 1..N 在对应切点后换背景。显式给出时跳过
+   * camera 跳变自动检测——三镜大招（c530）的次大跳变会被段内运镜干扰。
+   * 数值来自 Spine camera 骨轨迹实测（probe_camera.mjs）。
+   */
+  sceneCuts?: number[]
+  /**
+   * 同一段镜头内的贴图状态切换时刻（秒）：sceneBg4 在此时刻起显示，
+   * 与 camera 切镜无关（c530 城市段清晰 → 冲刺动感模糊）。
+   */
+  sceneBlurCut?: number
   /**
    * 场景背景板绑定的骨骼名（默认 camera）。c352_02 的运镜真正落在 `bone`
    * （camera → bone → hl1_body/水花）：镜头推进和俯冲特写都在 bone 上，

@@ -1158,6 +1158,8 @@ export default function CharacterDetail() {
                 bgSegment={burstBgSegment(burstName)}
                 sceneBg={skillcut?.bg.has(burstName) ? `/spine_skillcut/${burstName}/bg.webp` : undefined}
                 sceneBg2={skillcut?.bg2.has(burstName) ? `/spine_skillcut/${burstName}/bg2.webp` : undefined}
+                sceneBg3={skillcut?.bg3.has(burstName) ? `/spine_skillcut/${burstName}/bg3.webp` : undefined}
+                sceneBg4={skillcut?.bg4.has(burstName) ? `/spine_skillcut/${burstName}/bg4.webp` : undefined}
                 calib={calibMode}
                 controls={false}
                 controllerRef={spineRef}

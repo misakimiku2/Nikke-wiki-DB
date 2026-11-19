@@ -75,6 +75,28 @@
         "ZZZ"
       ],
       "comment": "警戒带(String1/2/3)动画会飘出白框板(ZZZ)到黑底舞台；官方观感里所有内容收在画框内。stageClipSlots 把实时渲染裁进 ZZZ 包围盒，取景也按画框算（URL ?debugslots=1 可导出槽位包围盒）。"
+    },
+    "c530_00_skillcut": {
+      "sceneCuts": [
+        1.44,
+        2.64
+      ],
+      "sceneBlurCut": 3.5,
+      "comment": "思凯大招三镜（用户游戏内核对，probe_camera.mjs 实测切点）：舱盖云海(0-1.44s) -> 舱内全息台(1.44-2.64s) -> 城市上空(2.64-5.33s)。sceneBlurCut = 段3内城市清晰->冲刺模糊的切换时刻，预览后可调。",
+      "sceneBgBases": [
+        {
+          "sideMul": 1.4
+        },
+        {
+          "sideMul": 1.25
+        },
+        {
+          "sideMul": 1.7
+        },
+        {
+          "sideMul": 1.3
+        }
+      ]
     }
   }
 }
