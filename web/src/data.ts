@@ -157,10 +157,24 @@ export function charPortrait(base: string | null, mi: Set<string>): string | nul
   return charArt(base)
 }
 
+/** 小尺寸消费点（登场角色卡 88px、皮肤切换缩略图 54px）用 128px 的 _s 变体：
+ *  256 原图在这个尺寸下双线性降采样 3-5 倍，发丝/轮廓会走出样锯齿 */
+export function charPortraitSmall(base: string | null, mi: Set<string>): string | null {
+  if (!base) return null
+  if (mi.has(base)) return `/charmi/${base}_s.webp`
+  return charArt(base)
+}
+
 /** 详情页皮肤切换用的小方图：有 mi 就裁头部，否则官方全身图 */
 export function charThumb(base: string, mi: Set<string>): string {
-  if (mi.has(base)) return `/charmi/${base}.webp`
+  if (mi.has(base)) return `/charmi/${base}_s.webp`
   return charArt(base)
+}
+
+/** 群聊/咨询的小圆头像（~40px）：用 _s 变体，没有 mi 的说话人返回 null */
+export function charAvatar(base: string | null, mi: Set<string>): string | null {
+  if (!base || !mi.has(base)) return null
+  return `/charmi/${base}_s.webp`
 }
 
 /** 立绘显示名（来自游戏本地化/皮肤名），key 为 c010_02 这种资源代号 */

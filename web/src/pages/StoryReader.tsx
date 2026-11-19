@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  accentFor, charPortrait, loadCharImages, loadCharMi, loadCharacters, loadStoryCast,
+  accentFor, charPortraitSmall, loadCharImages, loadCharMi, loadCharacters, loadStoryCast,
   loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
   type CharImages, type Character, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
 } from '../data'
@@ -658,7 +658,7 @@ export default function StoryReader() {
               <div className="cast-row">
                 {cast.map((c) => {
                   const base = mainBase(imgs, c.id)
-                  const src = charPortrait(base, mi)
+                  const src = charPortraitSmall(base, mi)
                   return (
                     <Link
                       key={c.id}

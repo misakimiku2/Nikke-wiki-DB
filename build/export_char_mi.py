@@ -43,6 +43,11 @@ META = os.path.join(ROOT, "public", "data", "char_mi.json")
 CAT = os.path.join(NIKKE_SRC, "catalogs", "dp_catalog.ndb.dec")
 CDB = v2.ROOT / "dp" / "chunk" / "store.cdb"
 
+# 小尺寸消费点（剧情页登场角色卡 88px、详情页皮肤切换 54px）专用：
+# 256 原图直接显示要做 3-5 倍双线性降采样，发丝/轮廓这类 1px 细节会走出样锯齿。
+# 这里用 Lanczos 预缩一份，浏览器只需再做 ≤1.5 倍的重采样。命名 <name>_s.webp。
+SMALL_W = 128
+
 KEY_RE = re.compile(r"_assets_mi_(c\d+_\d+)(_maskoff)?_s?_[0-9a-f]{32}\.bundle$", re.I)
 
 
@@ -166,6 +171,27 @@ def make_from_art(quality=92):
     return made
 
 
+def make_small(quality=92):
+    """给目录里每个 mi 头像补一张 SMALL_W 宽的 _s 变体（源更新后跟着重生成）。"""
+    from PIL import Image
+
+    made = 0
+    for fn in sorted(os.listdir(OUT)):
+        if not fn.endswith(".webp") or fn.endswith("_s.webp"):
+            continue
+        src = os.path.join(OUT, fn)
+        dst = os.path.join(OUT, fn[:-5] + "_s.webp")
+        if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+            continue
+        with Image.open(src) as im:
+            w = SMALL_W
+            h = max(1, round(im.height * w / im.width))
+            im.resize((w, h), Image.LANCZOS).save(
+                dst, "WEBP", quality=quality, method=6)
+        made += 1
+    return made
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--probe", action="store_true")
@@ -212,9 +238,14 @@ def main():
     extra = make_from_art(args.quality)
     if extra:
         print(f"  从全身立绘补头像 {len(extra)} 张")
+    small = make_small(args.quality)
+    if small:
+        print(f"  生成 {SMALL_W}px 小图 {small} 张")
     # 以磁盘上实际存在的头像为准：重跑时官方 mi 会被跳过，若只统计本次处理结果，
-    # 之前从立绘裁出来的那批就会从 json 里丢掉，角色卡随即退回全身图
-    names = sorted(p.stem for p in pathlib.Path(OUT).glob("*.webp"))
+    # 之前从立绘裁出来的那批就会从 json 里丢掉，角色卡随即退回全身图。
+    # 排除 _s 小图变体——索引里只放主图名，前端按 <name>_s 约定取小图。
+    names = sorted(p.stem for p in pathlib.Path(OUT).glob("*.webp")
+                   if not p.stem.endswith("_s"))
     with open(META, "w", encoding="utf-8") as f:
         json.dump({"total": len(names), "items": names}, f,
                   ensure_ascii=False, separators=(",", ":"))

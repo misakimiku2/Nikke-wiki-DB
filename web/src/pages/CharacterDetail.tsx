@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link, useParams } from 'react-router-dom'
 import { usePageTitle } from '../usePageTitle'
 import {
-  accentFor, artLabel, charArt, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
+  accentFor, artLabel, charArt, charAvatar, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
   loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
   loadCharSpine, loadCharVoices, loadCharacters, loadCostumeTexts, loadSpecTexts, mainBase, nf, pickBurstAnim,
   burstBgSegment,
@@ -719,7 +719,7 @@ export default function CharacterDetail() {
   /** 群聊里每个发言人的官方头肩头像；没有头像的 NPC 返回 null */
   const avatarOf = useCallback((cid: number) => {
     const base = mainBase(imgs, cid)
-    return base && mi.has(base) ? `/charmi/${base}.webp` : null
+    return charAvatar(base, mi)
   }, [imgs, mi])
 
   // ---- 时间轴（与 CG 查看器同一套交互：拖动时暂停、松手续播、交还焦点）----
@@ -2038,10 +2038,7 @@ export default function CharacterDetail() {
                 <CounselChat
                   units={relCounsel}
                   accent={accentFor(c.id)}
-                  avatar={(() => {
-                    const base = mainBase(imgs, c.id)
-                    return base && mi.has(base) ? `/charmi/${base}.webp` : null
-                  })()}
+                  avatar={charAvatar(mainBase(imgs, c.id), mi)}
                   charName={c.name}
                 />
               ) : relTab === 'voices' && voice ? (
