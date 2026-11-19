@@ -171,8 +171,6 @@ const SQUAD_OVERRIDE = {
   233: '继承者部队',
   13: '银枪部队',
   19: '反击部队',
-  // NPC 没有部队，按出处活动挂组：赛菲（11/19 活动「SKY ON THE ROCK」）
-  9045: 'SKY ON THE ROCK',
 }
 
 /* ---------- 人工校对的企业/势力归属（NPC 无 CharacterTable 行，按游戏档案核对）----------

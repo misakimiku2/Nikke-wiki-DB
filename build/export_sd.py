@@ -40,6 +40,12 @@ KIND = {
 
 NAME_RE = re.compile(r"_assets_(c\d+)_(\d+)_")
 
+# 官方 icons-char-full 导出天然贴人物边的占绝大多数；少数自带大留白的例外按
+# alpha 边界裁到人物，否则列表卡（object-fit: contain 贴底）里人物明显偏小。
+TRIM = {
+    "c9045_00",   # 赛菲：画布上下留白 ~40%（人物高只占 61%，其他角色 87-99%）
+}
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -103,6 +109,8 @@ def main():
             if img is None:
                 fail += 1
                 continue
+            if name in TRIM:
+                img = img.crop(img.getchannel("A").getbbox())
             img.save(out_path)
             if args.webp:
                 img.save(os.path.join(out_dir, name + ".webp"), "WEBP", quality=86, method=4)
