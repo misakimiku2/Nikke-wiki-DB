@@ -4093,15 +4093,14 @@ body.immersive-mode .cv-shell .cv-main {
   transition: none !important;
 }
 
-/* ================= 活动主视觉（分层动态封面） =================
-   客户端活动页是 3:4 画布（1440x1920），这里按 1080x1440 的设计稿把同一套
-   分层贴图还原到 .eh-stage 上：云层慢速漂移、气球＋角色浮动、彩虹呼吸、
-   Logo 入场后微浮。所有位移都用百分比，容器缩放时比例不变。
+/* ================= 活动主视觉 =================
+   游戏开屏页是一条 Timeline，但它只驱动几个组节点（board_camera / board_title
+   / 粒子），分层贴图彼此是刚性跟随——不会各自漂移。之前按「每层各自浮动」复原，
+   一动就散架（气球和篮筐脱开），所以这里退回整幅画：一张合成图 + 一次极慢推镜，
+   图层之间永远不可能错位。
 
-   每个层的 left/top/width 不是手调的，是拿游戏截图做拟合算出来的
-   （nikke_extract/scripts/fit_face.py 用思凯的脸匹配到 scale=1.5 偏移
-   (-273,-113)，相关系数 0.975；篮筐层套用同一变换后边缘/小鸟零重影）。
-   export_skyontherock_layers.py 会把同一组数字换算成百分比打印出来。 */
+   素材由 nikke_extract/scripts/compose_skyontherock.py 按游戏截图拟合的位置合成，
+   输出 poster.webp（1080x1440，正好 3:4）。 */
 .event-hero {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -4119,90 +4118,25 @@ body.immersive-mode .cv-shell .cv-main {
 .eh-stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 1080 / 1440;
+  aspect-ratio: 3 / 4;
   overflow: hidden;
   border-radius: 12px;
   background: #a9d6e2;
   box-shadow: 0 16px 40px rgba(0, 0, 0, .45), 0 0 0 1px rgba(255, 255, 255, .06);
 }
-.eh-layer { position: absolute; display: block; pointer-events: none; user-select: none; }
-
-.eh-sky { left: -20.65%; top: -2.99%; width: 141.30%; }
-.eh-char { left: -27.71%; top: -10.89%; width: 155.93%; }
-.eh-flare { left: 37.04%; top: -4.17%; width: 49.91%; }
-.eh-basket { left: -27.71%; top: -10.89%; width: 155.93%; }
-.eh-logo { left: 27.11%; top: 56.96%; width: 31.11%; }
-.eh-dots { left: -10.19%; top: 73.61%; width: 13.06%; }
-
-/* 逐层动效：只改 transform / opacity，不碰布局 */
-.eh-sky { animation: eh-sky 26s ease-in-out infinite alternate; }
-.eh-char {
-  filter: drop-shadow(0 18px 30px rgba(20, 40, 60, .18));
-  transform-origin: 52% 44%;
-  animation: eh-float 7.5s ease-in-out infinite;
+.eh-poster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform-origin: 50% 42%;
+  will-change: transform;
+  animation: eh-drift 42s ease-in-out infinite alternate;
 }
-.eh-flare {
-  mix-blend-mode: screen;
-  transform-origin: 58% 42%;
-  animation: eh-flare 9s ease-in-out infinite;
+@keyframes eh-drift {
+  from { transform: scale(1.02) translate3d(0, 0, 0); }
+  to   { transform: scale(1.075) translate3d(-.8%, -1.4%, 0); }
 }
-.eh-basket {
-  filter: drop-shadow(0 -10px 26px rgba(20, 40, 60, .16));
-  animation: eh-basket 11s ease-in-out infinite;
-}
-.eh-logo {
-  animation:
-    eh-logo-in .95s cubic-bezier(.16, .9, .3, 1) both,
-    eh-logo-float 6.5s ease-in-out 1s infinite;
-}
-.eh-dots { opacity: .9; animation: eh-dots 13s ease-in-out infinite; }
-
-/* 上升的光点：位置固定，靠位移和透明度循环 */
-.eh-spark {
-  position: absolute; width: 5px; height: 5px; border-radius: 50%;
-  background: #fff; opacity: 0;
-  box-shadow: 0 0 10px 3px rgba(255, 255, 255, .75);
-}
-.eh-spark-1 { left: 62%; top: 58%; animation: eh-spark 8s ease-in-out infinite; }
-.eh-spark-2 { left: 78%; top: 40%; width: 4px; height: 4px; animation: eh-spark 10s ease-in-out 2.4s infinite; }
-.eh-spark-3 { left: 30%; top: 66%; width: 3px; height: 3px; animation: eh-spark 9s ease-in-out 4.6s infinite; }
-
-@keyframes eh-sky {
-  from { transform: translate3d(-1.4%, 1.1%, 0) scale(1.02); }
-  to   { transform: translate3d(1.4%, -1.1%, 0) scale(1.07); }
-}
-@keyframes eh-float {
-  0%, 100% { transform: translateY(0) rotate(-.55deg); }
-  50%      { transform: translateY(-1.7%) rotate(.65deg); }
-}
-@keyframes eh-flare {
-  0%, 100% { opacity: .5; transform: rotate(-10deg) scale(1); }
-  50%      { opacity: .92; transform: rotate(-6deg) scale(1.07); }
-}
-@keyframes eh-basket {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50%      { transform: translateY(.7%) scale(1.012); }
-}
-@keyframes eh-logo-in {
-  from { opacity: 0; transform: translateY(6%) scale(.93); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes eh-logo-float {
-  0%, 100% { transform: translateY(0); }
-  50%      { transform: translateY(-1.1%); }
-}
-@keyframes eh-dots {
-  0%, 100% { opacity: .72; transform: translate3d(0, 0, 0); }
-  50%      { opacity: .95; transform: translate3d(1.2%, -1%, 0); }
-}
-@keyframes eh-spark {
-  0%   { opacity: 0; transform: translate3d(0, 0, 0) scale(.6); }
-  18%  { opacity: .9; }
-  70%  { opacity: .55; }
-  100% { opacity: 0; transform: translate3d(-14px, -120px, 0) scale(1.1); }
-}
-
-.eh-poster { width: 100%; display: block; border-radius: 12px; }
 
 .eh-info { min-width: 0; }
 .eh-kicker {
@@ -4244,8 +4178,5 @@ body.immersive-mode .cv-shell .cv-main {
   .eh-lede { -webkit-line-clamp: 2; margin: 12px 0 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .event-hero .eh-layer,
-  .event-hero .eh-spark,
-  .event-hero .eh-logo { animation: none !important; }
-  .eh-spark { opacity: .5; }
+  .eh-poster { animation: none !important; transform: scale(1.02); }
 }

@@ -2,14 +2,15 @@ import { Link } from 'react-router-dom'
 import type { StoryDetail } from '../data'
 
 /**
- * 活动主视觉（动态封面）。
+ * 活动主视觉。
  *
- * 素材是从客户端 eventui bundle 里拆出来的分层贴图（气球＋角色 / 篮筐 / 彩虹 /
- * Logo / 网点），按游戏开屏页的比例重新拼成一整块「舞台」，再用 CSS 让云、气球、
- * 彩虹分层动起来——比直接播视频轻，也比静态封面更接近游戏里的开屏效果。
+ * 游戏开屏页在客户端里是「分层贴图 + Timeline」，但 Timeline 只驱动几个组节点
+ * （board_camera / board_title / 粒子），贴图之间是刚性跟随。之前按层各自动
+ * 画，一播就散架（气球和篮筐脱开），所以这里只用合成好的一整张 poster.webp，
+ * 整幅画做一次极慢推镜——图层不可能再错位。
  *
- * 新增活动只要在 public/event/<slug>/ 放同一批分层图（sky / char / basket /
- * flare / logo / dots）并在 EVENT_HERO 里登记即可；缺资源时组件不渲染。
+ * 换活动时在 public/event/<slug>/ 放一张 poster.webp（3:4）并在 EVENT_HERO
+ * 里登记即可；没有海报就不渲染。
  */
 const EVENT_HERO: Record<number, string> = {
   161: 'skyontherock',
@@ -31,21 +32,9 @@ export default function EventHero({ detail, slug }: { detail: StoryDetail; slug:
   return (
     <section className="event-hero" aria-label={`${detail.title} 活动主视觉`}>
       <div className="eh-art">
-        {/* 舞台按 1080x1440 设计稿定位（游戏活动页就是 3:4），尺寸全部用百分比，容器怎么缩放都对齐 */}
         <div className="eh-stage">
-          <div className="eh-layer eh-sky" style={{ backgroundImage: `url(${base}/sky.webp)` }} />
-          <img className="eh-layer eh-char" src={`${base}/char.webp`} alt="" />
-          <img className="eh-layer eh-basket" src={`${base}/basket.webp`} alt="" />
-          <img className="eh-layer eh-flare" src={`${base}/flare.webp`} alt="" />
-          <img className="eh-layer eh-logo" src={`${base}/logo.webp`} alt={detail.title} />
-          <img className="eh-layer eh-dots" src={`${base}/dots.webp`} alt="" />
-          <span className="eh-spark eh-spark-1" />
-          <span className="eh-spark eh-spark-2" />
-          <span className="eh-spark eh-spark-3" />
+          <img className="eh-poster" src={`${base}/poster.webp`} alt={`${detail.title} 主视觉`} />
         </div>
-        <noscript>
-          <img className="eh-poster" src={`${base}/poster.webp`} alt={detail.title} />
-        </noscript>
       </div>
 
       <div className="eh-info">
