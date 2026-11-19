@@ -403,6 +403,10 @@ export default function StoryReader() {
   const [cast, setCast] = useState<Character[]>([])
   const [imgs, setImgs] = useState<CharImages>({})
   const [mi, setMi] = useState<Set<string>>(new Set())
+  // 登场角色默认只露 3 排，多的折叠（MIRACLE SNOW 这类大群体活动一次全铺太长）
+  const [castExpanded, setCastExpanded] = useState(false)
+  const [castClamp, setCastClamp] = useState<{ h: number; rows: number } | null>(null)
+  const castRowRef = useRef<HTMLDivElement | null>(null)
 
   // 左侧目录面板：展开状态记在 localStorage，窄屏默认收起
   const [navOpen, setNavOpen] = useState(() => {
@@ -481,6 +485,27 @@ export default function StoryReader() {
         .filter((c): c is Character => !!c))
     }).catch(() => setCast([]))
   }, [detail, chars])
+
+  // 折叠测量：卡片排布随视口宽度变（桌面 flex 定宽 / 手机 grid 均分），
+  // 所以不假设每排几个，直接按 offsetTop 数排，裁到第三排底部；宽度变化时重测。
+  useEffect(() => {
+    setCastExpanded(false)
+    const el = castRowRef.current
+    if (!el || cast.length === 0) { setCastClamp(null); return }
+    const measure = () => {
+      const cards = Array.from(el.querySelectorAll<HTMLElement>('.cast-card'))
+      if (!cards.length) { setCastClamp(null); return }
+      // offsetTop 相对的是最近的定位祖先而不是本行容器，先归一到第一张卡的顶部
+      const base = cards[0].offsetTop
+      const tops = [...new Set(cards.map((c) => c.offsetTop - base))].sort((a, b) => a - b)
+      if (tops.length <= 3) { setCastClamp(null); return }
+      setCastClamp({ h: tops[2] + cards[0].offsetHeight, rows: tops.length })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [cast])
 
   // 内嵌短信：所有剧情单元都可能带 Messenger 段，按单元/段落分组
   useEffect(() => {
@@ -655,7 +680,13 @@ export default function StoryReader() {
           {cast.length > 0 && (
             <section className="story-cast">
               <h2 className="cast-heading">登场角色</h2>
-              <div className="cast-row">
+              <div
+                ref={castRowRef}
+                className={`cast-row${castClamp && !castExpanded ? ' clamped' : ''}`}
+                style={castClamp && !castExpanded
+                  ? ({ ['--cast-clamp-h' as string]: `${castClamp.h}px` })
+                  : undefined}
+              >
                 {cast.map((c) => {
                   const base = mainBase(imgs, c.id)
                   const src = charPortraitSmall(base, mi)
@@ -675,6 +706,15 @@ export default function StoryReader() {
                   )
                 })}
               </div>
+              {castClamp && (
+                <button
+                  type="button"
+                  className="cast-toggle"
+                  onClick={() => setCastExpanded((v) => !v)}
+                >
+                  {castExpanded ? '收起登场角色' : `展开全部登场角色 · 共 ${cast.length} 人`}
+                </button>
+              )}
             </section>
           )}
           {detail.segments.map((seg, i) => {
