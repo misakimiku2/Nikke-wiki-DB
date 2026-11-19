@@ -54,7 +54,7 @@ export default function EventHero({ detail, slug }: { detail: StoryDetail; slug:
         <div className="eh-meta">
           <span>{detail.segments.length} 章</span>
           <span>{detail.segments.reduce((a, s) => a + s.l.length, 0)} 句</span>
-          <span>简中 · 全语音</span>
+          <span>简中文本</span>
         </div>
         {preview && <p className="eh-lede">{preview}…</p>}
         <div className="eh-actions">
