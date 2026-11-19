@@ -31,12 +31,12 @@ export default function EventHero({ detail, slug }: { detail: StoryDetail; slug:
   return (
     <section className="event-hero" aria-label={`${detail.title} 活动主视觉`}>
       <div className="eh-art">
-        {/* 舞台按 1080x1920 设计稿定位，尺寸全部用百分比，容器怎么缩放都对齐 */}
+        {/* 舞台按 1080x1440 设计稿定位（游戏活动页就是 3:4），尺寸全部用百分比，容器怎么缩放都对齐 */}
         <div className="eh-stage">
           <div className="eh-layer eh-sky" style={{ backgroundImage: `url(${base}/sky.webp)` }} />
-          <img className="eh-layer eh-flare" src={`${base}/flare.webp`} alt="" />
           <img className="eh-layer eh-char" src={`${base}/char.webp`} alt="" />
           <img className="eh-layer eh-basket" src={`${base}/basket.webp`} alt="" />
+          <img className="eh-layer eh-flare" src={`${base}/flare.webp`} alt="" />
           <img className="eh-layer eh-logo" src={`${base}/logo.webp`} alt={detail.title} />
           <img className="eh-layer eh-dots" src={`${base}/dots.webp`} alt="" />
           <span className="eh-spark eh-spark-1" />

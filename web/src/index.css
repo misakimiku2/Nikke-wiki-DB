@@ -4094,9 +4094,14 @@ body.immersive-mode .cv-shell .cv-main {
 }
 
 /* ================= 活动主视觉（分层动态封面） =================
-   客户端开屏页是 1080x1920 的竖版画布，这里把同一套分层贴图按百分比
-   还原到 .eh-stage 上：云层慢速漂移、气球＋角色浮动、彩虹呼吸、Logo
-   入场后微浮。所有位移都用百分比，容器缩放时比例不变。 */
+   客户端活动页是 3:4 画布（1440x1920），这里按 1080x1440 的设计稿把同一套
+   分层贴图还原到 .eh-stage 上：云层慢速漂移、气球＋角色浮动、彩虹呼吸、
+   Logo 入场后微浮。所有位移都用百分比，容器缩放时比例不变。
+
+   每个层的 left/top/width 不是手调的，是拿游戏截图做拟合算出来的
+   （nikke_extract/scripts/fit_face.py 用思凯的脸匹配到 scale=1.5 偏移
+   (-273,-113)，相关系数 0.975；篮筐层套用同一变换后边缘/小鸟零重影）。
+   export_skyontherock_layers.py 会把同一组数字换算成百分比打印出来。 */
 .event-hero {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -4114,7 +4119,7 @@ body.immersive-mode .cv-shell .cv-main {
 .eh-stage {
   position: relative;
   width: 100%;
-  aspect-ratio: 1080 / 1920;
+  aspect-ratio: 1080 / 1440;
   overflow: hidden;
   border-radius: 12px;
   background: #a9d6e2;
@@ -4122,38 +4127,35 @@ body.immersive-mode .cv-shell .cv-main {
 }
 .eh-layer { position: absolute; display: block; pointer-events: none; user-select: none; }
 
-/* 天空：两张同图叠出景深，慢速反向漂移 */
-.eh-sky {
-  left: -49.5%; top: -3.1%; width: 199%; height: 112%;
-  background-position: center top;
-  background-repeat: no-repeat;
-  background-size: 100% 100%;
-  animation: eh-sky 26s ease-in-out infinite alternate;
-}
+.eh-sky { left: -20.65%; top: -2.99%; width: 141.30%; }
+.eh-char { left: -27.71%; top: -10.89%; width: 155.93%; }
+.eh-flare { left: 37.04%; top: -4.17%; width: 49.91%; }
+.eh-basket { left: -27.71%; top: -10.89%; width: 155.93%; }
+.eh-logo { left: 27.11%; top: 56.96%; width: 31.11%; }
+.eh-dots { left: -10.19%; top: 73.61%; width: 13.06%; }
+
+/* 逐层动效：只改 transform / opacity，不碰布局 */
+.eh-sky { animation: eh-sky 26s ease-in-out infinite alternate; }
 .eh-char {
-  left: -10.1%; top: 1.35%; width: 137.5%;
   filter: drop-shadow(0 18px 30px rgba(20, 40, 60, .18));
   transform-origin: 52% 44%;
   animation: eh-float 7.5s ease-in-out infinite;
 }
 .eh-flare {
-  left: 5.6%; top: -6.3%; width: 129.6%;
   mix-blend-mode: screen;
   transform-origin: 58% 42%;
   animation: eh-flare 9s ease-in-out infinite;
 }
 .eh-basket {
-  left: -21.1%; top: 25.1%; width: 142.2%;
   filter: drop-shadow(0 -10px 26px rgba(20, 40, 60, .16));
   animation: eh-basket 11s ease-in-out infinite;
 }
 .eh-logo {
-  left: 17%; top: 51.2%; width: 64.8%;
   animation:
     eh-logo-in .95s cubic-bezier(.16, .9, .3, 1) both,
     eh-logo-float 6.5s ease-in-out 1s infinite;
 }
-.eh-dots { left: -7.4%; top: 77.1%; width: 38.9%; opacity: .9; animation: eh-dots 13s ease-in-out infinite; }
+.eh-dots { opacity: .9; animation: eh-dots 13s ease-in-out infinite; }
 
 /* 上升的光点：位置固定，靠位移和透明度循环 */
 .eh-spark {
