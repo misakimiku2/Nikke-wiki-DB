@@ -3,15 +3,15 @@
 """剧情 ↔ CG 全链路核查（只读，不改动任何数据）。
 
 逐层对账：
-  1. 构建脚本是否还引用人工映射表 script_cg_map.json
-  2. 上游 CG索引 与 nikke.db.cg_links 的 (line_key, cg) 差异
-  3. 人工映射表条目在当前库中的覆盖情况
-  4. cg_links 的资产 / manifest / webp 可用性
-  5. 行级结构（撞车 key、越界、单行多 CG）
-  6. 导出的 story/*.json 事件与数据库是否一致
-  7. 章节 / 活动归属异常（跨章、跨活动）
-  8. 动态 CG（实时 Spine 模型）触发情况
-  9. 图集贴图页误入 manifest 的情况
+  1. 上游 CG索引 与 nikke.db.cg_links 的 (line_key, cg) 差异
+  2. cg_links 的资产 / manifest / webp 可用性
+  3. 行级结构（撞车 key、越界、单行多 CG）
+  4. 导出的 story/*.json 事件与数据库是否一致
+  5. 章节 / 活动归属异常（跨章、跨活动）
+  6. 动态 CG（实时 Spine 模型）触发情况
+  7. fx 特效层混入检查（fx_EventScene_* 不是主画面 CG，不应进 cg_links）
+  8. 图集贴图页误入 manifest 的情况
+  9. `04_角色过场` 分类被当作剧情 CG
 
 用法：
   python build/audit_cg.py                # 打印报告
@@ -31,7 +31,6 @@ STORY_DIR = os.path.join(ROOT, "public", "data", "story")
 STORY_INDEX = os.path.join(ROOT, "public", "data", "story_index.json")
 SPINE_META = os.path.join(ROOT, "public", "data", "spine_models.json")
 CG_INDEX = os.path.join(SRC, "CG索引", "剧情CG对照索引.json")
-SCRIPT_MAP = os.path.join(ROOT, "build", "script_cg_map.json")
 CG_DIR = os.path.join(SRC, "CG")
 IMG_L = os.path.join(ROOT, "public", "img", "l")
 BUILD_DIR = os.path.join(ROOT, "build")
@@ -65,29 +64,14 @@ def main():
     p(f"- manifest CG {len(man)} 个 / 实时 Spine 模型 {len(spine)} 个")
     p()
 
-    # ---- 1. 人工映射表是否还在使用 ----
-    p("## 1. 人工映射表 script_cg_map.json")
-    users = []
-    for f in os.listdir(BUILD_DIR):
-        if f.endswith((".py", ".mjs")) and f != "audit_cg.py":
-            txt = open(os.path.join(BUILD_DIR, f), encoding="utf-8", errors="replace").read()
-            if "script_cg_map" in txt:
-                users.append(f)
-    p(f"- 当前 `build/` 中引用它的脚本：**{users or '无'}**")
-    if not users:
-        p("- ⚠️ 人工校对表已失效：新版 `build_db.py` 改为只解析 `.mpk`，不再读取该表。")
-    p()
-
-    # ---- 2. 上游索引 vs DB ----
-    p("## 2. 上游 `剧情CG对照索引` vs `cg_links`")
+    # ---- 1. 上游索引 vs DB ----
+    p("## 1. 上游 `剧情CG对照索引` vs `cg_links`")
     db_pairs = defaultdict(set)
-    db_cg_units = defaultdict(set)
     for lk, cg, bucket in con.execute("""
         SELECT l.line_key, c.cg_name, u.bucket FROM cg_links c
         JOIN story_lines l ON l.id=c.line_id JOIN story_units u ON u.id=c.unit_id"""):
         if lk:
             db_pairs[(lk, cg)].add(bucket)
-        db_cg_units[cg].add(bucket)
     idx = loadj(CG_INDEX, []) or []
     up_pairs = set()
     for r in idx:
@@ -102,28 +86,8 @@ def main():
         p(f"  - 缺：`{lk}` → `{cg}`")
     p()
 
-    # ---- 3. 人工表覆盖 ----
-    p("## 3. `script_cg_map.json` 条目覆盖")
-    sm = loadj(SCRIPT_MAP, {}) or {}
-    seg_groups = defaultdict(set)
-    for g, bucket in con.execute("""
-        SELECT s.group_key, u.bucket FROM story_segments s JOIN story_units u ON u.id=s.unit_id"""):
-        seg_groups[g].add(bucket)
-    ok, missing = 0, []
-    for g, cgs in sm.items():
-        for cg in cgs:
-            if any(b in db_cg_units.get(cg, set()) for b in seg_groups.get(g, set())):
-                ok += 1
-            else:
-                missing.append((g, cg, sorted(seg_groups.get(g, set())), sorted(db_cg_units.get(cg, set()))))
-    total = sum(len(v) for v in sm.values())
-    p(f"- 人工表 {total} 条；当前库对应单元有该 CG {ok} 条，**缺失 {len(missing)} 条**")
-    for g, cg, want, got in missing[:25]:
-        p(f"  - `{g}` → `{cg}` 期望={want} 实际={got}")
-    p()
-
-    # ---- 4. 资产可用性 ----
-    p("## 4. 资产 / 图片可用性")
+    # ---- 2. 资产可用性 ----
+    p("## 2. 资产 / 图片可用性")
     assets = {r[0] for r in con.execute("SELECT name FROM cg_assets")}
     linked = {r[0] for r in con.execute("SELECT DISTINCT cg_name FROM cg_links")}
     no_asset = sorted(linked - assets)
@@ -144,8 +108,8 @@ def main():
         p("- manifest 无图的 CG：" + "、".join(f"`{n}`" for n in no_manifest[:30]))
     p()
 
-    # ---- 5. 行级结构 ----
-    p("## 5. 行级结构")
+    # ---- 3. 行级结构 ----
+    p("## 3. 行级结构")
     collide = con.execute("""
         SELECT line_key, COUNT(DISTINCT unit_id) u, COUNT(*) n FROM story_lines
         GROUP BY line_key HAVING u>1 ORDER BY u DESC, n DESC""").fetchall()
@@ -164,11 +128,13 @@ def main():
     p(f"- 单行挂 >2 个 CG 的行：{len(multi)}")
     p()
 
-    # ---- 6. 导出产物一致性 ----
-    p("## 6. 导出 story/*.json 事件")
+    # ---- 4. 导出产物一致性 ----
+    p("## 4. 导出 story/*.json 事件")
     tot_ev = 0
     bad_hash, bad_idx, bad_name = [], [], []
+    clears = 0
     per_unit = {}
+    man_hashes = {it["hash"] for it in man}
     for f in os.listdir(STORY_DIR):
         if not f.endswith(".json"): continue
         uid = int(f[:-5])
@@ -183,21 +149,43 @@ def main():
                 if not (0 <= at < max(1, nlines)):
                     bad_idx.append((uid, at, nlines))
                 for r in refs:
-                    if r.get("h") not in {it["hash"] for it in man}:
+                    if r.get("n") == "none" and not r.get("h"):
+                        clears += 1   # 清空背景标记：h 为空是设计使然，不算坏 hash
+                        continue
+                    if r.get("h") not in man_hashes:
                         bad_hash.append((uid, r.get("h")))
                     if r.get("n") not in man_by_name:
                         bad_name.append((uid, r.get("n")))
         tot_ev += ev
         per_unit[uid] = ev
     db_ev = con.execute("SELECT COUNT(*) FROM cg_links").fetchone()[0]
-    p(f"- 数据库 cg_links {db_ev} 条 → 导出事件 {tot_ev} 处（按行合并后）")
-    p(f"- 事件 hash 不在 manifest：{len(bad_hash)}；CG 名不在 manifest：{len(bad_name)}；行下标越界：{len(bad_idx)}")
+    p(f"- 数据库 cg_links {db_ev} 条 → 导出事件 {tot_ev} 处（按行合并后，含场景背景切换）")
+    p(f"- 事件 hash 不在 manifest：{len(bad_hash)}；CG 名不在 manifest：{len(bad_name)}；"
+      f"行下标越界：{len(bad_idx)}；清空背景标记：{clears}")
     for uid, h in bad_hash[:10]:
         p(f"  - 单元 {uid} 的 hash `{h}` 找不到图片")
     p()
 
-    # ---- 7. 章节 / 活动归属 ----
-    p("## 7. 章节 / 活动归属异常")
+    # ---- 7. fx 特效层混入 ----
+    p("## 7. fx 特效层混入检查")
+    fx_links = con.execute(
+        "SELECT COUNT(*) FROM cg_links WHERE substr(cg_name,1,3)='fx_'").fetchone()[0]
+    fx_refs = 0
+    for f in os.listdir(STORY_DIR):
+        if not f.endswith(".json"): continue
+        d = loadj(os.path.join(STORY_DIR, f), {})
+        for s in d.get("segments", []):
+            for _at, refs in s.get("e", []):
+                for r in refs:
+                    if (r.get("n") or "").startswith("fx_"):
+                        fx_refs += 1
+    p(f"- cg_links 中 fx_ 前缀条目：**{fx_links}**（应为 0——fx_EventScene_* 是叠加"
+      "演出特效层，不是主画面 CG，按上游约定不进 cg_links）")
+    p(f"- 阅读器事件中 fx_ 前缀引用：{fx_refs}（应为 0；如需还原演出再按行级 fx 字段渲染叠加层）")
+    p()
+
+    # ---- 5. 章节 / 活动归属 ----
+    p("## 5. 章节 / 活动归属异常")
     chap_bad, cross_event = [], []
     for cg, bucket, ch in con.execute("""
         SELECT DISTINCT c.cg_name, u.bucket, u.chapter_no FROM cg_links c
@@ -216,8 +204,8 @@ def main():
         p(f"  - `{cg}` → `{bucket}`")
     p()
 
-    # ---- 8. 动态 CG ----
-    p("## 8. 实时 Spine 模型触发")
+    # ---- 6. 动态 CG ----
+    p("## 6. 实时 Spine 模型触发")
     sp_events = Counter()
     for f in os.listdir(STORY_DIR):
         if not f.endswith(".json"): continue
@@ -232,8 +220,8 @@ def main():
         p(f"  - {k}× `{n}`")
     p()
 
-    # ---- 9. 图集页误入 manifest ----
-    p("## 9. 图集贴图页误入 manifest")
+    # ---- 8. 图集页误入 manifest ----
+    p("## 8. 图集贴图页误入 manifest")
     suspects = []
     for root, dirs, files in os.walk(CG_DIR):
         for f in files:
@@ -250,8 +238,8 @@ def main():
         p(f"  - `{f}` → `{pg}` 在manifest={inman}")
     p()
 
-    # ---- 10. 角色过场分类 ----
-    p("## 10. `04_角色过场` 分类被当作剧情 CG")
+    # ---- 9. 角色过场分类 ----
+    p("## 9. `04_角色过场` 分类被当作剧情 CG")
     cut = list(con.execute("""
         SELECT c.cg_name, u.bucket FROM cg_links c JOIN story_units u ON u.id=c.unit_id
         JOIN cg_assets a ON a.name=c.cg_name WHERE a.category='04_角色过场'"""))

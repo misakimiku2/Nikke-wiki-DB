@@ -251,8 +251,18 @@ def main():
             events = []
             for idx, (lid, lk, _sp, _spid, _txt, _en, _ko, _ja) in enumerate(ls):
                 asset = line_assets.get(lk) or {}
-                cgd, cgb = asset.get("model") or "", asset.get("bg") or ""
+                cgd, cgb = asset.get("model") or "", asset.get("cgb") or ""
                 refs = [r for r in (cg_ref(n, cgd, cgb) for n in cg_by_line.get((sid, lid), [])) if r]
+                # 场景背景切换（bg 字段，black=黑屏转场、none=清空背景、其余为
+                # 06_剧情背景 场景板）：列表末位 = 该行结束时的背景状态。阅读器
+                # 的场景背景层由此驱动——CG 挂屏期间的黑屏/换景也能如实呈现。
+                bg_list = asset.get("bg") or []
+                if bg_list:
+                    last = bg_list[-1]
+                    if last == "none":
+                        refs.append({"h": "", "n": "none"})   # 清空背景：h 留空，前端按空帧处理
+                    elif cg_hash.get(last):
+                        refs.append({"h": cg_hash[last], "n": last})
                 # 去重：动态行的 X_bg（上游 token）与配对补的 X 会变换成同一个
                 # 「背景+模型」引用
                 refs = list({(r["h"], r["n"], r.get("d", "")): r for r in refs}.values())

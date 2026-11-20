@@ -34,7 +34,6 @@ SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
 DB_PATH = os.path.join(ROOT, "data", "nikke.db")
 SCHEMA = os.path.join(ROOT, "build", "schema.sql")
 CG_FLAGS = os.path.join(ROOT, "build", "cg_flags.json")
-SCRIPT_CG_MAP = os.path.join(ROOT, "build", "script_cg_map.json")
 CG_EXCLUDE = os.path.join(ROOT, "build", "cg_exclude.json")
 MAIN_SECTION_NAMES = os.path.join(ROOT, "build", "main_section_names.json")
 
@@ -758,11 +757,17 @@ def import_cg_assets(con):
 def harvest_cg_line_assets():
     """上游剧情 JSON（单一事实源）收集行级 CG 转场与动态模型/背景。
 
-    上游（nikke_extract scripts/cg_refs.py）在 CG 发生变化的行写三个字段：
+    上游（nikke_extract scripts/cg_refs.py）在行级落这些字段（各自只在发生
+    变化的行写）：
       cg  = [EventScene_* token, ...]（差分逐个列出；空数组 = 触发行下一行的
             空转场，不含 CG，不入库）
       cgd = 该行动态 CG 的 spine 模型名（token 是模型名或其 X_bg 板时解析）
-      cgb = 该行应铺的背景资产名（优先 X_bg 板，否则 06_剧情背景 场景板 / black）
+      cgb = 该行动态 CG 应铺的背景板（优先 X_bg 板，否则 06_剧情背景 / black）
+      bg  = 场景切换列表（black=黑屏转场、none=清空背景、其余为场景板名，
+            按记录内出现顺序）——CG 显示区间在后续行的 black/none 处切断，
+            阅读器场景背景层也由它驱动
+      fx  = 特效层命令 fx_EventScene_*（叠加演出特效，不是主画面 CG，不进
+            cg_links；web 端可按需渲染叠加层）
 
     覆盖主线（主线剧情_全量.json）、其他剧情各 *_全量.json、Marian 结构化 JSON
     ——与 collect_story_units 同一批文件，替代旧版按段落逐个解 mpk 的
@@ -770,7 +775,8 @@ def harvest_cg_line_assets():
     从来没有 CG 链接）。line_key 与 story_lines.line_key 同一生成器，撞车 key
     （回放副本）会命中多行、各自建链，与旧行为一致。
 
-    返回 {line_key: {"cg": [名...], "model": cgd, "bg": cgb}}
+    返回 {line_key: {"cg": [名...], "model": cgd, "cgb": cgb,
+                     "bg": [场景切换...], "fx": [特效...]}}
     """
     events = {}
 
@@ -779,11 +785,18 @@ def harvest_cg_line_assets():
             if not isinstance(raw, dict):
                 continue
             key = raw.get("key") or raw.get("id") or raw.get("line_key")
-            cgs = raw.get("cg")
-            if not key or not cgs:
+            if not key:
                 continue
-            events[key] = {"cg": list(cgs), "model": raw.get("cgd") or "",
-                           "bg": raw.get("cgb") or ""}
+            cgs = raw.get("cg")
+            bgs = raw.get("bg")
+            fxs = raw.get("fx")
+            if not cgs and not bgs and not fxs:
+                continue
+            events[key] = {"cg": list(cgs) if cgs else [],
+                           "model": raw.get("cgd") or "",
+                           "cgb": raw.get("cgb") or "",
+                           "bg": list(bgs) if bgs else [],
+                           "fx": list(fxs) if fxs else []}
 
     main_path = os.path.join(SRC, "主线剧情", "主线剧情_全量.json")
     if os.path.exists(main_path):
@@ -808,60 +821,6 @@ def harvest_cg_line_assets():
         for ch in d.get("chapters", []):
             eat(ch.get("lines"))
     return events
-
-
-def apply_script_cg_map(con, rows, seen, assets):
-    """人工校对表（build/script_cg_map.json）补链：group_key → [CG 名]。
-
-    脚本表里有些 CG 只写在演出指令里，行级解析拿不到；旧版 build_db.py 用这张
-    人工表把它们按段落补到首行。新版改成直接解析 .mpk 后这张表一度失效，
-    这里把它接回来。
-
-    只补「该段落还没有这个 CG」的条目：
-      - 同段已有（精确行级或 bg 配对）→ 跳过，否则会在首行制造重复切换；
-      - CG 名没有导出图片（cg_assets 里不存在）→ 跳过，补了阅读器也显示不出来；
-      - group_key 在库里找不到对应段落 → 跳过（活动改名后的遗留条目）。
-    match_type 记为 'manual'，方便 audit_cg.py 区分来源。
-    """
-    if not os.path.exists(SCRIPT_CG_MAP):
-        return 0, 0
-    with open(SCRIPT_CG_MAP, encoding="utf-8") as f:
-        mapping = json.load(f)
-
-    # group_key -> (segment_id, unit_id)，取第一个同名段落
-    seg_first = {}
-    for sid, uid, g in con.execute("SELECT id, unit_id, group_key FROM story_segments"):
-        seg_first.setdefault(g, (sid, uid))
-    # segment_id -> 首行 line_id
-    first_line = {}
-    for lid, sid in con.execute(
-            "SELECT id, segment_id FROM story_lines ORDER BY segment_id, seq"):
-        first_line.setdefault(sid, lid)
-
-    have_seg = {(cg, sid) for cg, sid in con.execute(
-        "SELECT cg_name, segment_id FROM cg_links")}
-    have_seg |= {(r[0], r[5]) for r in rows}
-
-    added = skipped = 0
-    for g, cgs in mapping.items():
-        hit = seg_first.get(g)
-        if not hit:
-            skipped += len(cgs)
-            continue
-        sid, uid = hit
-        lid = first_line.get(sid)
-        if lid is None:
-            skipped += len(cgs)
-            continue
-        for cg in cgs:
-            if cg not in assets or (cg, sid) in have_seg or (cg, lid) in seen:
-                skipped += 1
-                continue
-            have_seg.add((cg, sid))
-            seen.add((cg, lid))
-            rows.append((cg, lid, None, "manual", uid, sid))
-            added += 1
-    return added, skipped
 
 
 def import_cg_links(con):
@@ -910,8 +869,8 @@ def import_cg_links(con):
         rows.append((sib, lid, lk, "pair", uid, sid))
         pairs += 1
 
-    # ---- 人工校对表补链（脚本表演出指令引用、行级解析拿不到的 CG）----
-    manual, manual_skip = apply_script_cg_map(con, rows, seen, assets)
+    # 注：人工校对表 script_cg_map.json 已退役——上游行级 cg 字段成为单一事实源
+    # 后它再无有效条目（差分覆盖类实为 fx 特效 token，见 harvest_cg_line_assets）。
 
     con.executemany(
         "INSERT OR REPLACE INTO cg_links(cg_name, line_id, line_key, match_type, unit_id, segment_id)"
@@ -926,7 +885,6 @@ def import_cg_links(con):
     linked = con.execute("SELECT COUNT(DISTINCT cg_name) FROM cg_links").fetchone()[0]
     log(f"  上游行级 CG 转场 {n_ev:,} 处（{n_miss} 个 key 不在库内，多为已清空台词的残表）"
         f" → 链接 {n_hit:,} 条；bg/前景配对补 {pairs:,} 条")
-    log(f"  人工校对表补 {manual} 条（跳过 {manual_skip} 条：已关联 / 无图 / 段落不存在）")
     log(f"  链接合计 {len(rows):,} 条，覆盖 CG {linked:,} 个")
 
 

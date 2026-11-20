@@ -8,9 +8,9 @@ CG 画廊数据导出
     links : cg 名 -> [{u:单元ID, i:定位行号, s:说话人, t:台词, n:显示句数, p:段落标题}]
             每条链接代表「CG 出现在该段落」；CSV 行级链接定位到精确行，
             脚本表/推断链接定位到段落首行。同段落多行合并为一条。
-            n = 真实显示区间句数：从触发行到下一个会替换它的 CG 切换事件
-            （引擎脚本口径，与剧情阅读器的 CG 切换一致），段内无后续切换
-            则到段末；连图集各帧 / X_bg 互相接替不视为切换。
+            n = 真实显示区间句数：从触发行到下一个会替换它的 CG 切换事件，
+            或下一个场景 black/none 行（游戏里切场景时 CG 不再挂屏）——两者取
+            更早者，段内都没有则到段末；连图集各帧 / X_bg 互相接替不视为切换。
 
   python build/export_cg.py
 """
@@ -32,6 +32,7 @@ CHARS = os.path.join(ROOT, "public", "data", "characters.json")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from export_story import load_locale_titles   # noqa: E402  剧情标题四语（Stage/MainScenario/NikkeEpisode/Counseling…）
+from build_db import harvest_cg_line_assets   # noqa: E402  行级场景切换 bg（black/none 切断 CG 区间）
 
 
 def load_char_names():
@@ -126,6 +127,23 @@ def main():
             locale_titles[key] = {l: v[l] for l in ("zh", "en", "ko", "ja")}
     char_names = load_char_names()
 
+    # ---- 场景黑场/清背景切断点 ----
+    # 上游剧情 JSON 行级 bg 字段是场景切换命令：black=黑屏转场、none=清空背景。
+    # CG 显示区间在这些行处切断（游戏里切场景时 CG 不再挂屏），区间 = 触发行 →
+    # 下一个 black/none 行（与下一个 CG 切换事件取更早者）。
+    line_key_pos = defaultdict(list)   # line_key -> [(sid, off)]
+    for lid, lk, sid in con.execute("SELECT id, line_key, segment_id FROM story_lines"):
+        off = line_pos.get(lid)
+        if off is not None and lk:
+            line_key_pos[lk].append((sid, off))
+    clear_offsets = defaultdict(list)  # sid -> [off]（升序）
+    for lk, ev in harvest_cg_line_assets().items():
+        if any(b in ("black", "none") for b in ev.get("bg") or []):
+            for sid, off in line_key_pos.get(lk, []):
+                clear_offsets[sid].append(off)
+    for sid in clear_offsets:
+        clear_offsets[sid] = sorted(set(clear_offsets[sid]))
+
     # ---- CG -> 段落（同段落多行合并，保留最靠上的触发点）----
     # 同时收集每段内全部 CG 触发行（含其它 CG）：用于推算真实显示区间
     links = defaultdict(dict)      # cg -> {sid: (off, speaker, text)}
@@ -167,11 +185,16 @@ def main():
             # 段内没有后续切换就显示到段末。老的「整段行数」会把触发前的半段
             # 和后续场景（回忆杀等）都算进去，远大于游戏里的实际出现范围。
             end = lcount
+            # 场景黑场/清背景先切：CG 在下一个 black/none 行处不再挂屏
+            for o2 in clear_offsets.get(sid, ()):
+                if o2 > off:
+                    end = min(end, o2)
+                    break
             for o2 in seg_event_offsets.get(sid, ()):
                 if o2 <= off:
                     continue
                 if any(group_of(n2) != g_self for n2 in seg_events[sid][o2]):
-                    end = o2
+                    end = min(end, o2)
                     break
             run = max(1, end - off)
             entry = {
