@@ -5,9 +5,12 @@ CG 画廊数据导出
 
   public/data/cg_index.json
     items : 1347 张插画（hash / 分类 / 尺寸 / 关联数）
-    links : cg 名 -> [{u:单元ID, i:定位行号, s:说话人, t:台词, n:段落行数, p:段落标题}]
+    links : cg 名 -> [{u:单元ID, i:定位行号, s:说话人, t:台词, n:显示句数, p:段落标题}]
             每条链接代表「CG 出现在该段落」；CSV 行级链接定位到精确行，
             脚本表/推断链接定位到段落首行。同段落多行合并为一条。
+            n = 真实显示区间句数：从触发行到下一个会替换它的 CG 切换事件
+            （引擎脚本口径，与剧情阅读器的 CG 切换一致），段内无后续切换
+            则到段末；连图集各帧 / X_bg 互相接替不视为切换。
 
   python build/export_cg.py
 """
@@ -47,6 +50,27 @@ def load_char_names():
         if zh and (names.get("en") or names.get("ko") or names.get("ja")):
             out[zh] = {l: names.get(l) for l in ("en", "ko", "ja")}
     return out
+
+
+def load_merge_groups():
+    """cg_merges.json 的封面 + 成员视为同一组：连图集各帧互相接替，不截断彼此的显示区间。"""
+    path = os.path.join(ROOT, "build", "cg_merges.json")
+    groups = {}
+    try:
+        raw = json.load(open(path, encoding="utf-8"))
+    except Exception:
+        return groups
+    for cover, members in raw.items():
+        if not isinstance(members, list):
+            continue  # 跳过 _note 之类的说明字段
+        for name in [cover] + members:
+            groups[name] = cover
+    return groups
+
+
+def canonical(name: str) -> str:
+    """X 与 X_bg 是同一张作品（人物层 + 背景板），归为一组。"""
+    return name[:-3] if name.endswith("_bg") else name
 
 
 def main():
@@ -103,7 +127,9 @@ def main():
     char_names = load_char_names()
 
     # ---- CG -> 段落（同段落多行合并，保留最靠上的触发点）----
-    links = defaultdict(dict)    # cg -> {sid: (off, speaker, text)}
+    # 同时收集每段内全部 CG 触发行（含其它 CG）：用于推算真实显示区间
+    links = defaultdict(dict)      # cg -> {sid: (off, speaker, text)}
+    seg_events = defaultdict(dict)  # sid -> {off: set(cg 名)}（同行的多张图并成一个事件）
     for cg, lid, sid in con.execute("""
         SELECT c.cg_name, c.line_id, l.segment_id FROM cg_links c
         JOIN story_lines l ON l.id = c.line_id
@@ -117,20 +143,43 @@ def main():
         if sid not in d or off < d[sid][0]:
             sp, txt = first_line.get(sid, ("", ""))[:2]
             d[sid] = (off, sp, txt)
+        seg_events[sid].setdefault(off, set()).add(cg)
 
     out_links = {}
     n_entries = 0
     n_l4 = n_s4 = n_p4 = 0
+    merge_groups = load_merge_groups()
+
+    def group_of(name: str) -> str:
+        c = canonical(name)
+        return merge_groups.get(c, c)
+
+    # 每段的触发偏移升序列表（运行长度推算用）
+    seg_event_offsets = {sid: sorted(evs) for sid, evs in seg_events.items()}
+
     for cg, segs in links.items():
         lst = []
+        g_self = group_of(cg)
         for sid, (off, sp, txt) in sorted(segs.items(), key=lambda x: seg_meta[x[0]][3]):
             uid, stitle, lcount, base, gkey = seg_meta[sid]
+            # 真实显示区间：从触发行到下一个会顶掉它的 CG 切换事件为止（与阅读器的
+            # CG 切换口径一致）；同组条目（连图集各帧 / X_bg）互相接替不算切换，
+            # 段内没有后续切换就显示到段末。老的「整段行数」会把触发前的半段
+            # 和后续场景（回忆杀等）都算进去，远大于游戏里的实际出现范围。
+            end = lcount
+            for o2 in seg_event_offsets.get(sid, ()):
+                if o2 <= off:
+                    continue
+                if any(group_of(n2) != g_self for n2 in seg_events[sid][o2]):
+                    end = o2
+                    break
+            run = max(1, end - off)
             entry = {
                 "u": uid,
                 "i": base + off,          # 定位行号（单元内绝对行）
                 "s": sp,
                 "t": (txt or "")[:120],
-                "n": lcount,              # 段落行数
+                "n": run,                 # 显示区间句数（触发行 → 下一 CG 切换 / 段末）
                 "p": stitle,              # 段落标题
             }
             # 四语回填：段落标题（Locale 官方名）、首句台词、说话人名。
