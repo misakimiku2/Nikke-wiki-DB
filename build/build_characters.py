@@ -121,6 +121,24 @@ EXTRA = {
     9201: ("c235", "诺雅：新生", "Noah: Rebirth"),
 }
 
+# 国服先行角色（2026-11 G23.x 聊斋版本，整体不在国际服 Locale 表里）。
+# 文案抄自国服 Locale_Character.lss（明文 SQLite，Key 与国际服同构）；
+# 英文名暂无官方译名，用拼音。desc / intro / cv 齐全，has_desc=1。
+CN_EXTRA = {
+    8004: {
+        "code": "c8004", "zh": "婴宁", "en": "Yingning",
+        "desc": "聊斋志异部队的情报员，和机械狐狸共感的少女。\n个性天真，像狐狸一样活泼好动。",
+        "intro": "(＝｀ω´＝)～～狐狐大飞扑～～",
+        "cv": "金元寿子",
+    },
+    8005: {
+        "code": "c8005", "zh": "画皮", "en": "Huapi",
+        "desc": "聊斋志异部队的主力，擅长完美伪装的秘密间谍。\n个性阴郁，没有伪装就不知道如何自处。",
+        "intro": "私人账号，勿扰……工作交接请call内线",
+        "cv": "大原沙耶香",
+    },
+}
+
 
 def log(m):
     print(m, flush=True)
@@ -208,6 +226,12 @@ def build_characters(con_target):
             continue
         rows.append((cid, code, zh, en, None, None, None,
                      None, None, None, None, None, 0))
+    have = {r[0] for r in rows}
+    for cid, e in CN_EXTRA.items():
+        if cid in have:
+            continue
+        rows.append((cid, e["code"], e["zh"], e["en"], None, None, None,
+                     e["desc"], None, None, e["intro"], e["cv"], 1))
 
     # 无独立声优的 NPC 角色卡沿用本体声优：桃乐丝：异端→桃乐丝，诺雅：新生→诺雅
     CV_INHERIT = {9200: 233, 9201: 232}

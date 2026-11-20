@@ -149,12 +149,13 @@ function NoticeCard({ n, latest }: { n: Notice; latest: boolean }) {
   const texts = n.body.filter(isText)
   const images = n.body.filter(isImg)
   const preview = texts.slice(0, mobile ? 1 : 2)
-  const cover = images[0]
+  // 有 thumb（通常是头像/头肩裁切）优先用作卡片封面：contain 显示，不裁人物
+  const cover = n.thumb ? { img: n.thumb } : images[0]
   const more = n.body.length - preview.length
   return (
     <article className={latest ? 'notice-item latest' : 'notice-item'}>
       {cover && (
-        <div className="notice-bgimg" aria-hidden="true">
+        <div className={n.thumb ? 'notice-bgimg thumb' : 'notice-bgimg'} aria-hidden="true">
           <img src={cover.img} alt="" loading="lazy" />
         </div>
       )}

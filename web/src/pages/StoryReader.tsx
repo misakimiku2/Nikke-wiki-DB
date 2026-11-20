@@ -2,8 +2,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   accentFor, charPortraitSmall, loadCharImages, loadCharMi, loadCharacters, loadStoryCast,
-  loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
-  type CharImages, type Character, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
+  loadStoryFlow, loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
+  type CharImages, type Character, type CounselFlow, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
 import StorySmsInline from '../components/StorySmsInline'
@@ -19,8 +19,19 @@ type Frame = {
   n: string | null
 }
 
-/** 这些分类按「章节列表 → 单章正文」阅读；主线保持整章一页。 */
-const CHAPTER_CATS = new Set(['event', 'nikke', 'gaiden', 'sub', 'side_story'])
+/** 正文渲染序列：普通台词行，或一组选项（数字为段内 0-based 行下标） */
+type SeqItem = { t: 'line'; i: number } | { t: 'choice'; lines: number[] }
+
+type Block = {
+  t: string
+  g: string
+  lines: { sp: string; spid: string; txt: string; no: number }[]
+  runs: Map<number, number>
+  seq: SeqItem[]
+}
+
+/** 这些分类按「章节列表 → 单章正文」阅读。主线各章含多节，也走章节列表。 */
+const CHAPTER_CATS = new Set(['main', 'event', 'nikke', 'gaiden', 'sub', 'side_story'])
 
 /** 解析一组 CG → 前景帧 + 配对背景层（游戏中动态 CG = bg 层 + Spine 前景层） */
 function resolveCg(list: StoryCgRef[]): Frame {
@@ -399,6 +410,9 @@ export default function StoryReader() {
   const [index, setIndex] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
   const [smsData, setSmsData] = useState<StorySmsData | null>(null)
+  // 剧情选项分支（export_story_flow.py）：按段落 group_key 索引；picks 记录每处选项的选择
+  const [flowMap, setFlowMap] = useState<Record<string, CounselFlow>>({})
+  const [picks, setPicks] = useState<Record<string, number>>({})
   // 章节目录页顶部的登场角色卡：story_cast.json 给出本单元的角色（按台词数降序）
   const [cast, setCast] = useState<Character[]>([])
   const [imgs, setImgs] = useState<CharImages>({})
@@ -465,10 +479,12 @@ export default function StoryReader() {
 
   useEffect(() => {
     setDetail(null)
+    setPicks({})
     if (!id) return
     loadStoryUnit(id).then(setDetail).catch(() => setDetail(null))
     loadStoryIndex().then(setIndex).catch(() => {})
     loadCharacters().then(setChars).catch(() => {})
+    loadStoryFlow().then(setFlowMap).catch(() => {})
   }, [id])
 
   // 登场角色卡：单元 → 角色 id（story_cast.json）→ 角色档案；头像素材顺手预热
@@ -553,8 +569,8 @@ export default function StoryReader() {
   const { blocks, frames } = useMemo(() => {
     const frames: Frame[] = []
     let n = 0
-    if (!detail) return { blocks: [], frames }
-    const blocks = detail.segments.map((seg) => {
+    if (!detail) return { blocks: [] as Block[], frames }
+    const blocks: Block[] = detail.segments.map((seg) => {
       const lines = seg.l.map(([sp, spid, txt]) => ({ sp, spid, txt, no: n++ }))
       const runs = new Map<number, number>()   // 行下标 -> run 序号
       for (const [at, refs] of seg.e || []) {
@@ -562,10 +578,36 @@ export default function StoryReader() {
         const idx = Math.max(0, Math.min(at, lines.length - 1))
         runs.set(idx, frames.push(resolveCg(refs)) - 1)
       }
-      return { t: seg.t, g: seg.g, lines, runs }
+      // 有选项分支时按 next 指针游走渲染：到选项组停下，选了才继续、只走选中分支。
+      const K = lines.length
+      const flow = flowMap[seg.g]
+      let seq: SeqItem[] = lines.map((_, i) => ({ t: 'line', i }))
+      if (flow && flow.choices.length) {
+        const nextMap = flow.next
+        const startMap = new Map(flow.choices.map((c) => [c[0] - 1, c.map((x) => x - 1)]))
+        const step = (x: number): number | null => nextMap[x + 1] != null ? nextMap[x + 1] - 1 : (x < K - 1 ? x + 1 : null)
+        seq = []
+        let cur: number | null = 0
+        let guard = 0
+        while (cur != null && cur >= 0 && cur < K && guard++ < 2000) {
+          const grp = startMap.get(cur)
+          if (grp) {
+            seq.push({ t: 'choice', lines: grp })
+            const key = `${detail.id}:${seg.g}:${grp[0]}`
+            const pk = picks[key]
+            if (pk == null) break
+            const target = grp[pk]
+            cur = step(target)
+            continue
+          }
+          seq.push({ t: 'line', i: cur })
+          cur = step(cur)
+        }
+      }
+      return { t: seg.t, g: seg.g, lines, runs, seq }
     })
     return { blocks, frames }
-  }, [detail])
+  }, [detail, flowMap, picks])
 
   const hasCg = frames.length > 0
 
@@ -674,8 +716,12 @@ export default function StoryReader() {
         </div>
 
         <div className="reader-body chapters">
-          {eventHeroSlug(detail.id) && (
-            <EventHero detail={detail} slug={eventHeroSlug(detail.id)!} />
+          {(detail.cat === 'main' || detail.cat === 'event') && (
+            <EventHero
+              detail={detail}
+              slug={eventHeroSlug(detail.id)}
+              cover={index.find((u) => u.id === detail.id)?.cover}
+            />
           )}
           {cast.length > 0 && (
             <section className="story-cast">
@@ -835,7 +881,29 @@ export default function StoryReader() {
         {shownBlocks.map((seg, si) => (
           <section key={seg.g + si} className="seg" data-g={seg.g}>
             {seg.t && chapterIndex === null && <h2 className="seg-title">{seg.t}</h2>}
-            {seg.lines.map((ln, li) => {
+            {seg.seq.map((item) => {
+              if (item.t === 'choice') {
+                const first = item.lines[0]
+                const key = `${detail.id}:${seg.g}:${first}`
+                const sel = picks[key]
+                return (
+                  <div className="cc-choice" key={`choice${first}`}>
+                    <span className="cc-choice-label">你的回答</span>
+                    {item.lines.map((li, oi) => (
+                      <button
+                        key={li}
+                        className={sel === oi ? 'on' : ''}
+                        onClick={() => setPicks((p) => ({ ...p, [key]: oi }))}
+                      >
+                        <i />
+                        <span>{seg.lines[li].txt}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              }
+              const li = item.i
+              const ln = seg.lines[li]
               const ch = speakerMap[ln.spid]
               const isNarr = !ln.sp
               const run = seg.runs.get(li)

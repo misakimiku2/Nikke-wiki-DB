@@ -189,12 +189,86 @@ def main():
         ORDER BY (e.speaker_id = c.speaker_id) DESC, e.line_count DESC
     """):
         sp2char.setdefault(sp, eid)
+
+    # ---- 主线角色身份差分 --------------------------------------------------
+    # 剧情里同一角色会换多个身份，但原始 speaker 的 name_zh 多半还写着旧身份
+    # （rapi_red 也写作「拉毗」），按名字 join 会把新旧身份并到同一张卡。
+    # 这里按「speaker 变体 + 主线章节阶段」纠正，让过渡章能同时出现两版角色。
+    # 角色 id 来自 character_entries：10 拉毗 / 16 拉毗:小红帽、90/93 艾玛、
+    # 91/94 贝斯蒂、92/95 银华、100/103 拉普拉斯、101/104 德雷克、
+    # 102/105 麦斯威尔、12/17 阿妮斯、11/18 尼恩、13/260/19 玛丽安三阶段。
+    MARIAN_SPEAKERS = {
+        "marian", "marian_p", "marian_q", "marian_queen", "marian_f", "marian_d", "modenia",
+    }
+    main_chapter = {}   # unit_id -> d_main_NN 的数字部分（0-based）
+    for uid, bk in con.execute(
+            "SELECT id, bucket FROM story_units WHERE category='main'"):
+        m = re.match(r"d_main_(\d+)", bk or "")
+        main_chapter[uid] = int(m.group(1)) if m else -1
+
+    def main_identity(uid, sp):
+        """主线的身份覆盖；None 表示沿用默认 name_zh 映射。"""
+        n = main_chapter.get(uid, -1)
+        if n < 0:
+            return None
+        sp = sp or ""
+        # 玛丽安：坠落/侵蚀=玛丽安，中段=神罚，d_main_47 起=女王
+        if sp in MARIAN_SPEAKERS:
+            return 13 if n <= 1 else (19 if n >= 47 else 260)
+        # 新身份 speaker 变体：变体本身即代表升级身份（过渡章可与旧版并存）
+        if sp.startswith("rapi_red"):
+            return 16
+        if sp.startswith("anis_i"):
+            return 17
+        # 继承（d_main_34）起：战术升级三人组整体切换
+        if n >= 34:
+            if sp.startswith("emma"):
+                return 93
+            if sp.startswith("vesti"):
+                return 94
+            if sp.startswith("eunhwa"):
+                return 95
+        # 对话（d_main_35）起：三人组即使 speaker 仍是旧名也算升级身份
+        if n >= 35:
+            if sp.startswith("laplace"):
+                return 103
+            if sp.startswith("drake"):
+                return 104
+            if sp.startswith("maxwell"):
+                return 105
+        # 行动（d_main_44）起：白雪公主重型武装、红莲弑神、长发公主圣域
+        if n >= 44:
+            if sp.startswith("snowwhite"):
+                return 471
+            if sp.startswith("hongryeon"):
+                return 472
+            if sp.startswith("rapunzel"):
+                return 473
+            # 钥匙（d_main_43）之后：尼恩换成透视之眼
+            if sp.startswith("neon"):
+                return 18
+        # 开战（d_main_47）之后：桃乐丝异端、诺雅新生
+        if n >= 48:
+            if sp.startswith("dorothy"):
+                return 9200
+            if sp.startswith("noah"):
+                return 9201
+        return None
+
     cast = defaultdict(lambda: defaultdict(int))   # unit_id -> char_id -> 台词行数
     for uid, sp in con.execute(
             "SELECT unit_id, speaker_id FROM story_lines WHERE speaker_id IS NOT NULL"):
-        cid = sp2char.get(sp)
+        cid = main_identity(uid, sp)
+        if cid is None:
+            cid = sp2char.get(sp)
         if cid:
             cast[uid][cid] += 1
+
+    # 钥匙章（d_main_43）：剧情里尼恩同时以「尼恩」和「尼恩：透视之眼」登场，
+    # 但 speaker 全是 neon，数据无法区分；手动补一张升级身份卡，与基础版并存。
+    for uid, n in main_chapter.items():
+        if n == 43 and cast[uid].get(11):
+            cast[uid][18] = max(cast[uid].get(18, 0), cast[uid][11])
     # 每个单元内按台词行数降序——话最多的排最前面
     dump("story_cast.json", {
         "total": len(cast),

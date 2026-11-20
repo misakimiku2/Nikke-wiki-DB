@@ -5,23 +5,10 @@ import { loadStoryIndex, nf, type StoryUnit } from '../data'
 export default function Story() {
   const [units, setUnits] = useState<StoryUnit[] | null>(null)
   const [params, setParams] = useSearchParams()
-  // 搜索关键词同步进 URL（replace）：从阅读器返回时恢复搜索现场（cat 参数同理，见下）
-  const [q, setQ] = useState(() => params.get('q') || '')
 
   useEffect(() => {
     loadStoryIndex().then(setUnits).catch(() => setUnits([]))
   }, [])
-
-  // q 写回 URL（replace）：返回 / 刷新 / 分享链接都能带着搜索词
-  useEffect(() => {
-    if ((params.get('q') || '') === q) return
-    const next = new URLSearchParams(params)
-    if (q) next.set('q', q)
-    else next.delete('q')
-    setParams(next, { replace: true })
-    // params 不进依赖：本 effect 自己写的 URL 不应触发重跑
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q])
 
   const cats = useMemo(() => {
     if (!units) return []
@@ -51,12 +38,8 @@ export default function Story() {
 
   const shown = useMemo(() => {
     if (!units) return []
-    const k = q.trim()
-    let out = units
-    if (k) out = out.filter((u) => u.title.includes(k) || u.bucket.includes(k))
-    else out = out.filter((u) => u.cat === cat)
-    return out
-  }, [units, cat, q])
+    return units.filter((u) => u.cat === cat)
+  }, [units, cat])
 
   if (!units) return <div className="loading">LOADING…</div>
 
@@ -70,31 +53,20 @@ export default function Story() {
         <div className="meta">{nf(units.length)} EPISODES · {nf(units.reduce((a, b) => a + b.lines, 0))} LINES</div>
       </div>
 
-      <div className="toolbar">
-        <input
-          className="search"
-          placeholder="搜索剧情标题，例：坠落、RED ASH"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+      <div className="cat-row">
+        {cats.map((c) => (
+          <button
+            key={c.cat}
+            className={`chip ${cat === c.cat ? 'on' : ''}`}
+            onClick={() => pickCat(c.cat)}
+          >
+            {c.label} · {c.n}
+          </button>
+        ))}
       </div>
 
-      {!q && (
-        <div className="cat-row">
-          {cats.map((c) => (
-            <button
-              key={c.cat}
-              className={`chip ${cat === c.cat ? 'on' : ''}`}
-              onClick={() => pickCat(c.cat)}
-            >
-              {c.label} · {c.n}
-            </button>
-          ))}
-        </div>
-      )}
-
       {shown.length === 0 ? (
-        <div className="empty">没有匹配的剧情</div>
+        <div className="empty">暂无剧情</div>
       ) : (
         <div className="story-grid">
           {shown.map((u) => (

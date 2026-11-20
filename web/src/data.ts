@@ -711,6 +711,8 @@ export type CharVoiceData = {
   cvj?: string
   /** 中配声优 */
   cvz?: string
+  /** 国服先行角色：主雪碧图就是中文配音，无日语轨（f 即中文） */
+  zhOnly?: number
   cats: CharVoiceCat[]
 }
 
@@ -787,6 +789,20 @@ export async function loadCounselFlow(): Promise<Record<string, CounselFlow>> {
     cacheFlow = {}
   }
   return cacheFlow
+}
+
+/* 主线/活动等剧情的选项分支流（export_story_flow.py），格式同 CounselFlow */
+let cacheStoryFlow: Record<string, CounselFlow> | null = null
+
+export async function loadStoryFlow(): Promise<Record<string, CounselFlow>> {
+  if (cacheStoryFlow) return cacheStoryFlow
+  try {
+    const d = await getJSON<{ items: Record<string, CounselFlow> }>('/data/story_flow.json')
+    cacheStoryFlow = d.items || {}
+  } catch {
+    cacheStoryFlow = {}
+  }
+  return cacheStoryFlow
 }
 
 /* 角色 Spine 站姿模型（可实时播放 idle / 表情动画） */

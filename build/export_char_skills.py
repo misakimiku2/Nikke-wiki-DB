@@ -39,6 +39,11 @@ NIKKE_SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
 STATIC = os.path.join(NIKKE_SRC, "staticdata")
 DB = os.path.join(ROOT, "data", "nikke.db")
 OUT = os.path.join(ROOT, "public", "data", "char_skills.json")
+# 国服 Locale_Skill（明文 SQLite）：国服先行角色（8004/8005）的技能文案只在这里
+CN_SKILL_DB = os.environ.get(
+    "NIKKE_CN_LOCALE",
+    r"C:/Program Files/GAME/胜利女神：新的希望(2002017)/nikke_Data/runtime_data/saus/saus/lss/Locale_Skill.lss",
+)
 
 NAME_RE = re.compile(r"^Locale_Skill:(\d+)_name$")
 
@@ -146,7 +151,7 @@ def main():
     print(f"SkillInfoTable: {len(info)} 个技能，耗时 {time.time()-t0:.1f}s")
 
     db = sqlite3.connect(DB)
-    chars = json.load(open(os.path.join(ROOT, "public", "data", "characters.json")))["items"]
+    chars = json.load(open(os.path.join(ROOT, "public", "data", "characters.json"), encoding="utf-8"))["items"]
 
     kind_label = {}
     for (k, zh) in db.execute("select key, zh from skill_strings where key like 'skill_name_%'"):
@@ -158,9 +163,27 @@ def main():
         r = db.execute("select zh from skill_strings where key=?", (key,)).fetchone()
         return r[0] if r else None
 
+    # 国服文案回退：表内键与国际服同构（{sid}_name / {sid}_description / {gid}_{n}_add_des）
+    cn_db = None
+    cn_strings = {}
+    try:
+        cdb = sqlite3.connect(f"file:{CN_SKILL_DB}?mode=ro", uri=True)
+        cn_strings = {k: (zh or "") for k, zh in cdb.execute('select Key, "zh-CN" from Locale_Skill')}
+        cdb.close()
+        print(f"国服 Locale_Skill {len(cn_strings)} 条")
+    except Exception as e:
+        print(f"! 国服 Locale_Skill 读取失败（跳过）：{e}")
+
+    def text_any(key):
+        return text(key) or cn_strings.get(key) or None
+
     # 词组表：<词组ID>_<行号>_add_des → 专有名词解释（游戏内「技能资讯」弹窗）
     terms = {}
     for (k, zh) in db.execute("select key, zh from skill_strings where key like '%_add_des'"):
+        m = re.match(r"^(\d+)_(\d+)_add_des$", k)
+        if m and zh:
+            terms.setdefault(int(m.group(1)), []).append((int(m.group(2)), clean(zh)))
+    for k, zh in cn_strings.items():
         m = re.match(r"^(\d+)_(\d+)_add_des$", k)
         if m and zh:
             terms.setdefault(int(m.group(1)), []).append((int(m.group(2)), clean(zh)))
@@ -174,15 +197,21 @@ def main():
         for pre in "12":
             for slot in range(10):
                 sid_s = f"{pre}{uid:03d}{slot}"
-                nm = text(sid_s + "_name")
+                nm = text_any(sid_s + "_name")
                 if not nm:
                     continue
                 sid = int(sid_s)
                 rec = info.get(sid)
                 if rec is None:
-                    desc = text(sid_s + "_description") or ""
-                    skills.append({"sid": sid, "kind": "", "name": nm, "desc": clean(desc),
-                                   "values": [], "levels": 0, "icon": ""})
+                    desc = text_any(sid_s + "_description") or ""
+                    if uid >= 8000:
+                        # 国服先行角色（SkillInfoTable 无行）：kind 由槽位推导，无逐级数值
+                        kind = {1: "技能1", 2: "技能2", 3: "爆裂技能"}.get(slot, "")
+                        skills.append({"sid": sid, "kind": kind, "name": nm, "desc": clean(desc),
+                                       "values": [], "levels": 10, "icon": ""})
+                    else:
+                        skills.append({"sid": sid, "kind": "", "name": nm, "desc": clean(desc),
+                                       "values": [], "levels": 0, "icon": ""})
                     no_level += 1
                     continue
                 kind = kind_label.get((rec["kind"] or "").removeprefix("Locale_Skill:"), "")

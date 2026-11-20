@@ -54,9 +54,13 @@ function main() {
   }
   console.log(`Locale_CharacterCostume <- ${costume.file}`)
 
-  // Locale_Character：主线导出用的是固定那份 zh-CN 库
-  const charFile = 'e6059faf00471aa305c16cabe88871bb.dec'
-  const charDb = new DatabaseSync(path.join(DEC, charFile), { readOnly: true })
+  // Locale_Character：按表名在 decrypted/ 里定位（客户端更新会换文件哈希，写死会失效）
+  const charHit = findDb('Locale_Character')
+  if (!charHit) {
+    console.error('! 没找到含 Locale_Character 的 .dec')
+    process.exit(1)
+  }
+  const charDb = charHit.db
 
   const out = {}
 
@@ -86,6 +90,39 @@ function main() {
     out[k] ||= {}
     out[k].intro = r.z
     intros++
+  }
+
+  // 国服专属时装（2026-11 G23.x 聊斋版本引入，如黄发垂髫/宴桃源/蝶恋花语）：
+  // 国际服皮肤表没有这些条目。国服客户端的 Locale 表是明文 SQLite（.lss），
+  // 结构与 .dec 相同；只补国际服没有的 key，命中的天然就是国服专属。
+  let cnCount = 0
+  const cnCostume = process.env.NIKKE_CN_GAME
+    ? path.join(process.env.NIKKE_CN_GAME, 'nikke_Data/runtime_data/saus/saus/lss/Locale_CharacterCostume.lss')
+    : 'C:/Program Files/GAME/胜利女神：新的希望(2002017)/nikke_Data/runtime_data/saus/saus/lss/Locale_CharacterCostume.lss'
+  if (fs.existsSync(cnCostume)) {
+    const cnDb = new DatabaseSync(cnCostume, { readOnly: true })
+    for (const r of cnDb.prepare('select "Key","zh-CN" as z from Locale_CharacterCostume').all()) {
+      let m = /^(\d+)_(\d+)_costume_name$/.exec(r.Key)
+      if (m && r.z) {
+        const k = costumeKey(m[1], m[2])
+        if (!out[k]) {
+          out[k] = { name: r.z }
+          cnCount++
+        }
+        continue
+      }
+      m = /^(\d+)_(\d+)_description$/.exec(r.Key)
+      if (m && r.z) {
+        const k = costumeKey(m[1], m[2])
+        if (out[k] && !out[k].desc) {
+          out[k].desc = r.z.replace(/\r\n/g, '\n')
+        }
+      }
+    }
+    cnDb.close()
+    console.log(`国服专属时装 ${cnCount} 套 <- ${cnCostume}`)
+  } else {
+    console.log('! 未找到国服 Locale_CharacterCostume.lss，跳过国服专属时装')
   }
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true })

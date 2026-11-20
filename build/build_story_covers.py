@@ -25,6 +25,7 @@
 import json
 import math
 import os
+import re
 import sys
 from collections import defaultdict
 from statistics import median
@@ -94,8 +95,11 @@ def load_candidates():
     with open(DATA, encoding="utf-8") as f:
         idx = json.load(f)
     linked = {u["id"] for u in idx.get("items", []) if cand.get(u["id"])}
+    # 旧 cover 对应的 CG 若已从 manifest 移除（例如被 cg_exclude.json 过滤），
+    # 它的 webp 文件仍留在磁盘上，不能再当兜底候选捡回来。
+    live_hashes = {it["h"] for it in cg.get("items", [])}
     for u in idx.get("items", []):
-        if u.get("cover") and u["id"] not in linked:
+        if u.get("cover") and u["id"] not in linked and u["cover"] in live_hashes:
             cand[u["id"]].append({"h": u["cover"], "i": 10 ** 6, "rank": 1, "kd": False})
     for arr in cand.values():
         seen, out = set(), []
@@ -280,6 +284,7 @@ def main():
     # 单元 id → (封面 hash, 是否来自它自己的剧情 CG)。
     # 「自己的」= 通过 cg_index.links 关联到，而不是 export_web 里借邻居/模糊匹配来的。
     picked: dict[int, tuple[str | None, bool]] = {}
+    ranked: dict[int, list[str]] = {}   # 单元的候选 hash（按选图优先级）
 
     def score(h):
         if h not in score_cache:
@@ -324,28 +329,57 @@ def main():
         ok = [x for x in scored if x[2]["score"] >= 0.42]
         scored = ok or scored
         scored.sort(key=lambda x: -x[0])
+        ranked[u["id"]] = [x[1] for x in scored]
         picked[u["id"]] = (scored[0][1], own)
 
     # —— 去重 ——
-    # 同一张图可能被多张卡片共用：真实出现在两部剧情里的 CG 是正常关联，保留；
-    # 但 export_web 的「借相邻章节封面 / 名字模糊匹配」经常把同一张图发给一堆
-    # 无关单元（序章和坠落、阿莉亚和玛律恰那…），目录里连排同图看着像 bug。
-    # 处置：非自身 CG 的重复项如果撞图，退回文字兜底卡（站内 332 个单元本来如此）。
+    # 目录里连排同一张图看着像 bug，哪怕是「真实出现在两部剧情里」的 CG：
+    # 目录是用来快速区分各话的，封面必须尽量不同。处置顺序：
+    #   1) 同一 hash 被多个单元选中 → 只留优先级最高的一个（自身 CG 优先），
+    #      其余从自己的候选里换一张没被占用的，没有就退回文字兜底卡。
+    #   2) 不同 hash 但属同一章节的连续差分帧（Chap_24_01 / Chap_24_02 这类
+    #      上一秒下一秒的图）→ 视觉上几乎一样，同样要拆开。
     if not only_ids:
-        users = defaultdict(list)
-        for uid, (h, is_own) in picked.items():
-            if h:
-                users[h].append(uid)
-        for h, uids in users.items():
-            if len(uids) < 2:
+        # hash -> CG 名，用于识别章节差分
+        try:
+            with open(CG_INDEX, encoding="utf-8") as _f:
+                cg_items = json.load(_f).get("items", [])
+        except Exception:
+            cg_items = []
+        name_of = {it["h"]: it["n"] for it in cg_items}
+        chapter_re = re.compile(r"^EventScene_Chap_(\d+)_")
+
+        def chapter_of(h):
+            m = chapter_re.match(name_of.get(h, ""))
+            return m.group(1) if m else None
+
+        # 按单元 id 排序处理，保证「留谁」结果稳定
+        used = {}   # hash -> 章节号
+        for uid in sorted(picked):
+            h, is_own = picked[uid]
+            if not h:
                 continue
-            owners = [x for x in uids if picked[x][1]]
-            if not owners:
-                # 全是借用/模糊匹配：只留第一个，其余退回文字卡
-                owners = [uids[0]]
-            for uid in uids:
-                if uid not in owners:
-                    picked[uid] = (None, False)
+            ch = chapter_of(h)
+            clash = h in used
+            # 借来的封面（非自身剧情 CG）若与已分配的自身封面同章节，
+            # 通常是相邻话的连续差分帧，目录里看着就是同一张，要拆开。
+            if not clash and not is_own and ch:
+                clash = any(c == ch for c in used.values())
+            if not clash:
+                used[h] = ch
+                continue
+            # 换一张没被占用的候选；借来的封面还要避开同章节差分
+            alt = None
+            for x in ranked.get(uid, []):
+                if x == h or x in used:
+                    continue
+                if not is_own and ch and chapter_of(x) == ch:
+                    continue
+                alt = x
+                break
+            picked[uid] = (alt, bool(alt))
+            if alt:
+                used[alt] = chapter_of(alt)
 
     # —— 应用 ——
     for u in idx.get("items", []):

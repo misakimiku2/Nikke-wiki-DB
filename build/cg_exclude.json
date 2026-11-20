@@ -1,0 +1,6 @@
+{
+  "_note": "不该当剧情 CG 显示的素材：游戏里只有裸贴图、没有渲染插画，也没有可播放的 Spine 模型。build_images.py / build_db.py 都会跳过这里的名字。",
+  "names": [
+    "EventScene_Main_01_02"
+  ]
+}

@@ -34,6 +34,18 @@ SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
 DB_PATH = os.path.join(ROOT, "data", "nikke.db")
 SCHEMA = os.path.join(ROOT, "build", "schema.sql")
 CG_FLAGS = os.path.join(ROOT, "build", "cg_flags.json")
+SCRIPT_CG_MAP = os.path.join(ROOT, "build", "script_cg_map.json")
+CG_EXCLUDE = os.path.join(ROOT, "build", "cg_exclude.json")
+MAIN_SECTION_NAMES = os.path.join(ROOT, "build", "main_section_names.json")
+
+
+def load_excluded_cg():
+    """不该进图库 / 剧情关联的素材（裸贴图、无渲染插画）"""
+    try:
+        with open(CG_EXCLUDE, encoding="utf-8") as f:
+            return set(json.load(f).get("names", []))
+    except Exception:
+        return set()
 
 # 其他剧情的模块定义：(子目录, 文件名, category, 中文标签, 排序权重)
 OTHER_MODULES = [
@@ -127,15 +139,66 @@ def iter_line_fields(raw):
     }
 
 
+def _load_main_section_names():
+    """group_key -> 游戏内真实小节名（export_main_section_names.py 产出）。"""
+    try:
+        with open(MAIN_SECTION_NAMES, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+MAIN_SECTION_NAMES_MAP = _load_main_section_names()
+
+
+def main_section_title(group_key):
+    """主线段落的节名：优先用游戏内真实名，后记/未覆盖的用序号兜底。
+
+    d_main_01_01_s -> 第一次接触: A（来自 main_section_names.json）
+    d_main_28af_02 -> 第28章·后记 02（后记无 quest 名）
+    """
+    real = MAIN_SECTION_NAMES_MAP.get(group_key)
+    if real:
+        return real
+    m = re.match(r"^d_main_(\d+)(?:_?)(af|bf)_(\d+)$", group_key)
+    if m:
+        return f"第{int(m.group(1)):02d}章·后记 {int(m.group(3)):02d}"
+    m = re.match(r"^d_main_(\d+)_(\d+)(?:_([se]))?$", group_key)
+    if m:
+        base = f"第{int(m.group(2)):02d}节"
+        if m.group(3) == "s":
+            base += "（前篇）"
+        elif m.group(3) == "e":
+            base += "（后篇）"
+        return base
+    return ""
+
+
 def game_chapter_titles():
     """游戏章节标题（Locale_Stage:chapter_name_NN）。注意这张表是 0-based：
     chapter_name_00 = 坠落（第01章）、chapter_name_01 = 侵蚀（第02章）。
     只作对照用，不要拿 1-based 章号直接索引。"""
-    path = os.path.join(SRC, "decrypted", "2f3134ea528251fb735273e764276059.dec")
+    dec_dir = os.path.join(SRC, "decrypted")
+    path = None
+    for f in os.listdir(dec_dir) if os.path.isdir(dec_dir) else []:
+        if not f.endswith(".dec"):
+            continue
+        p = os.path.join(dec_dir, f)
+        try:
+            conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+            has = "Locale_Stage" in [r[0] for r in con_tables(conn)]
+            conn.close()
+            if has:
+                path = p
+                break
+        except Exception:
+            pass
     titles = {}
+    if not path:
+        return titles
     try:
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        for n in range(0, 50):
+        for n in range(0, 51):
             row = conn.execute(
                 'SELECT "zh-CN" FROM Locale_Stage WHERE Key=?',
                 (f"chapter_name_{n:02d}",)).fetchone()
@@ -147,64 +210,70 @@ def game_chapter_titles():
     return titles
 
 
+def con_tables(conn):
+    return conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+
+
 def collect_story_units():
     """返回 [(unit_dict, [segment_dict, ...])]"""
     units = []
 
     # --- 主线 ---
+    # 游戏章节以 Locale_Stage:chapter_name_NN 为准（0-based：00 坠落、01 侵蚀…）。
+    # 上游 JSON 的 chapter 是 1-based 且把 d_main_01 整段塞进「第01章」，
+    # 与游戏实际边界不符：d_main_01 的前半（01_01~01_03，5 节）属于第 0 章
+    # 「坠落」，后半（01_04~01_07 + 01af 后记，12 节）属于第 1 章「侵蚀」。
+    # 这里按游戏边界重切：d_main_01 拆成 00/01 两章，d_main_NN(NN>=2) 直接
+    # 对应游戏第 NN 章（标题用 chapter_name_NN）。
     main_path = os.path.join(SRC, "主线剧情", "主线剧情_全量.json")
     if os.path.exists(main_path):
         d = json.load(open(main_path, encoding="utf-8"))
+        gchap = game_chapter_titles()   # 0-based 章名
+        main_units = []                 # (chapter_no, title, bucket, [section,...])
+
+        def sec_dict(sec, so):
+            gkey = sec.get("group") or sec.get("group_key") or ""
+            return {
+                "group_key": gkey,
+                "title": sec.get("title") or main_section_title(gkey),
+                "part": sec.get("part"),
+                "sort_order": so,
+                "lines": sec.get("lines") or [],
+            }
+
         for order, ch in enumerate(d.get("chapters", []), start=1):
             no = ch.get("chapter")
             sections = list(ch.get("sections", []))
-
-            # 序章（第 00 章）没有独立的数据块，内容是 d_main_01 的首段：
-            # BA-01 下坠 → ……遇敌！，共 35 句。压库时从第一章拆出来单独成章。
-            if no == 1 and sections and sections[0].get("group") == "d_main_01_01_s":
-                pro = sections.pop(0)
-                units.append(({
-                    "category": "main",
-                    "category_label": "主线剧情",
-                    "bucket": "d_main_00",
-                    "title": "序章",
-                    "chapter_no": 0,
-                    "sort_order": 0,
-                }, [{
-                    "group_key": pro["group"],
-                    "title": pro.get("title"),
-                    "part": pro.get("part"),
-                    "sort_order": 1,
-                    "lines": pro.get("lines") or [],
-                }]))
             if not sections:
                 continue
+            if no == 1:
+                # 拆成游戏第 0 章（坠落：01_01~01_03）与第 1 章（侵蚀：其余）
+                fall, erosion = [], []
+                for sec in sections:
+                    g = sec.get("group") or ""
+                    m = re.match(r"^d_main_01_(\d+)", g)
+                    (fall if m and int(m.group(1)) <= 3 else erosion).append(sec)
+                if fall:
+                    main_units.append((0, gchap.get(0) or "坠落", "d_main_00", fall))
+                if erosion:
+                    main_units.append((1, gchap.get(1) or "侵蚀", "d_main_01", erosion))
+            else:
+                main_units.append((no, gchap.get(no) or ch.get("title") or "",
+                                   "d_main_%02d" % no, sections))
 
+        for ch_no, ch_title, bucket, sections in main_units:
             unit = {
                 "category": "main",
                 "category_label": "主线剧情",
-                "bucket": "d_main_%02d" % (no or order),
-                "title": ch.get("title"),
-                "chapter_no": no,
-                "sort_order": order,
+                "bucket": bucket,
+                "title": ch_title,
+                "chapter_no": ch_no,
+                "sort_order": ch_no,
             }
-            segs = []
-            for so, sec in enumerate(sections, start=1):
-                segs.append({
-                    "group_key": sec.get("group") or sec.get("group_key") or f"main_{order}_{so}",
-                    "title": sec.get("title"),
-                    "part": sec.get("part"),
-                    "sort_order": so,
-                    "lines": sec.get("lines") or [],
-                })
+            segs = [sec_dict(sec, so) for so, sec in enumerate(sections, start=1)]
             units.append((unit, segs))
 
-        # --- 章节标题以结构化导出为准：d_main_NN 就是「第 NN 章」（第01章 坠落、
-        #     第02章 侵蚀…），JSON 里的 title 已经是正确中文名。不要再用
-        #     Locale_Stage 的 chapter_name_NN 覆盖——那张表是 0-based（00 坠落、
-        #     01 侵蚀），直接按 1-based 章号取会整体错位一位，历史上曾因此把
-        #     「决战」重复成第 49、50 两章。序章已在上面单独拆成 00 章。---
-        log(f"  主线：{len(units)} 章")
+        log(f"  主线：{len(main_units)} 章")
 
     # --- 其他剧情 ---
     other_root = os.path.join(SRC, "其他剧情")
@@ -563,8 +632,11 @@ def import_cg_assets(con):
     log("[4/6] 扫描 CG 目录 …")
     con.execute("DELETE FROM cg_assets")
     cg_root = os.path.join(SRC, "CG")
+    excluded = load_excluded_cg()
     rows = []
     for path in glob.glob(os.path.join(cg_root, "**", "*.png"), recursive=True):
+        if os.path.basename(path)[:-4] in excluded:
+            continue
         rel = os.path.relpath(path, SRC).replace("\\", "/")
         name = os.path.basename(path)[:-4]
         is_atlas = name.endswith(".spine")
@@ -666,10 +738,65 @@ def parse_cg_events(group, path):
     return out
 
 
+def apply_script_cg_map(con, rows, seen, assets):
+    """人工校对表（build/script_cg_map.json）补链：group_key → [CG 名]。
+
+    脚本表里有些 CG 只写在演出指令里，行级解析拿不到；旧版 build_db.py 用这张
+    人工表把它们按段落补到首行。新版改成直接解析 .mpk 后这张表一度失效，
+    这里把它接回来。
+
+    只补「该段落还没有这个 CG」的条目：
+      - 同段已有（精确行级或 bg 配对）→ 跳过，否则会在首行制造重复切换；
+      - CG 名没有导出图片（cg_assets 里不存在）→ 跳过，补了阅读器也显示不出来；
+      - group_key 在库里找不到对应段落 → 跳过（活动改名后的遗留条目）。
+    match_type 记为 'manual'，方便 audit_cg.py 区分来源。
+    """
+    if not os.path.exists(SCRIPT_CG_MAP):
+        return 0, 0
+    with open(SCRIPT_CG_MAP, encoding="utf-8") as f:
+        mapping = json.load(f)
+
+    # group_key -> (segment_id, unit_id)，取第一个同名段落
+    seg_first = {}
+    for sid, uid, g in con.execute("SELECT id, unit_id, group_key FROM story_segments"):
+        seg_first.setdefault(g, (sid, uid))
+    # segment_id -> 首行 line_id
+    first_line = {}
+    for lid, sid in con.execute(
+            "SELECT id, segment_id FROM story_lines ORDER BY segment_id, seq"):
+        first_line.setdefault(sid, lid)
+
+    have_seg = {(cg, sid) for cg, sid in con.execute(
+        "SELECT cg_name, segment_id FROM cg_links")}
+    have_seg |= {(r[0], r[5]) for r in rows}
+
+    added = skipped = 0
+    for g, cgs in mapping.items():
+        hit = seg_first.get(g)
+        if not hit:
+            skipped += len(cgs)
+            continue
+        sid, uid = hit
+        lid = first_line.get(sid)
+        if lid is None:
+            skipped += len(cgs)
+            continue
+        for cg in cgs:
+            if cg not in assets or (cg, sid) in have_seg or (cg, lid) in seen:
+                skipped += 1
+                continue
+            have_seg.add((cg, sid))
+            seen.add((cg, lid))
+            rows.append((cg, lid, None, "manual", uid, sid))
+            added += 1
+    return added, skipped
+
+
 def import_cg_links(con):
     log("[5/6] 导入剧情↔CG 索引 …")
     con.execute("DELETE FROM cg_links")
 
+    excluded = load_excluded_cg()
     tables = cg_table_index()
     segs = defaultdict(list)
     for sid, uid, g in con.execute("SELECT id, unit_id, group_key FROM story_segments"):
@@ -693,6 +820,8 @@ def import_cg_links(con):
                 continue
             n_ev += 1
             for cg in cgs:
+                if cg in excluded:
+                    continue
                 for lid, uid, sid in hits:
                     if (cg, lid) in seen:
                         continue
@@ -710,11 +839,14 @@ def import_cg_links(con):
     for cg, lid, lk, _mt, uid, sid in list(rows):
         base = cg[:-3] if cg.endswith("_bg") else cg
         sib = base if cg.endswith("_bg") else base + "_bg"
-        if sib == cg or sib not in assets or (sib, lid) in seen:
+        if sib == cg or sib not in assets or sib in excluded or (sib, lid) in seen:
             continue
         seen.add((sib, lid))
         rows.append((sib, lid, lk, "pair", uid, sid))
         pairs += 1
+
+    # ---- 人工校对表补链（脚本表演出指令引用、行级解析拿不到的 CG）----
+    manual, manual_skip = apply_script_cg_map(con, rows, seen, assets)
 
     con.executemany(
         "INSERT OR REPLACE INTO cg_links(cg_name, line_id, line_key, match_type, unit_id, segment_id)"
@@ -731,6 +863,7 @@ def import_cg_links(con):
             + "、".join(sorted(no_table)[:6]) + ("…" if len(no_table) > 6 else ""))
     linked = con.execute("SELECT COUNT(DISTINCT cg_name) FROM cg_links").fetchone()[0]
     log(f"  脚本行级 CG 切换 {n_ev:,} 处 → 链接 {n_hit:,} 条；bg/前景配对补 {pairs:,} 条")
+    log(f"  人工校对表补 {manual} 条（跳过 {manual_skip} 条：已关联 / 无图 / 段落不存在）")
     log(f"  链接合计 {len(rows):,} 条，覆盖 CG {linked:,} 个")
 
 

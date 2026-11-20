@@ -27,6 +27,16 @@ SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
 OUT = os.path.join(ROOT, "public", "img")
 MANIFEST = os.path.join(ROOT, "public", "manifest.json")
 DB_PATH = os.path.join(ROOT, "data", "nikke.db")
+EXCLUDE_PATH = os.path.join(ROOT, "build", "cg_exclude.json")
+
+
+def load_excluded():
+    """不该进图库的素材（裸贴图 / 无渲染插画的 Spine 部件图）"""
+    try:
+        with open(EXCLUDE_PATH, encoding="utf-8") as f:
+            return set(json.load(f).get("names", []))
+    except Exception:
+        return set()
 
 TIERS = [
     ("s", 400,  80),
@@ -42,9 +52,10 @@ def short_hash(text):
 def collect():
     """收集待转图片：只取成品插画，跳过 spine 图集贴图"""
     items = []
+    excluded = load_excluded()
     for path in glob.glob(os.path.join(SRC, "CG", "**", "*.png"), recursive=True):
         name = os.path.basename(path)[:-4]
-        if name.endswith(".spine"):
+        if name.endswith(".spine") or name in excluded:
             continue
         rel = os.path.relpath(path, SRC).replace("\\", "/")
         if "_backup_shadow" in rel:

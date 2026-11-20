@@ -55,6 +55,8 @@ export default function VoiceList({
   accent: string
 }) {
   const hasZh = !!data.fz && (data.zc ?? 0) > 0
+  // 国服先行角色（婴宁/画皮）：只有国服中文配音，主雪碧图 f 本身就是中文轨
+  const zhOnly = !!data.zhOnly
   const [cat, setCat] = useState('all')
   const [showJa, setShowJa] = useState(false)
   const [lang, setLang] = useState<'zh' | 'ja'>(hasZh ? 'zh' : 'ja')
@@ -76,7 +78,7 @@ export default function VoiceList({
 
   const missingVoices = data.cats.flatMap((c) => c.v).filter((v) => !hasZhClip(v))
   const missingLove = missingVoices.filter((v) => /_Lobby_(?:Touch|Stay)_Love_/.test(v.id)).length
-  const currentCv = lang === 'zh' ? data.cvz : data.cvj
+  const currentCv = zhOnly ? (data.cvz ?? data.cvj) : lang === 'zh' ? data.cvz : data.cvj
 
   // 皮肤筛选：g 有值的条目来自独立皮肤的语音套组。与类别同一行内单选：
   // 选皮肤时清空类别，选类别时清空皮肤。
@@ -298,7 +300,7 @@ export default function VoiceList({
               className={lang === 'zh' ? 'on' : ''}
               disabled={!hasZh}
               onClick={() => changeLang('zh')}
-              title={hasZh ? `中文配音（${data.zc ?? 0}/${data.n} 条）` : '国服暂无该角色中文语音'}
+              title={zhOnly ? '国服先行角色，仅中文配音' : hasZh ? `中文配音（${data.zc ?? 0}/${data.n} 条）` : '国服暂无该角色中文语音'}
             >
               中配 <b>{data.zc ?? 0}</b>
             </button>
@@ -321,10 +323,11 @@ export default function VoiceList({
       </div>
       {currentCv && (
         <div className="voice-cv">
-          {lang === 'zh' ? '中配' : '日配'} CV <b>{currentCv}</b>
+          {zhOnly ? '' : lang === 'zh' ? '中配' : '日配'} CV <b>{currentCv}</b>
         </div>
       )}
-      {!hasZh && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
+      {zhOnly && <div className="voice-hint">国服先行角色，语音为国服中文配音。</div>}
+      {!hasZh && !zhOnly && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
       {lang === 'zh' && missingVoices.length > 0 && (
         <div className="voice-hint">
           国服缺少 {missingVoices.length} 条中文语音

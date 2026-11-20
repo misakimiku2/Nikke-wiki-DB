@@ -91,10 +91,12 @@ CN_SKIN_LABELS = {
 }
 # 国服先行角色（整体不在国际服数据里）：ref = 借用标题/类别的参照角色前缀。
 # 需要先把这些角色加进 char_images.json（public/data）才能挂到站点。
+# 音源只有国服中文池（zh_cn/ab），主雪碧图直接用中文配音（zhOnly，见 main 的补充提取段）。
 CN_FIRST_CHARS: list[dict] = [
-    # {"prefix": "c8004", "cid": 8004, "ref": "c102"},   # 婴宁
-    # {"prefix": "c8005", "cid": 8005, "ref": "c102"},   # 画皮
+    {"prefix": "c8004", "cid": 8004, "ref": "c102"},   # 婴宁
+    {"prefix": "c8005", "cid": 8005, "ref": "c102"},   # 画皮
 ]
+CN_FIRST_PREFIXES = {ch["prefix"] for ch in CN_FIRST_CHARS}
 
 sys.path.insert(0, str(SRC / "scripts"))
 import export_cg_v2 as v2  # noqa: E402
@@ -263,7 +265,8 @@ def synthesize_records(recs: list[dict]) -> list[dict]:
     for ch in CN_FIRST_CHARS:
         ref = by_prefix.get(ch.get("ref", ""), {})
         for suffix in sorted(ref):
-            add(ch["prefix"], suffix, title=ref[suffix]["title"], cat=ref[suffix]["cat"])
+            # base 克隆 desc/cat，标题由 main 按 desc 查 Locale_System 得出（与皮肤套组一致）
+            add(ch["prefix"], suffix, base=ref[suffix])
         add(ch["prefix"], "titlecall_1", title="登录", cat="title")
     return out
 
@@ -531,6 +534,9 @@ def main():
     def cv_pair(cid: int) -> tuple[str | None, str | None]:
         ja = clean_cv((lines.get(f"{cid}_cv_ja") or {}).get("zh"))
         cn = clean_cv(cn_lines.get(f"{cid}_cv_zh_cn"))
+        if not ja:
+            # 国服先行角色国际服表里没有 cv_ja，国服 lss 键名同为 {id}_cv_ja
+            ja = clean_cv(cn_lines.get(f"{cid}_cv_ja"))
         return ja, cn
 
     print("3/4 扫描语音包…")
@@ -624,6 +630,22 @@ def main():
                 r["dur"] = durs.get(r["id"], 0.0)
         print(f"  合计 {len(raw_paths)} 个日语 WAV")
 
+    # 国服先行角色：中文池就是唯一音源（客户端没下过日语包、国际服池也没有），
+    # 直接作为主时间轴，生成 zhOnly 条目——而非像皮肤套组那样走零宽占位 + 中文覆盖层
+    zh_first_records = [r for r in usable
+                        if r["id"] not in raw_paths and r["id"] in cn_audio
+                        and r["prefix"] in CN_FIRST_PREFIXES]
+    if zh_first_records:
+        print(f"  国服先行角色中文音源 {len(zh_first_records)} 条…")
+        w, durs = extract_cn_wavs(zh_first_records,
+                                  {r["id"]: cn_audio[r["id"]] for r in zh_first_records}, tmp)
+        for r in zh_first_records:
+            if r["id"] in w:
+                raw_paths[r["id"]] = w[r["id"]]
+                r["dur"] = durs.get(r["id"], 0.0)
+                r["zh_primary"] = True
+        print(f"  合计 {len(raw_paths)} 个 WAV")
+
     # 按角色聚合，保留表内顺序
     grouped: dict[int, list[dict]] = {}
     for r in usable:
@@ -687,6 +709,9 @@ def main():
         for r in usable:
             if r["id"] not in cn_wavs or cn_durs.get(r["id"], 0) <= 0:
                 continue
+            if r.get("zh_primary"):
+                # 国服先行角色：主雪碧图已是中文，不再重复出一份 .zh.ogg
+                continue
             cid = resolve_any(r["prefix"])
             if cid is None or str(cid) not in payload:
                 continue
@@ -739,6 +764,15 @@ def main():
             item["cvj"] = ja
         if cn and is_cn_dub(ja, cn):
             item["cvz"] = cn
+
+    # 国服先行角色：主雪碧图本身就是中文配音，无日语轨可切，
+    # 前端按 zhOnly 隐藏中日切换并显示中配声优
+    for r in usable:
+        if not r.get("zh_primary"):
+            continue
+        item = payload.get(str(resolve_any(r["prefix"]) or ""))
+        if item:
+            item["zhOnly"] = 1
 
     # --only / --limit 调试时不要冲掉其余角色的索引
     merged: dict[str, dict] = {}
