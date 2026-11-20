@@ -6,11 +6,13 @@ import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Imm
 import { usePageTitle } from '../usePageTitle'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
-  coverOf, loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, mergedBgOf, nf,
+  coverOf, loadCgIndex, loadCharacters, loadSpineModels, loadSpineOverrides, loadStoryIndex,
+  loadStoryUnit, mergedBgOf, nf,
   setLinks, setMembersOf, visibleCgs,
-  type CgIndex, type CgItem, type SpineOverride, type StoryUnit, type ViewTransform,
+  type CgIndex, type CgItem, type Character, type SpineOverride, type StoryDetail, type StoryLine,
+  type StoryUnit, type ViewTransform,
 } from '../data'
-import { pickLang, useLang } from '../lang'
+import { commanderName, pickLang, useLang } from '../lang'
 import { fmt, useUI, type UIKey } from '../ui'
 
 const EMPTY: SpineStatus = {
@@ -35,6 +37,27 @@ function fmtTime(t: number): string {
   return `${m}:${(t - m * 60).toFixed(1).padStart(4, '0')}`
 }
 
+/** 单元全文按全局行序摊平（与阅读器 ?line= 的行号同一套口径），取 [at, at+count) 一段作原文。
+ *  count 缺失时兜底取 20 行，避免异常数据把剩余全文全吐出来。 */
+function paragraphLines(d: StoryDetail, at: number, count: number): StoryLine[] {
+  const flat: StoryLine[] = []
+  for (const seg of d.segments) flat.push(...seg.l)
+  return flat.slice(at, at + (count > 0 ? count : 20))
+}
+
+/** 说话人显示名：简中直接用原文；指挥官/选项走固定译名；其余按角色档案本地化（StoryReader 同款） */
+function speakerDisplay(
+  lang: ReturnType<typeof useLang>['lang'],
+  sp: string, spid: string,
+  speakerMap: Record<string, Character>, nameMap: Record<string, Character>,
+): string {
+  const c = speakerMap[spid] || nameMap[sp]
+  const isCmd = spid === 'Self' || spid === 'Choice' || sp === '指挥官'
+  return lang === 'zh' ? sp
+    : isCmd ? commanderName(lang)
+      : pickLang(lang, sp, c?.names.en, c?.names.ko, c?.names.ja)
+}
+
 /**
  * CG 二级查看页
  *  左：CG 目录（文件名 + 搜索）  中：查看区（静态合成先显示，模型就绪后淡入）+ 底部控制条
@@ -57,6 +80,11 @@ export default function CgView() {
   const [status, setStatus] = useState<SpineStatus>(EMPTY)
   const [stillScale, setStillScale] = useState(1)
   const [toast, setToast] = useState<string | null>(null)
+  /** 段落原文：展开的链接下标；剧情单元全文按需加载（loadStoryUnit 有缓存，同一章节只拉一次）；
+   *  角色表用于说话人名本地化，同样懒加载 */
+  const [openLinks, setOpenLinks] = useState<Set<number>>(new Set())
+  const [unitText, setUnitText] = useState<Record<number, StoryDetail | null>>({})
+  const [chars, setChars] = useState<Character[]>([])
   // 窄屏（≤980px）是抽屉布局：目录/信息默认收起，靠舞台顶部按钮开合；
   // 桌面端维持原来的默认展开
   const [leftOpen, setLeftOpen] = useState(() => !window.matchMedia(NARROW).matches)
@@ -132,6 +160,52 @@ export default function CgView() {
   const canAnimate = useModel && status.duration > 0
   /** 剧情段落：封面按整集（自身 + 成员）取并集，连图集的封面常常不是剧情里出现的那一帧 */
   const links = useMemo(() => (index ? setLinks(index, name) : []), [index, name])
+  /** 出现段落覆盖的剧情文本总句数（各段行数求和），信息栏与段落数并排展示 */
+  const totalLines = useMemo(
+    () => links.reduce((a, lk) => a + (lk.n || 0), 0),
+    [links],
+  )
+
+  // ---- 段落原文展开 ----
+  // 换 CG 时收起所有展开的段落；已加载的单元全文保留（unitText 跨 CG 复用）
+  useEffect(() => {
+    setOpenLinks(new Set())
+  }, [name])
+
+  /** 说话人名本地化用的角色表（speaker_id / 中文名双索引，StoryReader 同款） */
+  const speakerMap = useMemo(() => {
+    const m: Record<string, Character> = {}
+    for (const c of chars) if (c.speaker) m[c.speaker] = c
+    return m
+  }, [chars])
+  const nameMap = useMemo(() => {
+    const m: Record<string, Character> = {}
+    for (const c of chars) if (c.names.zh) m[c.names.zh] = c
+    return m
+  }, [chars])
+
+  /** 首次展开某条段落时拉取它所在的剧情单元全文（+ 角色表）；null = 加载中 */
+  const toggleFullText = (k: number, uid: number) => {
+    setOpenLinks((s) => {
+      const n = new Set(s)
+      if (n.has(k)) n.delete(k)
+      else n.add(k)
+      return n
+    })
+    if (uid in unitText) return
+    setUnitText((m) => ({ ...m, [uid]: null }))
+    Promise.all([loadStoryUnit(uid), loadCharacters()])
+      .then(([d, cs]) => {
+        setUnitText((m) => ({ ...m, [uid]: d }))
+        setChars(cs)
+      })
+      .catch(() => setUnitText((m) => {
+        const c = { ...m }
+        delete c[uid] // 失败时回到未加载态，下次展开可重试
+        return c
+      }))
+  }
+
   modeRef.current = useModel ? 'model' : 'still'
 
   // 切换显示模式 / 换 CG 时，把背景层恢复到对应模式的取景
@@ -345,7 +419,9 @@ export default function CgView() {
   const whereText = (u: StoryUnit | undefined, uid: number): string => {
     if (!u) return fmt(t('search_unit'), { n: uid })
     const base = (u.title || '').trim()
-    if (!base || base === u.bucket || /^[a-z0-9_]+$/i.test(base)) return u.label
+    // 只把真正的 snake_case slug（event_stt_xxx）当占位标题；
+    // 不能带 i 标志，否则 SNOWFALL 这类全大写官方名会被误判回退成分类名
+    if (!base || base === u.bucket || /^[a-z0-9_]+$/.test(base)) return u.label
     return pickLang(lang, base, u.titles?.en, u.titles?.ko, u.titles?.ja)
   }
   /** 信息栏副行：主 CG 的「第 N 章」按内容语言显示，活动键等原文保留 */
@@ -582,6 +658,7 @@ export default function CgView() {
               {isSpine ? t('cg_live_model') : t('cg_static_illust')}
             </span>
             <span className="cv-tag">{fmt(t('cg_links_n'), { n: links.length })}</span>
+            <span className="cv-tag">{fmt(t('cg_text_lines'), { m: totalLines })}</span>
           </div>
           {absorbedBy && (
             <div className="cv-absorbed">
@@ -627,17 +704,42 @@ export default function CgView() {
               const speaker = lk.s ? pickLang(lang, lk.s, lk.s4?.en, lk.s4?.ko, lk.s4?.ja) : ''
               const text = pickLang(lang, lk.t, lk.l4?.en, lk.l4?.ko, lk.l4?.ja)
               const sect = lk.p ? pickLang(lang, lk.p, lk.p4?.en, lk.p4?.ko, lk.p4?.ja) : ''
+              const open = openLinks.has(k)
+              const detail = unitText[lk.u]
               return (
-                <Link key={k} className="cv-link" to={`/story/${lk.u}?line=${lk.i}`}>
-                  <span className="cv-link-where">
-                    {whereText(u, lk.u)}{sect ? ` · ${sect}` : ''}
-                  </span>
-                  <span className="cv-link-text">
-                    {speaker && <b>{speaker}：</b>}{text}
-                    {lk.n ? <span className="cv-link-n">{fmt(t('cg_link_n'), { n: lk.n })}</span> : null}
-                  </span>
-                  <span className="cv-link-go">→</span>
-                </Link>
+                <div key={k} className={`cv-link-wrap ${open ? 'open' : ''}`}>
+                  <div className="cv-link-row">
+                    <Link className="cv-link" to={`/story/${lk.u}?line=${lk.i}`}>
+                      <span className="cv-link-where">
+                        {whereText(u, lk.u)}{sect ? ` · ${sect}` : ''}
+                      </span>
+                      <span className="cv-link-text">
+                        {speaker && <b>{speaker}：</b>}{text}
+                        {lk.n ? <span className="cv-link-n">{fmt(t('cg_link_n'), { n: lk.n })}</span> : null}
+                      </span>
+                    </Link>
+                    {/* 右侧开关：展开该段原文（首次展开时按需拉取单元 JSON）；条目本体仍是阅读器跳转链接 */}
+                    <button
+                      type="button"
+                      className="cv-link-toggle"
+                      onClick={() => toggleFullText(k, lk.u)}
+                      aria-expanded={open}
+                      title={open ? t('cg_link_collapse') : t('cg_link_expand')}
+                    >{open ? '▾' : '▸'}</button>
+                  </div>
+                  {open && (
+                    <div className="cv-link-full">
+                      {detail == null ? (
+                        <span className="cv-link-loading">{t('common_loading')}</span>
+                      ) : paragraphLines(detail, lk.i, lk.n || 0).map(([sp, spid, zh, en, ko, ja], x) => (
+                        <p key={x} className={spid === 'Choice' ? 'choice' : ''}>
+                          <b>{speakerDisplay(lang, sp, spid, speakerMap, nameMap)}</b>
+                          {pickLang(lang, zh, en, ko, ja)}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )
             })
           ) : (

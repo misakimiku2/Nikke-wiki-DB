@@ -459,6 +459,13 @@ img { display: block; }
 }
 .fp-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .fp-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 11px; }
+/* 候选值很多的类别（CG 页剧情筛选 100+ 项）：面板内滚动，不撑长页面 */
+.fp-scroll {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  max-height: 300px; overflow-y: auto; padding-right: 6px;
+}
+.fp-cnt { font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 10px; color: var(--dim-2); }
+.fp-chip.on .fp-cnt { color: inherit; opacity: .75; }
 .filter-icn { width: 14px; height: 14px; opacity: .85; }
 .fp-none { font-size: 11px; color: var(--dim-2); }
 .fp-clear { align-self: flex-end; padding: 7px 14px; font-size: 11px; }
@@ -3755,20 +3762,44 @@ img { display: block; }
   font: 700 10.5px/1 ui-monospace, "Microsoft YaHei", monospace;
   letter-spacing: .14em; color: var(--dim); margin-bottom: 12px;
 }
+.cv-link-wrap { margin-bottom: 7px; }
+.cv-link-row { position: relative; }
 .cv-link {
-  display: block; padding: 10px 11px; margin-bottom: 7px;
+  display: block; padding: 10px 11px;
   border-left: 2px solid var(--line-2); background: var(--surface-2);
   text-decoration: none; color: var(--text-2);
   transition: border-color .15s, background .15s;
 }
 .cv-link:hover { border-left-color: var(--red); background: var(--bg-2); }
+/* 原文展开开关：条目右缘一整条，与跳转区隔开 */
+.cv-link-toggle {
+  position: absolute; top: 1px; right: 1px; bottom: 1px; width: 30px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; cursor: pointer;
+  background: transparent; border: none; border-left: 1px solid var(--line-2);
+  color: var(--dim-2); font-size: 11px;
+  transition: color .15s, background .15s;
+}
+.cv-link-toggle:hover { color: var(--text); background: var(--bg-2); }
+.cv-link-wrap.open .cv-link-toggle { color: var(--cyan); }
+/* 展开后的原文段落：可直接在侧栏阅读，超高时内部滚动 */
+.cv-link-full {
+  max-height: 340px; overflow-y: auto;
+  padding: 10px 12px; border-left: 2px solid var(--red); background: var(--surface-2);
+  font-size: 12px; line-height: 1.7;
+}
+.cv-link-full p { margin: 0 0 7px; color: var(--text-2); }
+.cv-link-full p:last-child { margin-bottom: 0; }
+.cv-link-full p b { color: var(--cyan); font-weight: 600; margin-right: 6px; }
+.cv-link-full p.choice b { color: var(--dim-2); }
+.cv-link-loading { font-size: 11px; color: var(--dim-2); }
+.cv-link-row .cv-link { padding-right: 36px; }
 .cv-link-where {
   display: block; font-size: 10.5px; color: var(--cyan); margin-bottom: 5px;
 }
 .cv-link-text { display: block; font-size: 12px; line-height: 1.6; }
 .cv-link-text b { color: var(--text); }
 .cv-link-n { display: inline-block; margin-left: 8px; font-size: 10px; color: var(--dim-2); }
-.cv-link-go { float: right; color: var(--dim-2); }
 .cv-links-empty { font-size: 12px; color: var(--dim); padding: 12px 0; }
 .cv-keys {
   display: flex; flex-direction: column; gap: 5px;
@@ -4058,6 +4089,10 @@ img { display: block; }
     padding: 5px 9px;
     font-size: 10.5px;
     letter-spacing: .04em;
+  }
+  .fp-scroll {
+    gap: 6px;
+    max-height: 240px;
   }
   .fp-clear {
     width: 100%;

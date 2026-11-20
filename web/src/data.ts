@@ -1553,6 +1553,7 @@ export const CG_CATS = [
 export function whereOf(u: StoryUnit | undefined, uid: number): string {
   if (!u) return `单元 ${uid}`
   const t = (u.title || '').trim()
-  if (!t || t === u.bucket || /^[a-z0-9_]+$/i.test(t)) return u.label
+  // 不能带 i 标志：SNOWFALL 这类全大写官方名会被误判成 slug 回退成分类名
+  if (!t || t === u.bucket || /^[a-z0-9_]+$/.test(t)) return u.label
   return t
 }
