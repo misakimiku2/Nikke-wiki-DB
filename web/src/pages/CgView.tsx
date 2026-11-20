@@ -29,6 +29,7 @@ const CV_CAT_KEY: Record<string, UIKey> = {
   '03_支线剧情CG': 'cg_cat_sub',
   '04_角色过场': 'cg_cat_chara',
   '05_其他动态CG': 'cg_cat_other',
+  '06_剧情背景': 'cg_cat_bg',
 }
 
 function fmtTime(t: number): string {

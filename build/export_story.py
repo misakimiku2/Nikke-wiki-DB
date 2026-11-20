@@ -25,6 +25,9 @@ DB = os.path.join(ROOT, "data", "nikke.db")
 OUT = os.path.join(ROOT, "public", "data", "story")
 SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from build_db import harvest_cg_line_assets   # noqa: E402  上游行级 cg/cgd/cgb（单一事实源）
+
 
 # ---------------- 四语标题（en/ko/ja；zh 一律沿用现有中文字段） ----------------
 
@@ -102,8 +105,19 @@ def main():
         with open(spine_path, encoding="utf-8") as f:
             spine_models = set(json.load(f).get("items", []))
 
-    def cg_ref(name):
-        """CG 名 -> 前端引用；同名的 bg/前景两层都会各自成项，由阅读器合帧。"""
+    def cg_ref(name, cgd="", cgb=""):
+        """CG 名 -> 前端引用；同名的 bg/前景两层都会各自成项，由阅读器合帧。
+
+        动态 CG（行带 cgd/cgb，token 为模型名或其 X_bg 板）输出
+        {h: 背景 hash, n: 背景名, d: 模型名} —— 阅读器据此铺背景图并播
+        spine 模型（旧版 token 是 X_bg 时查不到模型，只显示背景板）。
+        cgb 缺 manifest hash 时回退 token 自身的图。
+        """
+        if cgd and name in (cgd, cgd + "_bg", cgb):
+            h = cg_hash.get(cgb or name) or cg_hash.get(name)
+            if not h:
+                return None
+            return {"h": h, "n": cgb or name, "d": cgd}
         h = cg_hash.get(name)
         if not h:
             return None
@@ -153,6 +167,9 @@ def main():
             " JOIN story_lines l ON l.id = c.line_id"
             " ORDER BY l.segment_id, l.seq, c.rowid"):
         cg_by_line[(seg_id, line_id)].append(name)
+
+    # 行级动态模型/背景（cgd/cgb，上游剧情 JSON 的动态行才有值）
+    line_assets = harvest_cg_line_assets()
 
     # 单元标题的四语（story_index.json 由 export_web.py 产出，这里只按 id 消费）
     index_titles = {}
@@ -227,13 +244,18 @@ def main():
             if not lcount:
                 continue
             ls = con.execute(
-                "SELECT id, speaker, speaker_id, text_zh, text_en, text_ko, text_ja"
+                "SELECT id, line_key, speaker, speaker_id, text_zh, text_en, text_ko, text_ja"
                 " FROM story_lines WHERE segment_id=? ORDER BY seq", (sid,)
             ).fetchall()
             # 段内 CG 事件：[行下标, [CG 引用, ...]]，主帧在前、_bg 在前景之后
             events = []
-            for idx, (lid, _sp, _spid, _txt, _en, _ko, _ja) in enumerate(ls):
-                refs = [r for r in (cg_ref(n) for n in cg_by_line.get((sid, lid), [])) if r]
+            for idx, (lid, lk, _sp, _spid, _txt, _en, _ko, _ja) in enumerate(ls):
+                asset = line_assets.get(lk) or {}
+                cgd, cgb = asset.get("model") or "", asset.get("bg") or ""
+                refs = [r for r in (cg_ref(n, cgd, cgb) for n in cg_by_line.get((sid, lid), [])) if r]
+                # 去重：动态行的 X_bg（上游 token）与配对补的 X 会变换成同一个
+                # 「背景+模型」引用
+                refs = list({(r["h"], r["n"], r.get("d", "")): r for r in refs}.values())
                 if not refs:
                     continue
                 refs.sort(key=lambda x: x["n"].endswith("_bg"))
@@ -243,7 +265,7 @@ def main():
                 "t": stitle or part or "",
                 # [说话人, 说话人 id, 简中, 英文, 韩文, 日文]
                 "l": [[sp or "", spid or "", txt or "", en or "", ko or "", ja or ""]
-                      for _lid, sp, spid, txt, en, ko, ja in ls],
+                      for _lid, _lk, sp, spid, txt, en, ko, ja in ls],
                 "e": events,
             }
             # 段落标题的其他语言：[en, ko, ja]，缺语言为空串

@@ -1547,7 +1547,12 @@ export const CG_CATS = [
   { key: '03_支线剧情CG', label: '支线剧情' },
   { key: '04_角色过场', label: '角色过场' },
   { key: '05_其他动态CG', label: '其他' },
+  { key: '06_剧情背景', label: '剧情背景' },
 ]
+
+/** 纯剧情背景板（black 黑场 / 场景图等）：阅读器铺在人物/模型下面的资产，
+ *  不是 CG 插画——图鉴默认不混进网格，分类筛选里选「剧情背景」才单独浏览。 */
+export const CG_BG_CAT = '06_剧情背景'
 
 /** 单元标题常常就是 bucket slug（如 event_stt_staranis），这种时候退回到分类名 */
 export function whereOf(u: StoryUnit | undefined, uid: number): string {

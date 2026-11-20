@@ -94,6 +94,8 @@ python build/build_images.py              # → public/img         三档转码
 python build/export_cg.py                 # → public/data/cg_index.json
 python build/build_spine_models.py        # → public/spine       实时 Spine 模型
 node build/gen_cg_merges.mjs              # → build/cg_merges.json 合并收录表（图集贴图页自动识别 + 人工条目）
+python build/fill_spine_backgrounds.py    # → build/spine_overrides.json 补动态 CG 查看器背景
+#   （消费上游 CG索引/动态CG背景对照.csv 的「建议背景」列；人工标注优先，可重复运行）
 
 # 4. 剧情与搜索
 python build/export_char_stories.py       # → public/data/char_stories.json 好感剧情映射
@@ -339,4 +341,9 @@ bash build/deploy_pages.sh   # 构建（tsc + vite + 预渲染 SEO 页）→ 体
 
 - 游戏大版本更新后，先在上游 `nikke_extract` 重跑解包，再按上面顺序重建本仓库数据。
 - `build/schema.sql` 是数据库结构定义，改表结构后 `build_db.py` 会按它建库。
-- `build/cg_flags.json`、`build/script_cg_map.json` 是人工校对过的映射表，属于源码而非产物，请一并维护。
+- `build/cg_flags.json`、`build/spine_overrides.json` 是人工校对过的映射表，属于源码而非产物，请一并维护。
+- `build/script_cg_map.json` 已基本退役：CG 链接改为消费上游剧情 JSON 的 `cg/cgd/cgb` 字段
+  （build_db.harvest_cg_line_assets，上游为单一事实源），人工表现在只剩 1 条生效
+  （event_cherryblossom_06_e → CherryBlossom_01，行级 token 提取覆盖不到的演出引用），
+  待上游确认口径后即可删除；9 条差分覆盖类（blood/flare/smoke…）上游契约不含且资产未导出，
+  永不生效。

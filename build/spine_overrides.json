@@ -111,6 +111,78 @@
           "zoom": 0.35
         }
       ]
+    },
+    "EventScene_ACPUFreeze_01": {
+      "background": "EventScene_ACPUFreeze_01_bg",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_BeautyFullShot_03": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_Chap_04_05": {
+      "background": "CityForest_03",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_Chap_13_02": {
+      "background": "EventScene_Chap_13_02_bg",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_MiracleSnow_01": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_NoCallerID_01": {
+      "background": "EventScene_NoCallerID_01_bg",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_arkranger_03": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_chocolateplease_01": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_coinrushshowdown_02": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_coinsinrush_02": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_footstepwalkrun_06_2": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_goddessfall_02": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_greatvillainunion_01": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_icedragonsaga_03": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_memoriesteller_01": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_memoriesteller_02": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_twoxtwolove2_hidden_01_2": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
+    },
+    "EventScene_wavetoyou_02": {
+      "background": "black",
+      "comment": "background 自动填充：上游 CG索引/动态CG背景对照.csv 的「建议背景」列"
     }
   }
 }

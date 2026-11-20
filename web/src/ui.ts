@@ -221,6 +221,7 @@ const DICT = {
   cg_cat_sub: ['支线剧情', 'Sub quest', '서브 퀘스트', 'サブクエスト'],
   cg_cat_chara: ['角色过场', 'Character scenes', '캐릭터 장면', 'キャラクター'],
   cg_cat_other: ['其他', 'Other', '기타', 'その他'],
+  cg_cat_bg: ['剧情背景', 'Backgrounds', '배경판', '背景板'],
   cg_badge_anim: ['动', 'Animated', '애니', 'アニ'],
   cg_badge_cover: ['封面', 'Cover', '커버', 'カバー'],
   cg_annotate: ['标注模式', 'Annotate', '주석 모드', '注釈モード'],

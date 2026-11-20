@@ -755,63 +755,59 @@ def import_cg_assets(con):
     log(f"  CG {len(payload)} 个（含成品插画 {with_art}，其中动态 CG {sum(1 for v in merged.values() if v['atlas'])}）")
 
 
-CG_NAME = re.compile(r"^EventScene_[A-Za-z0-9_]+$")
-SCENE_TOKENS = re.compile(rb"[ -~]{4,}")
-# 台词记录的边界标记：Locale_XXX:<台词 key>。不同剧情类型的本地化表不同
-# （主线 MainScenario、活动 SubScenario、个人 NikkeEpisode…），key 都以它为准。
-LOCALE_MARK = re.compile(
-    r"^Locale_(?:MainScenario|SubScenario|NikkeEpisode|SuddenStory|SideStory|Counseling):(.+)$")
-GROUP_CSVS = [
-    ("ScenarioDialog.Group.csv", "ScenarioDialogTable.{}.mpk"),
-    ("EventScenarioDialog.Group.csv", "EventScenarioDialogTable.{}.mpk"),
-    ("AttractiveScenarioDialog.Group.csv", "AttractiveScenarioDialogTable.{}.mpk"),
-]
+def harvest_cg_line_assets():
+    """上游剧情 JSON（单一事实源）收集行级 CG 转场与动态模型/背景。
 
+    上游（nikke_extract scripts/cg_refs.py）在 CG 发生变化的行写三个字段：
+      cg  = [EventScene_* token, ...]（差分逐个列出；空数组 = 触发行下一行的
+            空转场，不含 CG，不入库）
+      cgd = 该行动态 CG 的 spine 模型名（token 是模型名或其 X_bg 板时解析）
+      cgb = 该行应铺的背景资产名（优先 X_bg 板，否则 06_剧情背景 场景板 / black）
 
-def cg_table_index():
-    """group_key -> 对应的 ScenarioDialogTable.<group>.mpk 路径"""
-    static = os.path.join(SRC, "staticdata")
-    idx = {}
-    for csv_name, tpl in GROUP_CSVS:
-        p = os.path.join(static, csv_name)
-        if not os.path.exists(p):
-            continue
-        with open(p, encoding="utf-8-sig") as f:
-            for line in f:
-                g = line.strip()
-                if not g or g == "group_id":
-                    continue
-                t = os.path.join(static, tpl.format(g))
-                if os.path.exists(t):
-                    idx.setdefault(g, t)
-    return idx
+    覆盖主线（主线剧情_全量.json）、其他剧情各 *_全量.json、Marian 结构化 JSON
+    ——与 collect_story_units 同一批文件，替代旧版按段落逐个解 mpk 的
+    parse_cg_events()（它只认 3 族 ScenarioDialog 表，支线故事/妮姬个人/Marian
+    从来没有 CG 链接）。line_key 与 story_lines.line_key 同一生成器，撞车 key
+    （回放副本）会命中多行、各自建链，与旧行为一致。
 
-
-def parse_cg_events(group, path):
-    """从 <前缀>Table.<group>.mpk 抽出「哪一行换了 CG」。
-
-    一条台词一条记录：记录里 Locale_XXX:<台词key> 之后的字段才是这一行的演出
-    参数（背景、BGM、EventScene_*）。所以用本地化 key 当记录边界，边界内出现的
-    EventScene_* 就是「这一行起画面换成它」；没写字段的行沿用上一张。
-    返回 [(line_key, [cg, ...]), ...]，只保留 CG 发生变化的行。
+    返回 {line_key: {"cg": [名...], "model": cgd, "bg": cgb}}
     """
-    raw = open(path, "rb").read()
-    toks = [m.group().decode("ascii", "replace") for m in SCENE_TOKENS.finditer(raw)]
-    marks = []
-    for i, s in enumerate(toks):
-        m = LOCALE_MARK.match(s)
-        if m:
-            marks.append((i, m.group(1)))
-    out = []
-    prev = ()
-    for k, (i, key) in enumerate(marks):
-        end = marks[k + 1][0] if k + 1 < len(marks) else len(toks)
-        cgs = tuple(dict.fromkeys(s for s in toks[i:end] if CG_NAME.match(s)))
-        if not cgs or set(cgs) == set(prev):
-            continue
-        prev = cgs
-        out.append((key, list(cgs)))
-    return out
+    events = {}
+
+    def eat(lines):
+        for raw in lines or []:
+            if not isinstance(raw, dict):
+                continue
+            key = raw.get("key") or raw.get("id") or raw.get("line_key")
+            cgs = raw.get("cg")
+            if not key or not cgs:
+                continue
+            events[key] = {"cg": list(cgs), "model": raw.get("cgd") or "",
+                           "bg": raw.get("cgb") or ""}
+
+    main_path = os.path.join(SRC, "主线剧情", "主线剧情_全量.json")
+    if os.path.exists(main_path):
+        d = json.load(open(main_path, encoding="utf-8"))
+        for ch in d.get("chapters", []):
+            for sec in ch.get("sections", []):
+                eat(sec.get("lines"))
+    for subdir, fname, _cat, _label, _weight in OTHER_MODULES:
+        folder = os.path.join(SRC, "其他剧情", subdir)
+        paths = [os.path.join(folder, fname)] if fname \
+            else sorted(glob.glob(os.path.join(folder, "*_全量.json")))
+        for path in paths:
+            if not os.path.exists(path):
+                continue
+            data = json.load(open(path, encoding="utf-8"))
+            for item in data if isinstance(data, list) else []:
+                for grp in item.get("groups", []):
+                    eat(grp.get("lines"))
+    marian = os.path.join(SRC, "其他剧情", "活动剧情", "Marian", "event_marian_结构化.json")
+    if os.path.exists(marian):
+        d = json.load(open(marian, encoding="utf-8"))
+        for ch in d.get("chapters", []):
+            eat(ch.get("lines"))
+    return events
 
 
 def apply_script_cg_map(con, rows, seen, assets):
@@ -873,10 +869,6 @@ def import_cg_links(con):
     con.execute("DELETE FROM cg_links")
 
     excluded = load_excluded_cg()
-    tables = cg_table_index()
-    segs = defaultdict(list)
-    for sid, uid, g in con.execute("SELECT id, unit_id, group_key FROM story_segments"):
-        segs[g].append((sid, uid))
     key_map = defaultdict(list)
     for lid, lk, uid, sid in con.execute(
             "SELECT id, line_key, unit_id, segment_id FROM story_lines"):
@@ -884,26 +876,23 @@ def import_cg_links(con):
 
     rows, seen = [], set()
     n_ev = n_hit = 0
-    no_table = []
-    for g in segs:
-        path = tables.get(g)
-        if not path:
-            no_table.append(g)
+    n_miss = 0
+    events = harvest_cg_line_assets()
+    for line_key, ev in events.items():
+        hits = key_map.get(line_key)
+        if not hits:
+            n_miss += 1
             continue
-        for line_key, cgs in parse_cg_events(g, path):
-            hits = key_map.get(line_key)
-            if not hits:
+        n_ev += 1
+        for cg in ev["cg"]:
+            if cg in excluded:
                 continue
-            n_ev += 1
-            for cg in cgs:
-                if cg in excluded:
+            for lid, uid, sid in hits:
+                if (cg, lid) in seen:
                     continue
-                for lid, uid, sid in hits:
-                    if (cg, lid) in seen:
-                        continue
-                    seen.add((cg, lid))
-                    rows.append((cg, lid, line_key, "script", uid, sid))
-                    n_hit += 1
+                seen.add((cg, lid))
+                rows.append((cg, lid, line_key, "script", uid, sid))
+                n_hit += 1
 
     # ---- bg / 前景配对 ----
     # 脚本表常常只写 EventScene_X_bg（或只写 EventScene_X），阅读器要两层叠起来
@@ -934,11 +923,9 @@ def import_cg_links(con):
     """)
     con.commit()
 
-    if no_table:
-        log(f"  ! {len(no_table)} 个段落没有脚本表、不参与关联："
-            + "、".join(sorted(no_table)[:6]) + ("…" if len(no_table) > 6 else ""))
     linked = con.execute("SELECT COUNT(DISTINCT cg_name) FROM cg_links").fetchone()[0]
-    log(f"  脚本行级 CG 切换 {n_ev:,} 处 → 链接 {n_hit:,} 条；bg/前景配对补 {pairs:,} 条")
+    log(f"  上游行级 CG 转场 {n_ev:,} 处（{n_miss} 个 key 不在库内，多为已清空台词的残表）"
+        f" → 链接 {n_hit:,} 条；bg/前景配对补 {pairs:,} 条")
     log(f"  人工校对表补 {manual} 条（跳过 {manual_skip} 条：已关联 / 无图 / 段落不存在）")
     log(f"  链接合计 {len(rows):,} 条，覆盖 CG {linked:,} 个")
 

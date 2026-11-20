@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  CG_CATS, catRank, loadCgIndex, loadSpineModels, loadStoryIndex, nf, setLinks, visibleCgs,
+  CG_BG_CAT, CG_CATS, catRank, loadCgIndex, loadSpineModels, loadStoryIndex, nf, setLinks, visibleCgs,
   type CgIndex, type CgItem, type StoryUnit,
 } from '../data'
 import { pickLang, useLang } from '../lang'
@@ -13,6 +13,7 @@ const CG_CAT_KEY: Record<string, UIKey> = {
   '03_支线剧情CG': 'cg_cat_sub',
   '04_角色过场': 'cg_cat_chara',
   '05_其他动态CG': 'cg_cat_other',
+  '06_剧情背景': 'cg_cat_bg',
 }
 
 const PAGE = 60
@@ -114,6 +115,15 @@ export default function CgGallery() {
 
   // 合并收录后的可见条目：X_bg / 图集贴图页 / 动态背景帧不再单独出卡
   const pool = useMemo(() => (data ? visibleCgs(data.items, data.merges) : []), [data])
+
+  // 浏览全集：06_剧情背景 是铺在人物/模型下面的场景板（black 黑场、场景图），
+  // 不是 CG 插画——默认不混进网格，筛选面板里选「剧情背景」才单独浏览
+  const poolCg = useMemo(() => pool.filter((it) => it.c !== CG_BG_CAT), [pool])
+  const showBoards = catSel.has(CG_BG_CAT)
+  const base = useMemo(
+    () => (showBoards ? pool : poolCg),
+    [showBoards, pool, poolCg],
+  )
 
   const unitMap = useMemo(() => {
     const m = new Map<number, StoryUnit>()
@@ -226,7 +236,7 @@ export default function CgGallery() {
     })
   }
 
-  /** 分类面板 chips 的张数（按可见条目统计） */
+  /** 分类面板 chips 的张数（按可见条目统计；「全部」= 默认进网格的插画数） */
   const catCounts = useMemo(() => {
     const m: Record<string, number> = {}
     for (const it of pool) m[it.c] = (m[it.c] || 0) + 1
@@ -237,7 +247,7 @@ export default function CgGallery() {
     const k = q.trim().toLowerCase()
     // 搜「封面 / 主视觉」当标签用，和名称/活动键搜索并存
     const tagHit = k.length >= 2 && '封面主视觉cover'.includes(k)
-    return pool.filter((it) => {
+    return base.filter((it) => {
       if (catSel.size > 0 && !catSel.has(it.c)) return false
       if (storySel.size > 0) {
         const uid = primaryStory.get(it.n)
@@ -247,7 +257,7 @@ export default function CgGallery() {
         || (tagHit && flags.has(it.n)))) return false
       return true
     })
-  }, [pool, catSel, storySel, q, flags, primaryStory])
+  }, [base, catSel, storySel, q, flags, primaryStory])
 
   // 分组视图的分节：主线章节 → 活动 → 个人剧情 → 未关联剧情（兜底组在最后）。
   // 节内沿用原始顺序；单元不在 story_index（异常数据）时也并入兜底组。
@@ -462,7 +472,7 @@ export default function CgGallery() {
           <h2>{t('cg_title')}</h2>
         </div>
         <div className="meta">
-          {anyFilter ? `${nf(filtered.length)} / ${nf(pool.length)}` : nf(pool.length)} IMAGES
+          {anyFilter ? `${nf(filtered.length)} / ${nf(base.length)}` : nf(base.length)} IMAGES
         </div>
       </div>
 
@@ -519,7 +529,7 @@ export default function CgGallery() {
                 onClick={() => setCatSel(new Set())}
               >
                 {t('cg_all')}
-                <span className="fp-cnt">{nf(pool.length)}</span>
+                <span className="fp-cnt">{nf(poolCg.length)}</span>
               </button>
               {CG_CATS.map((c) => (
                 <button

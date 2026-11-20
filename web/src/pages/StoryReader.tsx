@@ -54,7 +54,9 @@ function resolveCg(list: StoryCgRef[]): Frame {
       n: fgItem.n,
     }
   }
-  return { fg: null, fgSpine: null, bg: list[0].h, n: list[0].n }
+  // 只有一块背景板（token 是 X_bg 或 cgb 场景板）：d 带模型名时照样播模型，
+  // 旧版这里丢掉 d，X_bg 行只剩背景板不动
+  return { fg: null, fgSpine: list[0].d || null, bg: list[0].h, n: list[0].n }
 }
 
 /**
