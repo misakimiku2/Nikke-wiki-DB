@@ -9,6 +9,8 @@
  *      注意：约 333 行（资源覆盖行）在 c5 处多一个字符串字段，其后列号整体 +1，解析时统一归一化
  *  - CharacterShotTable.mpk（射击表行首 u32 = 攻击技能 id，行内本地化键含武器代码）
  *      攻击技能 id → 武器代码 ar/sg/rl/smg/sr/mg
+ *      字段 17（u32 定点数，÷256）= 最大装弹数，如拉毗 15360→60、神罚 76800→300；
+ *      与社区参考数据 105 条交叉验证 100 条一致，5 条为社区数据偏旧。覆盖全部 212 个可战斗角色。
  *  - SquadInfoTable.mpk + Locale_Character（部队官方名称）
  *  - char_messages.json（角色群聊标题 = 游戏里显示的部队名，按官方部队名匹配）
  *
@@ -89,6 +91,7 @@ const shotRows = parseRows(fs.readFileSync(path.join(STATIC, 'CharacterShotTable
   return -(m) - 1 === len && len > 5 && len < 4096 ? i - 1 : null
 })
 const skillWeapon = new Map()
+const skillAmmo = new Map()   // 字段 17 ÷ 256，定点数（Q8）存储的最大装弹数
 for (const f of shotRows) {
   const id = int(f[0])
   if (id == null || skillWeapon.has(id)) continue
@@ -97,6 +100,8 @@ for (const f of shotRows) {
     const m = /localkey_([a-z]+)_/.exec(x.v)
     if (m && ['ar', 'sg', 'rl', 'smg', 'sr', 'mg'].includes(m[1])) { skillWeapon.set(id, m[1]); break }
   }
+  const raw = int(f[17])
+  if (raw != null && raw > 0) skillAmmo.set(id, raw / 256)
 }
 
 /* ---------- SquadInfoTable + Locale_Character：部队官方名 + 官方世界观介绍 ---------- */
@@ -114,6 +119,8 @@ function openTable(name) {
 }
 const squadSet = new Set()
 const squadInfo = {}
+const squadNames = {} // 部队名的其他语言（squad_<slug>_name，key 为 zh 名）
+const squadLore = {}  // 部队世界观介绍的其他语言（squad_<slug>_info，key 为 zh 名）
 {
   const db = openTable('Locale_Character')
   const buf = fs.readFileSync(path.join(STATIC, 'SquadInfoTable.mpk'))
@@ -131,18 +138,40 @@ const squadInfo = {}
     const nameKey = f.find((x) => x.t === 's' && /_name$/.test(x.v))
     if (!nameKey) continue
     const slug = nameKey.v.replace('Locale_Character:', '').replace('_name', '')
-    const r = db.prepare('select "zh-CN" as z from Locale_Character where "Key" = ?').all(slug + '_name')
+    const r = db.prepare('select "zh-CN" as z, en, ko, ja from Locale_Character where "Key" = ?').all(slug + '_name')
     if (!r[0]?.z) continue
     squadSet.add(r[0].z)
+    if (r[0].en || r[0].ko || r[0].ja) {
+      squadNames[r[0].z] = {
+        ...(r[0].en ? { en: r[0].en } : {}),
+        ...(r[0].ko ? { ko: r[0].ko } : {}),
+        ...(r[0].ja ? { ja: r[0].ja } : {}),
+      }
+    }
     // 官方世界观介绍（游戏内部队档案文本，squad_{slug}_info）
     const infoKey = f.find((x) => x.t === 's' && /_info$/.test(x.v))
     if (infoKey) {
-      const info = db.prepare('select "zh-CN" as z from Locale_Character where "Key" = ?')
-        .all(infoKey.v.split(':').pop())[0]?.z
-      if (info) squadInfo[r[0].z] = info
+      const info = db.prepare('select "zh-CN" as z, en, ko, ja from Locale_Character where "Key" = ?')
+        .all(infoKey.v.split(':').pop())[0]
+      if (info?.z) {
+        squadInfo[r[0].z] = info.z
+        if (info.en || info.ko || info.ja) {
+          squadLore[r[0].z] = {
+            ...(info.en ? { en: info.en } : {}),
+            ...(info.ko ? { ko: info.ko } : {}),
+            ...(info.ja ? { ja: info.ja } : {}),
+          }
+        }
+      }
     }
   }
   db.close()
+  // 部队名/介绍的其他语言（key 为中文部队名；SQUAD_MANUAL 等人工中文名无官方译名，不进表）
+  fs.writeFileSync(
+    path.join(ROOT, 'public/data/squad_names.json'),
+    JSON.stringify({ names: squadNames, lore: squadLore }, null, 1),
+  )
+  console.log(`squad_names.json：部队名 ${Object.keys(squadNames).length} | 部队介绍 ${Object.keys(squadLore).length}`)
 }
 
 /* ---------- 群聊标题 → 部队 ---------- */
@@ -190,17 +219,21 @@ const CORP_MANUAL = {
 
 /* ---------- 合并输出（只保留站点收录的角色） ---------- */
 const chars = JSON.parse(fs.readFileSync(path.join(ROOT, 'public/data/characters.json'), 'utf8')).items
+
 const out = {}
 let missMeta = 0
 for (const c of chars) {
   const m = charMeta.get(c.id)
   const item = msgs.items[String(c.id)]
   const squad = SQUAD_OVERRIDE[c.id] ?? (item ? squadOf(item) : null)
-  if (!m) { missMeta++; out[String(c.id)] = { squad } } else {
+  // 装弹数取 CharacterShotTable 字段 17÷256（权威国际服数据），与武器同源同键
+  const ammo = m?.atk != null ? skillAmmo.get(m.atk) : null
+  const ammoField = ammo != null ? { ammo } : {}
+  if (!m) { missMeta++; out[String(c.id)] = { squad, ...ammoField } } else {
     out[String(c.id)] = {
       burst: m.burst, corp: m.corp, cls: m.cls,
       weapon: m.atk != null ? skillWeapon.get(m.atk) || null : null,
-      squad,
+      squad, ...ammoField,
     }
   }
 }
@@ -328,7 +361,7 @@ const ELEMENT_MANUAL = {
 fs.writeFileSync(path.join(ROOT, 'public/data/char_meta.json'), JSON.stringify(out, null, 1))
 const n = (sel) => Object.values(out).filter(sel).length
 console.log(`角色 ${chars.length}，无CharacterTable行 ${missMeta}`)
-console.log(`爆裂 ${n((x) => x.burst)} | 企业 ${n((x) => x.corp)} | 兵种 ${n((x) => x.cls)} | 武器 ${n((x) => x.weapon)} | 部队 ${n((x) => x.squad)}`)
+console.log(`爆裂 ${n((x) => x.burst)} | 企业 ${n((x) => x.corp)} | 兵种 ${n((x) => x.cls)} | 武器 ${n((x) => x.weapon)} | 部队 ${n((x) => x.squad)} | 装弹 ${n((x) => x.ammo)}`)
 
 /* ---------- 概览卡弹窗的官方说明文本 → spec_texts.json ----------
  * Locale_System：WEAPON_TYPE_*_NAME/DESC（枪械类型）、CLASS_TYPE_*_NAME/DESC（兵种）、
@@ -336,7 +369,21 @@ console.log(`爆裂 ${n((x) => x.burst)} | 企业 ${n((x) => x.corp)} | 兵种 $
  * 企业与部队游戏内没有说明文本，弹窗文案由前端自拟。 */
 {
   const sysDb = openTable('Locale_System')
-  const q = (key) => sysDb.prepare('select "zh-CN" as z from Locale_System where Key = ?').all(key)[0]?.z || ''
+  const q = (key) => {
+    const r = sysDb.prepare(
+      'select "zh-CN" as z, en, ko, ja from Locale_System where Key = ?').all(key)[0]
+    return { zh: r?.z || '', en: r?.en || '', ko: r?.ko || '', ja: r?.ja || '' }
+  }
+  // 中 / 英 / 韩 / 日条目：name / desc 保持简中，另带 nameEn/nameKo/nameJa/descEn/descKo/descJa
+  const entry = (nameKey, descKey) => {
+    const n = q(nameKey)
+    const d = q(descKey)
+    return {
+      name: n.zh, desc: d.zh,
+      nameEn: n.en, nameKo: n.ko, nameJa: n.ja,
+      descEn: d.en, descKo: d.ko, descJa: d.ja,
+    }
+  }
   const texts = {
     weapon: {},
     cls: {},
@@ -345,17 +392,17 @@ console.log(`爆裂 ${n((x) => x.burst)} | 企业 ${n((x) => x.corp)} | 兵种 $
     squad: squadInfo,
   }
   for (const [code, key] of [['ar', 'AR'], ['sg', 'SG'], ['rl', 'RL'], ['smg', 'SMG'], ['sr', 'SR'], ['mg', 'MG']]) {
-    texts.weapon[code] = { name: q(`WEAPON_TYPE_${key}_NAME`), desc: q(`WEAPON_TYPE_${key}_DESC`) }
+    texts.weapon[code] = entry(`WEAPON_TYPE_${key}_NAME`, `WEAPON_TYPE_${key}_DESC`)
   }
   for (const [num, key] of [['1', 'ATTACKER'], ['2', 'DEFENDER'], ['3', 'SUPPORTER']]) {
-    texts.cls[num] = { name: q(`CLASS_TYPE_${key}_NAME`), desc: q(`CLASS_TYPE_${key}_DESC`) }
+    texts.cls[num] = entry(`CLASS_TYPE_${key}_NAME`, `CLASS_TYPE_${key}_DESC`)
   }
   for (const [el, key] of [['fire', 'FIRE'], ['water', 'WARTER'], ['wind', 'WIND'], ['electric', 'ELECTRONIC'], ['iron', 'IRON']]) {
-    texts.element[el] = { name: q(`ELEMENT_NAME_${key}`), desc: q(`ELEMENT_DESC_${key}`) }
+    texts.element[el] = entry(`ELEMENT_NAME_${key}`, `ELEMENT_DESC_${key}`)
   }
   // 企业世界观介绍（CorporationInfoTable 引用的回收研究所文本；联动 corp=7 无官方文本）
   for (const [num, key] of [['1', 'ELYSION'], ['2', 'MISSILIS'], ['3', 'TETRA'], ['4', 'PILGRIM'], ['5', 'ABNORMAL']]) {
-    texts.corp[num] = { name: q(`COMPANY_${key}`), desc: q(`RECYCLE_ROOM_RESEARCH_${key}_INFO`) }
+    texts.corp[num] = entry(`COMPANY_${key}`, `RECYCLE_ROOM_RESEARCH_${key}_INFO`)
   }
   sysDb.close()
   fs.writeFileSync(path.join(ROOT, 'public/data/spec_texts.json'), JSON.stringify(texts, null, 1))

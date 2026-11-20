@@ -7,9 +7,11 @@ import { usePageTitle } from '../usePageTitle'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
   coverOf, loadCgIndex, loadSpineModels, loadSpineOverrides, loadStoryIndex, mergedBgOf, nf,
-  setLinks, setMembersOf, visibleCgs, whereOf,
+  setLinks, setMembersOf, visibleCgs,
   type CgIndex, type CgItem, type SpineOverride, type StoryUnit, type ViewTransform,
 } from '../data'
+import { pickLang, useLang } from '../lang'
+import { fmt, useUI, type UIKey } from '../ui'
 
 const EMPTY: SpineStatus = {
   ready: false, playing: true, time: 0, duration: 0, speed: 1, zoom: 1, anim: '', anims: [],
@@ -17,6 +19,15 @@ const EMPTY: SpineStatus = {
 const SPEEDS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 /** 窄屏断点：与 index.css 里 CG 查看器的抽屉布局断点保持一致 */
 const NARROW = '(max-width: 980px)'
+
+/** cg_index 的分类键 → UI 词典 key（与 CgGallery 的 CG_CAT_KEY 同一张表） */
+const CV_CAT_KEY: Record<string, UIKey> = {
+  '01_活动剧情CG': 'cg_cat_event',
+  '02_主线剧情CG': 'cg_cat_main',
+  '03_支线剧情CG': 'cg_cat_sub',
+  '04_角色过场': 'cg_cat_chara',
+  '05_其他动态CG': 'cg_cat_other',
+}
 
 function fmtTime(t: number): string {
   if (!Number.isFinite(t) || t < 0) return '0:00.0'
@@ -32,6 +43,8 @@ function fmtTime(t: number): string {
  */
 export default function CgView() {
   const { name = '' } = useParams()
+  const t = useUI()
+  const { lang } = useLang()
   const navigate = useNavigate()
   const [index, setIndex] = useState<CgIndex | null>(null)
   const [units, setUnits] = useState<StoryUnit[]>([])
@@ -263,9 +276,9 @@ export default function CgView() {
     const filename = `${name}_${suffix}.png`
     if (useModel) spineRef.current?.saveFrame(filename)
     else stillRef.current?.saveFrame(filename)
-    setToast(`已保存 ${filename}`)
+    setToast(fmt(t('cg_saved'), { n: filename }))
     window.setTimeout(() => setToast(null), 2200)
-  }, [useModel, status.time, name])
+  }, [useModel, status.time, name, t])
 
   // 全局快捷键：空格播放/暂停，←/→ 换图，R 复位，S 保存帧，ESC 回图鉴
   useEffect(() => {
@@ -316,9 +329,9 @@ export default function CgView() {
     return (
       <div className="cv-404">
         <div className="idx">404 / CG</div>
-        <h2>找不到这张 CG</h2>
+        <h2>{t('cgview_none')}</h2>
         <p>{name}</p>
-        <Link to="/cg" className="btn primary">← 返回 CG 图鉴</Link>
+        <Link to="/cg" className="btn primary">{t('cg_back')}</Link>
       </div>
     )
   }
@@ -327,6 +340,18 @@ export default function CgView() {
   const i = pool.findIndex((x) => x.n === anchorName)
   const pct = status.duration > 0
     ? Math.max(0, Math.min(100, status.time / status.duration * 100)) : 0
+
+  /** 剧情段落归属行：单元标题按内容语言取官方翻译（whereOf 的本地化版），缺失回退中文 */
+  const whereText = (u: StoryUnit | undefined, uid: number): string => {
+    if (!u) return fmt(t('search_unit'), { n: uid })
+    const base = (u.title || '').trim()
+    if (!base || base === u.bucket || /^[a-z0-9_]+$/i.test(base)) return u.label
+    return pickLang(lang, base, u.titles?.en, u.titles?.ko, u.titles?.ja)
+  }
+  /** 信息栏副行：主 CG 的「第 N 章」按内容语言显示，活动键等原文保留 */
+  const subS = cur.s && /^第(\d+)章$/.test(cur.s)
+    ? fmt(t('cv_s_chapter'), { n: Number(/^第(\d+)章$/.exec(cur.s)![1]) })
+    : cur.s
 
   return (
     <div className={`cv-shell ${leftOpen ? '' : 'cv-left-off'} ${rightOpen ? '' : 'cv-right-off'}`}>
@@ -340,23 +365,23 @@ export default function CgView() {
       {/* ---------- 左：目录 ---------- */}
       <aside className="cv-dir">
         <div className="cv-dir-head">
-          <Link to="/cg" className="cv-back">← CG 图鉴</Link>
+          <Link to="/cg" className="cv-back">{t('cg_back')}</Link>
           <span className="cv-dir-count">{nf(list.length)} / {nf(pool.length)}</span>
           <button
             className="cv-drawer-close"
             onClick={() => setLeftOpen(false)}
-            aria-label="收起目录"
-            title="收起目录"
+            aria-label={t('cg_toc_collapse')}
+            title={t('cg_toc_collapse')}
           >×</button>
         </div>
         <div className="cv-search-wrap">
           <input
             className="cv-search"
-            placeholder="搜索 CG 文件名 / 活动键"
+            placeholder={t('cg_search_ph')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          {q && <button className="cv-search-x" onClick={() => setQ('')} aria-label="清空">×</button>}
+          {q && <button className="cv-search-x" onClick={() => setQ('')} aria-label={t('common_clear')}>×</button>}
         </div>
         <div className="cv-dir-list" ref={listRef}>
           {visible.map((it) => {
@@ -376,7 +401,7 @@ export default function CgView() {
                   <img src={`/img/s/${it.h}.webp`} alt="" loading="lazy" />
                   <span className="cv-dir-name">{it.n}</span>
                   {setSize > 0 && <span className="cv-dir-set">{setSize}</span>}
-                  {spine.has(it.n) && <span className="cv-dir-dyn">动</span>}
+                  {spine.has(it.n) && <span className="cv-dir-dyn">{t('cg_badge_anim')}</span>}
                 </button>
                 {expanded && (
                   <div className="cv-dir-sub">
@@ -398,10 +423,10 @@ export default function CgView() {
           })}
           {list.length > limit && (
             <button className="cv-more" onClick={() => setLimit((v) => v + 160)}>
-              加载更多（还有 {nf(list.length - limit)} 张）
+              {fmt(t('cg_load_more'), { n: nf(list.length - limit) })}
             </button>
           )}
-          {list.length === 0 && <div className="cv-dir-empty">没有匹配的 CG</div>}
+          {list.length === 0 && <div className="cv-dir-empty">{t('cg_none')}</div>}
         </div>
       </aside>
 
@@ -442,12 +467,12 @@ export default function CgView() {
               <button
                 className="cv-panel-toggle"
                 onClick={() => setLeftOpen((v) => !v)}
-                title={leftOpen ? '收起目录（[）' : '展开目录（[）'}
+                title={leftOpen ? t('cg_toc_collapse') : t('cg_toc_expand')}
               >
-                {leftOpen ? '‹' : '›'} 目录
+                {leftOpen ? '‹' : '›'} {t('reader_toc')}
               </button>
               <span className={`cv-badge ${useModel ? 'live' : ''}`}>
-                {useModel ? '◉ 实时模型' : isSpine ? '静态合成' : '静态 CG'}
+                {useModel ? `◉ ${t('cg_live_model')}` : isSpine ? t('cg_static_composite') : t('cg_static')}
               </span>
             </div>
             <div className="cv-top-group">
@@ -455,21 +480,21 @@ export default function CgView() {
               <button
                 className="cv-panel-toggle"
                 onClick={() => setRightOpen((v) => !v)}
-                title={rightOpen ? '收起信息（]）' : '展开信息（]）'}
+                title={rightOpen ? t('cg_info_collapse') : t('cg_info_expand')}
               >
-                信息 {rightOpen ? '›' : '‹'}
+                {t('cg_info')} {rightOpen ? '›' : '‹'}
               </button>
             </div>
           </div>
 
           {isSpine && !modelReady && !modelError && (
-            <div className="cv-loading"><span className="cv-spin" />实时模型加载中…</div>
+            <div className="cv-loading"><span className="cv-spin" />{t('cgview_loading')}</div>
           )}
           {modelError && (
-            <div className="cv-error">模型加载失败，已保留静态合成图 · {modelError}</div>
+            <div className="cv-error">{t('cg_model_error')} · {modelError}</div>
           )}
           {toast && <div className="cv-toast">{toast}</div>}
-          <div className="cv-hint">滚轮 / 双指捏合缩放 · 拖拽平移 · 双击复位</div>
+          <div className="cv-hint">{t('cgview_sc_zoom')}</div>
         </div>
 
         <div className="cv-controls">
@@ -478,7 +503,7 @@ export default function CgView() {
               className="cv-play"
               onClick={togglePlay}
               disabled={!isSpine || !modelReady}
-              title="播放 / 暂停（空格）"
+              title={t('voice_play_pause')}
             >
               <PlayPauseIcon playing={canAnimate && status.playing} size="15" />
             </button>
@@ -497,14 +522,14 @@ export default function CgView() {
               onPointerCancel={onSeekEnd}
               onBlur={onSeekEnd}
               onChange={(e) => onSeek(Number(e.target.value))}
-              aria-label="动画时间轴"
+              aria-label={t('cg_timeline')}
             />
             <span className="cv-time dim">{fmtTime(status.duration)}</span>
           </div>
 
           <div className="cv-buttons">
             <label className="cv-field">
-              速度
+              {t('cv_speed')}
               <select
                 value={status.speed}
                 disabled={!canAnimate}
@@ -515,7 +540,7 @@ export default function CgView() {
             </label>
             {status.anims.length > 1 && (
               <label className="cv-field">
-                动画
+                {t('cv_anim')}
                 <select
                   value={status.anim}
                   disabled={!canAnimate}
@@ -525,13 +550,13 @@ export default function CgView() {
                 </select>
               </label>
             )}
-            <button className="cv-btn" onClick={resetView} title="缩放复位（R）">
-              ⟲ 缩放重置 <b>{zoomText}</b>
+            <button className="cv-btn" onClick={resetView} title={t('cg_zoom_reset')}>
+              ⟲ {t('cv_zoom')} <b>{zoomText}</b>
             </button>
-            <button className="cv-btn" onClick={saveFrame} title="保存当前帧为 PNG（S）">
-              ⤓ 保存当前帧
+            <button className="cv-btn" onClick={saveFrame} title={t('cg_save_frame')}>
+              {t('cg_save_frame_btn')}
             </button>
-            <button className="cv-btn" onClick={immersive.toggle} title="全屏查看（Esc 退出）">
+            <button className="cv-btn" onClick={immersive.toggle} title={t('cg_fullscreen')}>
               <ExpandIcon />
             </button>
           </div>
@@ -544,38 +569,38 @@ export default function CgView() {
           <button
             className="cv-drawer-close"
             onClick={() => setRightOpen(false)}
-            aria-label="收起信息"
-            title="收起信息"
+            aria-label={t('cg_info_collapse')}
+            title={t('cg_info_collapse')}
           >×</button>
-          <div className="cv-kicker">CG / {cur.c.replace(/^\d+_/, '')}</div>
+          <div className="cv-kicker">CG / {CV_CAT_KEY[cur.c] ? t(CV_CAT_KEY[cur.c]) : cur.c.replace(/^\d+_/, '')}</div>
           <h1 className="cv-title">{cur.n}</h1>
           <div className="cv-sub">
-            {cur.s ? `${cur.s} · ` : ''}{cur.w}×{cur.h2}
+            {subS ? `${subS} · ` : ''}{cur.w}×{cur.h2}
           </div>
           <div className="cv-tags">
             <span className={`cv-tag ${isSpine ? 'live' : ''}`}>
-              {isSpine ? '实时模型' : '静态插画'}
+              {isSpine ? t('cg_live_model') : t('cg_static_illust')}
             </span>
-            <span className="cv-tag">{links.length} 处剧情</span>
+            <span className="cv-tag">{fmt(t('cg_links_n'), { n: links.length })}</span>
           </div>
           {absorbedBy && (
             <div className="cv-absorbed">
-              本图已并入{' '}
+              {t('cg_absorbed')}{' '}
               <Link to={`/cg/${encodeURIComponent(absorbedBy)}`}>{absorbedBy}</Link>
             </div>
           )}
         </div>
 
         <div className="cv-nav-btns">
-          <button disabled={i <= 0} onClick={() => go(-1)}>‹ 上一张</button>
-          <button disabled={i < 0 || i >= pool.length - 1} onClick={() => go(1)}>下一张 ›</button>
+          <button disabled={i <= 0} onClick={() => go(-1)}>{t('cg_prev')}</button>
+          <button disabled={i < 0 || i >= pool.length - 1} onClick={() => go(1)}>{t('cgview_next')}</button>
         </div>
 
         {/* 相似画集：连图/分层拆成的多条 CG 已并入同一集，封面与成员都在这里，
             点任意一张在集内切换（左侧目录保持展开，回封面点标着「封面」的那张） */}
         {setItems.length > 1 && (
           <section className="cv-set">
-            <h2>相似画集（{setItems.length} 张）</h2>
+            <h2>{fmt(t('cg_set_title'), { n: setItems.length })}</h2>
             <div className="cv-set-grid">
               {setItems.map((m) => (
                 <Link
@@ -586,7 +611,7 @@ export default function CgView() {
                   aria-current={m.n === name ? 'page' : undefined}
                 >
                   <img src={`/img/s/${m.h}.webp`} alt={m.n} loading="lazy" />
-                  {m.n === setCover && <span className="cv-set-cover">封面</span>}
+                  {m.n === setCover && <span className="cv-set-cover">{t('cg_badge_cover')}</span>}
                   <span className="cv-set-name">{m.n}</span>
                 </Link>
               ))}
@@ -595,33 +620,36 @@ export default function CgView() {
         )}
 
         <section className="cv-links">
-          <h2>对应剧情段落（{links.length}）</h2>
+          <h2>{fmt(t('cg_links_title'), { n: links.length })}</h2>
           {links.length > 0 ? (
             links.map((lk, k) => {
               const u = unitMap[lk.u]
+              const speaker = lk.s ? pickLang(lang, lk.s, lk.s4?.en, lk.s4?.ko, lk.s4?.ja) : ''
+              const text = pickLang(lang, lk.t, lk.l4?.en, lk.l4?.ko, lk.l4?.ja)
+              const sect = lk.p ? pickLang(lang, lk.p, lk.p4?.en, lk.p4?.ko, lk.p4?.ja) : ''
               return (
                 <Link key={k} className="cv-link" to={`/story/${lk.u}?line=${lk.i}`}>
                   <span className="cv-link-where">
-                    {whereOf(u, lk.u)}{lk.p ? ` · ${lk.p}` : ''}
+                    {whereText(u, lk.u)}{sect ? ` · ${sect}` : ''}
                   </span>
                   <span className="cv-link-text">
-                    {lk.s && <b>{lk.s}：</b>}{lk.t}
-                    {lk.n ? <span className="cv-link-n">共 {lk.n} 句</span> : null}
+                    {speaker && <b>{speaker}：</b>}{text}
+                    {lk.n ? <span className="cv-link-n">{fmt(t('cg_link_n'), { n: lk.n })}</span> : null}
                   </span>
                   <span className="cv-link-go">→</span>
                 </Link>
               )
             })
           ) : (
-            <div className="cv-links-empty">这张 CG 没有对应的台词记录</div>
+            <div className="cv-links-empty">{t('cgview_no_lines')}</div>
           )}
         </section>
 
         <div className="cv-keys">
-          <b>快捷键</b>
-          <span>空格 播放/暂停 · ←/→ 换图</span>
-          <span>R 缩放复位 · S 保存当前帧 · ESC 返回</span>
-          <span>[ 收起/展开目录 · ] 收起/展开信息</span>
+          <b>{t('cgview_shortcuts')}</b>
+          <span>{t('cgview_sc_play')}</span>
+          <span>{t('cg_sc_footer1')}</span>
+          <span>{t('cg_sc_footer2')}</span>
         </div>
       </aside>
     </div>

@@ -17,8 +17,9 @@
 
 输出：public/data/char_stories.json
       {"total": n, "items": {"<cid>": {
-          "stories": [{"id","t","lines","segs","skin"}...],
-          "counsel": [{"id","t","lines","sessions","skin"}...]}}}
+          "stories": [{"id","t","lines","segs","skin","ts"}...],
+          "counsel": [{"id","t","lines","sessions","skin","ts"}...]}}}
+ts 为标题的其他语言（{"en","ko","ja"}，皮肤名来自 Locale_Counseling 会话标题）。
 """
 import json
 import os
@@ -29,6 +30,97 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(ROOT, "data", "nikke.db")
 OUT = os.path.join(ROOT, "public", "data", "char_stories.json")
 SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
+
+# 记录标题尾词的四语（「个人剧情 / 咨询」站内标签，与 web/src/ui.ts 的
+# rel_stories / rel_counsel 行一致，非机翻）
+REC_SUFFIX = {
+    "story": {"en": "Story", "ko": "개인 스토리", "ja": "個人ストーリー"},
+    "counsel": {"en": "Counseling", "ko": "상담", "ja": "カウンセリング"},
+}
+
+# 咨询会话标题里皮肤名的语言差异（「与阿妮斯：超级巨星的咨询：01 /
+# Advising Anis: Star: 01 / 아니스 : 스타와의 상담 : 01 / アニス：スターとの面談：01」）
+COUNSEL_SKIN_SUFFIX = {
+    "zh": re.compile(r"的?(?:咨询|追忆|回忆)$"),
+    "ko": re.compile(r"(?:와|과|와 함께|과 함께)?의?\s*상담$"),
+    "ja": re.compile(r"との面談$"),
+}
+
+
+def load_locale_titles(table):
+    """指定 Locale 表的 <key>_title 四语值，key 统一小写。"""
+    out = {}
+    dec_dir = os.path.join(SRC, "decrypted")
+    files = sorted(f for f in os.listdir(dec_dir) if f.endswith(".dec")) \
+        if os.path.isdir(dec_dir) else []
+    for fname in files:
+        path = os.path.join(dec_dir, fname).replace("\\", "/")
+        loc = None
+        try:
+            loc = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            if table not in {r[0] for r in loc.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}:
+                continue
+            for key, en, ko, ja, zh in loc.execute(
+                    f'SELECT Key, en, ko, ja, "zh-CN" FROM {table}'
+                    " WHERE Key LIKE '%_title'"):
+                if not (en or ko or ja or zh):
+                    continue
+                slot = out.setdefault(key.lower(), {})
+                for lang, v in (("en", en), ("ko", ko), ("ja", ja), ("zh", zh)):
+                    if v and not slot.get(lang):
+                        slot[lang] = v.strip()
+        except Exception:
+            pass
+        finally:
+            if loc is not None:
+                loc.close()
+    return out
+
+
+def load_counsel_titles():
+    """Locale_Counseling 的 <group>_title 四语值，key 统一小写。"""
+    return load_locale_titles("Locale_Counseling")
+
+
+def load_nikke_titles():
+    """Locale_NikkeEpisode 的 <group>_title 四语值（个人剧情章节官方名）。"""
+    return load_locale_titles("Locale_NikkeEpisode")
+
+
+def skin_of_counsel(loc, slug, slug_index=None):
+    """从 Locale_Counseling 会话标题解析皮肤名的四语值；解析失败的语言为空串。
+
+    slug_index：norm(slug)（去下划线）-> 真实 slug，处理 bucket 与会话 slug
+    下划线写法不一致的兜底（eleggboomandshock → elegg_boomandshock）。
+    """
+    if slug_index:
+        slug = slug_index.get(slug.replace("_", ""), slug)
+    slot = None
+    for i in range(1, 21):
+        s = loc.get(f"d_counseling_{slug}_{i:02d}_title".lower())
+        if s and s.get("zh"):
+            slot = s
+            break
+    if not slot:
+        return {}
+    out = {}
+    for lang in ("zh", "en", "ko", "ja"):
+        t = (slot.get(lang) or "").strip()
+        if not t:
+            continue
+        t = re.sub(r"\s*[:：]\s*\d+\s*$", "", t)          # 尾部会话编号
+        if lang == "zh":
+            t = re.sub(r"^与", "", t)
+        elif lang == "en":
+            t = re.sub(r"^Advising\s+", "", t, flags=re.I)
+        suf = COUNSEL_SKIN_SUFFIX.get(lang)
+        if suf:
+            t = suf.sub("", t)
+        parts = re.split(r"\s*[:：]\s*", t) if t else []
+        skin = parts[-1].strip() if parts else ""
+        out[lang] = skin if skin and len(parts) > 1 else ""
+    return out
 
 # 手工兜底：bucket 名与角色内部命名不一致的
 ALIAS = {
@@ -107,6 +199,13 @@ def main():
     en2, zh_of = load_chars()
     skin_names, counsel_full = load_counsel_meta()
     fullnames = load_fullnames()
+    # 皮肤名的四语值（en/ko/ja）从 Locale_Counseling 会话标题解析
+    counsel_titles4 = load_counsel_titles()
+    counsel_slug_by_norm = {}
+    for key in counsel_titles4:
+        m = re.match(r"^d_counseling_(.+)_\d+_title$", key)
+        if m:
+            counsel_slug_by_norm.setdefault(m.group(1).replace("_", ""), m.group(1))
 
     con = sqlite3.connect(DB)
     units = con.execute(
@@ -118,15 +217,28 @@ def main():
         "select unit_id, count(*) from story_segments "
         "where sort_order < 9000 and title is not null and title != '' group by unit_id"
     ).fetchall())
+    # 章节名的官方四语（Locale_NikkeEpisode 的 <group>_title）
+    nikke_titles4 = load_nikke_titles()
 
     def chapters_of(uid):
-        """个人剧情的章节名与句数，供角色页直接展开（不必先跳阅读器）。"""
-        return [
-            {"t": t or f"第 {i} 章", "n": n}
-            for i, (t, n) in enumerate(con.execute(
-                "select title, line_count from story_segments"
-                " where unit_id=? and line_count>0 order by sort_order", (uid,)), start=1)
-        ]
+        """个人剧情的章节名与句数，供角色页直接展开（不必先跳阅读器）。
+
+        ts = 章节名的 en/ko/ja（Locale_NikkeEpisode 官方文本）；库内中文名与
+        Locale 简中对不上时不给 ts（宁缺毋滥，前端回退中文）。无标题的兜底
+        「第 N 章」由脚本直接给出三语。"""
+        out = []
+        for i, (gk, t, n) in enumerate(con.execute(
+                "select group_key, title, line_count from story_segments"
+                " where unit_id=? and line_count>0 order by sort_order", (uid,)), start=1):
+            ch = {"t": t or f"第 {i} 章", "n": n}
+            loc4 = nikke_titles4.get(f"{gk}_title") if gk else None
+            if loc4 and all(loc4.get(l) for l in ("en", "ko", "ja")) \
+                    and (not t or loc4.get("zh") == t):
+                ch["ts"] = {l: loc4[l] for l in ("en", "ko", "ja")}
+            elif not t:
+                ch["ts"] = {"en": f"Chapter {i}", "ko": f"제 {i}장", "ja": f"第{i}チャプター"}
+            out.append(ch)
+        return out
 
     items = {}
     dropped = []
@@ -196,6 +308,19 @@ def main():
         rec = {"id": uid, "t": t, "lines": lines}
         if skin_zh:
             rec["skin"] = skin_zh
+        # 标题 ts（en/ko/ja）：皮肤名四语 + 站内标签尾词；解析不齐的整条不给
+        ts = None
+        if kind in ("story", "counsel"):
+            suffix = REC_SUFFIX["counsel" if kind == "counsel" else "story"]
+            if skin_zh:
+                skin4 = skin_of_counsel(counsel_titles4, sfx, counsel_slug_by_norm)
+                if (skin4.get("zh") == skin_zh
+                        and all(skin4.get(l) for l in ("en", "ko", "ja"))):
+                    ts = {l: f"{skin4[l]} · {suffix[l]}" for l in ("en", "ko", "ja")}
+            else:
+                ts = dict(suffix)
+        if ts:
+            rec["ts"] = ts
         if kind == "counsel":
             rec["sessions"] = titled.get(uid, segs)
         else:

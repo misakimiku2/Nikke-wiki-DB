@@ -179,6 +179,84 @@ img { display: block; }
 .theme-toggle:hover { color: var(--text); border-color: var(--line-2); }
 .theme-toggle svg { width: 17px; height: 17px; }
 
+/* 顶栏右侧动作区：语言 / 主题 / 移动端菜单按钮 */
+.topbar-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.menu-toggle {
+  width: 38px; height: 38px; flex-shrink: 0;
+  display: none; place-items: center; cursor: pointer;
+  background: transparent; border: 1px solid var(--line);
+  color: var(--dim); transition: all .18s;
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+}
+.menu-toggle:hover { color: var(--text); border-color: var(--line-2); }
+.menu-toggle svg { width: 17px; height: 17px; }
+
+/* 移动端导航抽屉：盖在页面之上、顶栏之下，点背景或链接收起 */
+.mobile-menu { display: none; }
+.mobile-nav {
+  background: var(--topbar);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 14px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+  animation: menuDrop .18s ease;
+}
+@keyframes menuDrop {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: none; }
+}
+.mobile-nav a {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 12px; font-size: 13px; font-weight: 700;
+  letter-spacing: .12em; color: var(--dim);
+  border-bottom: 1px dashed var(--line);
+  border-radius: 3px; transition: color .15s, background .15s;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+}
+.mobile-nav a:last-child { border-bottom: 0; }
+.mobile-nav a i { font-style: normal; opacity: 0; transition: opacity .15s; }
+.mobile-nav a:hover { color: var(--text); }
+.mobile-nav a.on { background: var(--text); color: var(--bg); border-bottom-color: transparent; }
+.mobile-nav a.on i { opacity: .9; }
+
+/* 移动端顶栏：导航收进抽屉，语言 / 主题 / 菜单按钮常驻 */
+@media (max-width: 860px) {
+  .topbar-in { padding: 0 14px; height: 54px; gap: 12px; }
+  .topbar .nav { display: none; }
+  .topbar-actions { margin-left: auto; }
+  .menu-toggle { display: grid; }
+  .brand-logo { height: 24px; }
+  .lang-toggle button { height: 34px; padding: 0 7px; font-size: 9px; }
+  .theme-toggle, .menu-toggle { width: 34px; height: 34px; }
+  .theme-toggle svg, .menu-toggle svg { width: 15px; height: 15px; }
+  .mobile-menu {
+    display: block; position: fixed; inset: 0; z-index: 45;
+    padding-top: 54px; box-sizing: border-box;
+    background: rgba(0, 0, 0, .5);
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+  }
+}
+@media (max-width: 380px) {
+  .topbar-actions { gap: 6px; }
+  .lang-toggle button { padding: 0 5px; }
+}
+
+/* 内容语言切换：中 / EN / KO，只影响游戏内容文本，不翻译界面 */
+.lang-toggle {
+  display: flex; align-items: stretch; flex-shrink: 0;
+  border: 1px solid var(--line);
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+}
+.lang-toggle button {
+  height: 36px; padding: 0 9px; cursor: pointer;
+  background: transparent; border: 0; border-left: 1px solid var(--line);
+  color: var(--dim); font-size: 10px; font-weight: 700; letter-spacing: .08em;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  transition: color .15s, background .15s;
+}
+.lang-toggle button:first-child { border-left: 0; }
+.lang-toggle button:hover { color: var(--text); background: var(--surface); }
+.lang-toggle button.on { background: var(--text); color: var(--bg); }
+
 /* ================= 通用 ================= */
 .wrap { max-width: 1400px; margin: 0 auto; padding: 0 28px 120px; position: relative; z-index: 1; }
 
@@ -380,7 +458,8 @@ img { display: block; }
   letter-spacing: .16em; color: var(--dim-2);
 }
 .fp-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.fp-chip { padding: 7px 12px; font-size: 11px; }
+.fp-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font-size: 11px; }
+.filter-icn { width: 14px; height: 14px; opacity: .85; }
 .fp-none { font-size: 11px; color: var(--dim-2); }
 .fp-clear { align-self: flex-end; padding: 7px 14px; font-size: 11px; }
 
@@ -707,6 +786,7 @@ img { display: block; }
   position: relative;
 }
 .spec div {
+  position: relative;
   padding: 16px 16px; border-right: 1px solid var(--line);
   border-bottom: 1px solid transparent;
 }
@@ -754,6 +834,14 @@ img { display: block; }
   -webkit-mask: var(--icn) center / contain no-repeat;
   mask: var(--icn) center / contain no-repeat;
 }
+/* 武器格右下角：最大装弹数（换弹图标 + 数值），无该数据的角色不渲染 */
+.spec-ammo {
+  position: absolute; right: 10px; bottom: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 600; color: var(--dim-2);
+  letter-spacing: normal;
+}
+.spec-ammo .spec-icn { width: 12px; height: 12px; opacity: .8; }
 
 /* ================= 角色基础属性（等级 / 突破 / 好感） ================= */
 .statbox {
@@ -917,6 +1005,9 @@ img { display: block; }
 .stat-aff-body .stat-hint { display: block; margin: 2px 0 0; text-align: right; }
 
 /* ---- 珍藏品（好感下方） ---- */
+/* 稀有度配色：R 蓝 / SR 紫（同时用于已装备球与选择弹窗） */
+.fav-orb.rare-r, .cube-cell-orb.rare-r { --fav-rare: #4a9eff; }
+.fav-orb.rare-sr, .cube-cell-orb.rare-sr { --fav-rare: #a855f7; }
 .fav {
   position: relative;
   margin-top: 13px; padding-top: 13px; border-top: 1px solid var(--line);
@@ -927,10 +1018,12 @@ img { display: block; }
   border: 1px solid var(--line-2); border-radius: 50%;
   display: grid; place-items: center; overflow: hidden;
   background: radial-gradient(circle at 50% 36%,
-    color-mix(in srgb, var(--acc, var(--text)) 18%, transparent) 0%, transparent 72%), var(--surface);
+    color-mix(in srgb, var(--fav-rare, var(--acc, var(--text))) 42%, transparent) 0%, transparent 72%),
+    color-mix(in srgb, var(--fav-rare, var(--acc, var(--text))) 8%, var(--surface));
+  border-color: color-mix(in srgb, var(--fav-rare, var(--acc, var(--text))) 45%, var(--line-2));
   transition: border-color .16s, transform .16s;
 }
-.fav-orb:hover { border-color: var(--acc, var(--text)); transform: translateY(-1px); }
+.fav-orb:hover { border-color: var(--fav-rare, var(--acc, var(--text))); transform: translateY(-1px); }
 .fav-orb img { width: 100%; height: 100%; object-fit: contain; }
 .fav-orb.is-empty { background: transparent; border-style: dashed; }
 .fav-ghost { font-size: 22px; line-height: 1; color: var(--dim-2); }
@@ -982,7 +1075,7 @@ img { display: block; }
   animation: cubePop .15s ease;
 }
 .fav-grid-pick {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px; padding: 10px;
 }
 .fav-grid-pick .cube-cell-name { word-break: break-word; }
@@ -995,6 +1088,15 @@ img { display: block; }
   display: flex; flex-direction: column; gap: 6px;
   padding: 9px 9px 8px; border: 1px solid var(--line);
 }
+/* T1-9 无词条：居中排版、图标放大，留白代替被去掉的词条区 */
+.equip-cell.is-simple {
+  align-items: center; justify-content: center;
+  min-height: 130px; gap: 9px; text-align: center;
+}
+.equip-cell.is-simple .equip-cell-head { flex-direction: column; gap: 4px; }
+.equip-cell.is-simple .equip-icn { width: 56px; height: 56px; }
+.equip-cell.is-simple .equip-cell-sel { width: 100%; }
+.equip-cell.is-simple .equip-cell-nums { justify-content: center; }
 .equip-cell-head { display: flex; align-items: center; gap: 7px; }
 .equip-icn {
   width: 24px; height: 24px; object-fit: contain; display: block; flex: none;
@@ -1256,6 +1358,15 @@ img { display: block; }
       color-mix(in srgb, var(--cube, var(--acc, var(--text))) 26%, transparent) 0%,
       transparent 72%),
     var(--surface);
+}
+/* 仅珍藏品球：按 R/SR 上色，不影响魔方弹窗 */
+.cube-cell-orb.rare-r, .cube-cell-orb.rare-sr {
+  background:
+    radial-gradient(circle at 50% 36%,
+      color-mix(in srgb, var(--fav-rare) 46%, transparent) 0%,
+      transparent 72%),
+    color-mix(in srgb, var(--fav-rare) 10%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--fav-rare) 40%, var(--line));
 }
 .cube-cell-orb img { width: 100%; height: 100%; object-fit: contain; padding: 2px; }
 .cube-cell-orb.is-empty {
@@ -1584,15 +1695,6 @@ img { display: block; }
 .voice-langs button:hover:not(:disabled) { color: var(--text); }
 .voice-langs button.on { background: var(--text); color: var(--bg); }
 .voice-langs button:disabled { color: var(--dim-2); cursor: not-allowed; text-decoration: line-through; }
-.voice-ja {
-  flex: 0 0 auto; padding: 5px 9px; cursor: pointer;
-  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
-  font-size: 10px; letter-spacing: .06em;
-  background: transparent; color: var(--dim-2); border: 1px dashed var(--line-2);
-  transition: color .15s, border-color .15s;
-}
-.voice-ja:hover { color: var(--text); }
-.voice-ja.on { color: var(--acc); border-color: var(--acc); }
 .voice-hint {
   padding: 6px 16px; border-bottom: 1px dashed var(--line);
   font-size: 10.5px; letter-spacing: .04em; color: var(--dim-2);
@@ -1639,10 +1741,6 @@ img { display: block; }
 }
 .voice-text {
   font-size: 13px; line-height: 1.72; color: var(--text-2);
-  white-space: pre-line; overflow-wrap: anywhere;
-}
-.voice-ja-text {
-  font-size: 11.5px; line-height: 1.7; color: var(--dim-2);
   white-space: pre-line; overflow-wrap: anywhere;
 }
 .voice-time {
@@ -3797,6 +3895,7 @@ img { display: block; }
     white-space: nowrap;
   }
   .theme-toggle { width: 32px; height: 32px; }
+  .lang-toggle button { height: 30px; padding: 0 6px; font-size: 9px; }
 }
 
 /* 姿态切换按钮在 390px 上文字不能换行（避免立绘/射击/掩体/大招被挤成竖排） */

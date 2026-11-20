@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-提取角色语音（日语 + 国服中文）
+提取角色语音（日语 + 国服中文 + 国际服英文 / 韩文）
 
 数据源：
   staticdata/CharacterVoiceGroupTable.mpk
@@ -12,23 +12,27 @@
   decrypted/*.dec
       Locale_Character 提供台词文本（zh-CN / ja / ...），
       Locale_System 提供分类说明（「在大厅点击时I」等）。
-  <patch>/ja/chunk/store.cdb
-      日语语音包。AudioClip 名字就是语音 ID，用 catalog 的 chunk 表还原 bundle。
+  <patch>/ja|en|ko/chunk/store.cdb
+      国际服语音包。AudioClip 名字就是语音 ID，用 catalog 的 chunk 表还原 bundle。
+      en / ko 由游戏内语音语言设置单独下载，结构与 ja 池相同。
   国服客户端 runtime_data/saus/zh_cn/ab/*.nab
       国服中文语音包。版本落后于国际服，部分角色/台词没有中文语音，
       按语音 ID 能对上多少就提取多少；前端缺中文时回退日语。
 
 输出：
   public/voice/<角色 id>.ogg
-  public/voice/<角色 id>.zh.ogg
+  public/voice/<角色 id>.zh.ogg / .en.ogg / .ko.ogg
       每个角色每种语言一条音频雪碧图（按表内顺序拼接），前端按
       start/end 时间点播放，避免生成上万个小文件。
   public/data/char_voices.json
       { "items": { "102": { "f": "/voice/102.ogg", "fz": "/voice/102.zh.ogg",
-          "n": 42, "zc": 38,
+          "fe": "/voice/102.en.ogg", "fk": "/voice/102.ko.ogg",
+          "n": 42, "zc": 38, "ec": 42, "kc": 42,
           "cats": [ { "k": "lobby", "n": "大厅", "v": [
             { "id": "...", "t": "在大厅点击时I", "x": "中文", "j": "日文",
-              "s": 0.0, "e": 2.25, "zs": 0.0, "ze": 2.1 } ] } ] } } }
+              "xe": "English", "xk": "한국어",
+              "s": 0.0, "e": 2.25, "zs": 0.0, "ze": 2.1,
+              "es": 0.0, "ee": 2.0, "ks": 0.0, "ke": 1.9 } ] } ] } } }
 
 用法：
   set FFMPEG=E:\\test\\ffmpeg\\...\\bin\\ffmpeg.exe
@@ -39,7 +43,6 @@
 from __future__ import annotations
 
 import argparse
-import audioop
 import hashlib
 import io
 import json
@@ -54,6 +57,8 @@ import time
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+import numpy as np
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -162,22 +167,34 @@ def normalize_wav(raw: bytes) -> tuple[bytes, float]:
         ch = w.getnchannels()
         sw = w.getsampwidth()
         pcm = w.readframes(w.getnframes())
-    if ch != 1:
-        pcm = audioop.tomono(pcm, sw, 0.5, 0.5)
-        ch = 1
-    if sw != 2:
-        pcm = audioop.lin2lin(pcm, sw, 2)
-        sw = 2
-    if rate != 48000:
-        pcm, _ = audioop.ratecv(pcm, 2, 1, rate, 48000, None)
-        rate = 48000
+
+    # Python 3.13 移除了 audioop，这里用 numpy 做等价的解码 / 混单 / 重采样。
+    if sw == 1:
+        x = (np.frombuffer(pcm, dtype=np.uint8).astype(np.float32) - 128) / 128
+    elif sw == 2:
+        x = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768
+    elif sw == 3:
+        b = np.frombuffer(pcm, dtype=np.uint8).reshape(-1, 3).astype(np.int32)
+        v = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
+        v = np.where(v & 0x800000, v - 0x1000000, v)
+        x = v.astype(np.float32) / 8388608
+    elif sw == 4:
+        x = np.frombuffer(pcm, dtype="<i4").astype(np.float32) / 2147483648
+    else:
+        raise ValueError(f"unsupported sample width: {sw}")
+    if ch > 1:
+        x = x.reshape(-1, ch).mean(axis=1)
+    if rate != 48000 and len(x) > 1:
+        n = int(round(len(x) * 48000 / rate))
+        x = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+    pcm16 = np.clip(x * 32767, -32768, 32767).astype("<i2").tobytes()
     out = io.BytesIO()
     with wave.open(out, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(48000)
-        w.writeframes(pcm)
-    seconds = len(pcm) / (48000 * 2)
+        w.writeframes(pcm16)
+    seconds = len(pcm16) / (48000 * 2)
     return out.getvalue(), seconds
 
 
@@ -291,9 +308,10 @@ def load_locale(idx: dict[str, Path], table: str) -> dict[str, dict]:
     if not p:
         return {}
     c = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
-    rows = c.execute(f'SELECT "Key","zh-CN","ja" FROM "{table}"').fetchall()
+    rows = c.execute(f'SELECT "Key","zh-CN","ja","en","ko" FROM "{table}"').fetchall()
     c.close()
-    return {k: {"zh": zh or "", "ja": ja or ""} for k, zh, ja in rows}
+    return {k: {"zh": zh or "", "ja": ja or "", "en": en or "", "ko": ko or ""}
+            for k, zh, ja, en, ko in rows}
 
 
 def char_map() -> dict[str, int]:
@@ -315,11 +333,15 @@ def char_map() -> dict[str, int]:
     return base2id, resolve
 
 
-def scan_audio(voice_ids: set[str]) -> dict[str, tuple[str, int]]:
-    """语音 ID -> (bundle key, AudioClip path_id)。"""
-    cat = sqlite3.connect(v2.manifest_path("ja"))
-    table = v2.cidx_map("ja")
-    cdb = v2.ROOT / "ja" / "chunk" / "store.cdb"
+def scan_audio(voice_ids: set[str], pool: str = "ja") -> dict[str, tuple[str, int]]:
+    """语音 ID -> (bundle key, AudioClip path_id)。
+
+    en / ko 池与 ja 结构完全相同（catalog + chunk/store.cdb），
+    只是音轨语言不同；池子由游戏内语言包下载生成。
+    """
+    cat = sqlite3.connect(v2.manifest_path(pool))
+    table = v2.cidx_map(pool)
+    cdb = v2.ROOT / pool / "chunk" / "store.cdb"
     size = cdb.stat().st_size
     dec = zstd.ZstdDecompressor()
     rows = cat.execute("select file_id,key from files_chunktype order by key").fetchall()
@@ -343,9 +365,11 @@ def scan_audio(voice_ids: set[str]) -> dict[str, tuple[str, int]]:
             if nm in voice_ids:
                 found.setdefault(nm, (key, o.path_id))
         if n % 500 == 0:
-            print(f"  扫描语音包 {n}/{len(rows)}，命中 {len(found)}，{time.time()-t0:.0f}s", flush=True)
+            print(f"  扫描 {pool} 语音包 {n}/{len(rows)}，命中 {len(found)}，"
+                  f"{time.time()-t0:.0f}s", flush=True)
     cat.close()
-    print(f"  语音包扫描完成：{len(found)}/{len(voice_ids)}，{time.time()-t0:.0f}s", flush=True)
+    print(f"  {pool} 语音包扫描完成：{len(found)}/{len(voice_ids)}，{time.time()-t0:.0f}s",
+          flush=True)
     return found
 
 
@@ -372,6 +396,65 @@ def scan_audio_cn(voice_ids: set[str], root: Path = CN_AB) -> dict[str, tuple[st
             print(f"  扫描国服语音包 {n}/{len(files)}，命中 {len(found)}，{time.time()-t0:.0f}s", flush=True)
     print(f"  国服语音包扫描完成：{len(found)}/{len(voice_ids)}，{time.time()-t0:.0f}s", flush=True)
     return found
+
+
+def extract_pool_wavs(records: list[dict], audio: dict[str, tuple[str, int]],
+                      pool: str, tmp: Path, tag: str) -> tuple[dict[str, Path], dict[str, float]]:
+    """从国际服语言池（ja / en / ko）导出 WAV，返回 (id -> wav, id -> 秒数)。"""
+    raw_paths: dict[str, Path] = {}
+    durs: dict[str, float] = {}
+    by_bundle: dict[str, list[dict]] = {}
+    for r in records:
+        info = audio.get(r["id"])
+        if info:
+            by_bundle.setdefault(info[0], []).append(r)
+    if not by_bundle:
+        return raw_paths, durs
+
+    cat = sqlite3.connect(v2.manifest_path(pool))
+    table = v2.cidx_map(pool)
+    cdb = v2.ROOT / pool / "chunk" / "store.cdb"
+    size = cdb.stat().st_size
+    dec = zstd.ZstdDecompressor()
+    t0 = time.time()
+    done = 0
+    for bkey, rs in by_bundle.items():
+        fid = cat.execute("select file_id from files_chunktype where key=?", (bkey,)).fetchone()
+        if not fid:
+            continue
+        data, _, missing = v2.rebuild(cat, table, cdb, dec, fid[0], size)
+        if missing or not data:
+            continue
+        try:
+            env = UnityPy.load(io.BytesIO(data))
+        except Exception:
+            continue
+        by_pid = {o.path_id: o for o in env.objects if o.type.name == "AudioClip"}
+        for r in rs:
+            o = by_pid.get(audio[r["id"]][1])
+            if o is None:
+                continue
+            try:
+                d = o.read()
+                samples = d.samples
+                if not samples:
+                    continue
+                raw = next(iter(samples.values()))
+                raw, dur = normalize_wav(raw)
+                safe = re.sub(r"[^\w.-]+", "_", r["id"])
+                p = tmp / f"{tag}_{safe}.wav"
+                p.write_bytes(raw)
+                raw_paths[r["id"]] = p
+                durs[r["id"]] = dur or float(d.m_Length or 0.0)
+            except Exception:
+                continue
+        done += 1
+        if done % 100 == 0:
+            print(f"  解包 {pool} {done}/{len(by_bundle)} 个 bundle，{time.time()-t0:.0f}s",
+                  flush=True)
+    cat.close()
+    print(f"  {pool} 写出 {len(raw_paths)} 个 WAV，{time.time()-t0:.0f}s", flush=True)
+    return raw_paths, durs
 
 
 def ffmpeg_exe() -> str:
@@ -442,6 +525,10 @@ def encode_char(char_id: str, clips: list[dict], raw_paths: dict[str, Path],
                 vo["g"] = c["group"]
             if c.get("cn") and c["cn"] != c["zh"]:
                 vo["xz"] = c["cn"]
+            if c.get("en") and c["en"] != c["zh"]:
+                vo["xe"] = c["en"]
+            if c.get("ko") and c["ko"] != c["zh"]:
+                vo["xk"] = c["ko"]
             vs.append(vo)
         cats.append({"k": k, "n": name, "v": vs})
     return char_id, {"f": f"/voice/{char_id}.ogg?v={ver}", "n": len(clips), "cats": cats}
@@ -522,6 +609,8 @@ def main():
         txt = lines.get(r["loc"], {})
         r["zh"] = txt.get("zh", "")
         r["ja"] = txt.get("ja", "")
+        r["en"] = txt.get("en", "")
+        r["ko"] = txt.get("ko", "")
         r["cn"] = cn_lines.get(r["loc"], "")
         d = sysdesc.get(r["desc"], {})
         # 合成记录可能已带标题（登录语音等表外条目），优先保留
@@ -541,7 +630,12 @@ def main():
 
     print("3/4 扫描语音包…")
     voice_ids = {r["id"] for r in recs}
-    audio = scan_audio(voice_ids)
+    audio = scan_audio(voice_ids, "ja")
+    # 国际服英/韩语音包：游戏内语言设置会分别下载到 <patch>/en、<patch>/ko。
+    en_audio = scan_audio(voice_ids, "en") \
+        if (v2.ROOT / "en" / "chunk" / "store.cdb").exists() else {}
+    ko_audio = scan_audio(voice_ids, "ko") \
+        if (v2.ROOT / "ko" / "chunk" / "store.cdb").exists() else {}
     # 国服池：中文（zh_cn）与日语（ja，客户端切到日语语音时才在）。
     # 国服先行/专属内容的音频只存在于国服池，国际服池找不到的 ID 在这里补上。
     cn_audio = scan_audio_cn(voice_ids) if not args.no_cn else {}
@@ -563,7 +657,9 @@ def main():
     print(f"  目标角色 {len(chars)} 个")
 
     # 只保留有音频、且角色页存在的记录（仅中文可用的表外条目也放行，见下方分组）
-    usable = [r for r in recs if (r["id"] in audio or r["id"] in cn_ja_audio or r["id"] in cn_audio)
+    usable = [r for r in recs if (r["id"] in audio or r["id"] in en_audio
+                                  or r["id"] in ko_audio
+                                  or r["id"] in cn_ja_audio or r["id"] in cn_audio)
               and resolve_any(r["prefix"]) in char_set]
     print(f"  可用语音 {len(usable)} 条")
 
@@ -571,52 +667,19 @@ def main():
     tmp = Path(tempfile.mkdtemp(prefix="nikke_voice_"))
     write_silence(tmp / "silence.wav")
     print(f"4/4 导出音频…（临时目录 {tmp}）")
-    raw_paths: dict[str, Path] = {}
-    # 按 bundle 聚合，一个 bundle 只解一次
-    by_bundle: dict[str, list[dict]] = {}
+    raw_paths, ja_durs = extract_pool_wavs(usable, audio, "ja", tmp, "ja")
     for r in usable:
-        if r["id"] in audio:
-            by_bundle.setdefault(audio[r["id"]][0], []).append(r)
+        if r["id"] in ja_durs:
+            r["dur"] = ja_durs[r["id"]]
 
-    cat = sqlite3.connect(v2.manifest_path("ja"))
-    table = v2.cidx_map("ja")
-    cdb = v2.ROOT / "ja" / "chunk" / "store.cdb"
-    size = cdb.stat().st_size
-    dec = zstd.ZstdDecompressor()
-    t0 = time.time()
-    done = 0
-    for bkey, rs in by_bundle.items():
-        fid = cat.execute("select file_id from files_chunktype where key=?", (bkey,)).fetchone()
-        if not fid:
-            continue
-        data, _, missing = v2.rebuild(cat, table, cdb, dec, fid[0], size)
-        if missing or not data:
-            continue
-        env = UnityPy.load(io.BytesIO(data))
-        by_pid = {o.path_id: o for o in env.objects if o.type.name == "AudioClip"}
-        for r in rs:
-            o = by_pid.get(audio[r["id"]][1])
-            if o is None:
-                continue
-            try:
-                d = o.read()
-                samples = d.samples
-                if not samples:
-                    continue
-                raw = next(iter(samples.values()))
-                raw, dur = normalize_wav(raw)
-                safe = re.sub(r"[^\w.-]+", "_", r["id"])
-                p = tmp / f"{safe}.wav"
-                p.write_bytes(raw)
-                raw_paths[r["id"]] = p
-                r["dur"] = dur or float(d.m_Length or 0.0)
-            except Exception:
-                continue
-        done += 1
-        if done % 100 == 0:
-            print(f"  解包 {done}/{len(by_bundle)} 个 bundle，{time.time()-t0:.0f}s", flush=True)
-    cat.close()
-    print(f"  写出 {len(raw_paths)} 个 WAV，{time.time()-t0:.0f}s")
+    en_raw: dict[str, Path] = {}
+    en_durs: dict[str, float] = {}
+    if en_audio:
+        en_raw, en_durs = extract_pool_wavs(usable, en_audio, "en", tmp, "en")
+    ko_raw: dict[str, Path] = {}
+    ko_durs: dict[str, float] = {}
+    if ko_audio:
+        ko_raw, ko_durs = extract_pool_wavs(usable, ko_audio, "ko", tmp, "ko")
 
     # 国服 ja 池补充提取（国际服没有的音频：国服专属皮肤套组等）
     cn_ja_records = [r for r in usable if r["id"] not in raw_paths and r["id"] in cn_ja_audio]
@@ -653,9 +716,10 @@ def main():
         if cid is None:
             continue
         if r["id"] not in raw_paths:
-            # 仅中文可用的表外条目（登录语音国服先配、国际服池无对应日语）：
-            # 日语时间轴上零宽占位（s == e），前端日配模式按 e > s 过滤跳过
-            if r["id"] not in cn_audio or not is_cn_dub(*cv_pair(cid)):
+            # 仅英/韩/中文可用的表外条目（登录语音国服先配、国际服池无对应日语）：
+            # 日语时间轴上零宽占位（s == e），前端按 e > s 过滤跳过
+            has_other = r["id"] in en_raw or r["id"] in ko_raw
+            if not has_other and (r["id"] not in cn_audio or not is_cn_dub(*cv_pair(cid))):
                 continue
             r["dur"] = 0.0
         elif r.get("dur", 0) <= 0:
@@ -757,13 +821,80 @@ def main():
     elif not args.no_cn:
         print(f"  ! 未找到国服语音目录，跳过中文：{CN_AB}")
 
-    # 声优：日配取国际服 {id}_cv_ja，中配取国服 {id}_cv_zh_cn
+    # 国际服英 / 韩语音：与中文轨同样的思路，独立雪碧图 + 每条起止时间。
+    # 英文、韩文包由游戏内语言设置单独下载，缺角色/条目时前端回退到日配。
+    for lang, suffix, raw_map, durs_map, url_key, cnt_key, s_key, e_key in (
+        ("en", ".en", en_raw, en_durs, "fe", "ec", "es", "ee"),
+        ("ko", ".ko", ko_raw, ko_durs, "fk", "kc", "ks", "ke"),
+    ):
+        if not raw_map:
+            print(f"  ! 未找到 {lang} 语音包，跳过")
+            continue
+        lang_grouped: dict[int, list[dict]] = {}
+        for r in usable:
+            if r["id"] not in raw_map or durs_map.get(r["id"], 0) <= 0:
+                continue
+            cid = resolve_any(r["prefix"])
+            if cid is None or str(cid) not in payload:
+                continue
+            lang_grouped.setdefault(cid, []).append(r)
+        if not lang_grouped:
+            continue
+
+        def encode_lang(cid: int, rs: list[dict]):
+            rs = sorted(rs, key=lambda x: x["order"])
+            cs = []
+            for r in rs:
+                c = dict(r)
+                c["dur"] = durs_map[r["id"]]
+                cs.append(c)
+            t = 0.0
+            last = len(cs) - 1
+            for i, c in enumerate(cs):
+                c["langstart"] = t
+                t += c["dur"] + (GAP if i < last else 0.0)
+            ver = encode_sprite(str(cid), suffix, cs, raw_map, ffmpeg, tmp)
+            return cid, cs, ver
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            jobs = [pool.submit(encode_lang, cid, rs) for cid, rs in lang_grouped.items()]
+            for f in as_completed(jobs):
+                cid, cs, ver = f.result()
+                if not ver:
+                    continue
+                item = payload.get(str(cid))
+                if not item:
+                    continue
+                by_id = {it["id"]: it for cat in item["cats"] for it in cat["v"]}
+                for c in cs:
+                    it = by_id.get(c["id"])
+                    if it is not None:
+                        it[s_key] = round(c["langstart"], 3)
+                        it[e_key] = round(c["langstart"] + c["dur"], 3)
+                item[cnt_key] = sum(1 for c in cs if c["id"] in by_id)
+                item[url_key] = f"/voice/{cid}{suffix}.ogg?v={ver}"
+        n_lang = sum(v.get(cnt_key, 0) for v in payload.values())
+        print(f"  {lang} 语音覆盖 {n_lang} 条，"
+              f"{sum(1 for v in payload.values() if v.get(url_key))} 个角色")
+
+    # 声优：日配取国际服 {id}_cv_ja，中配取国服 {id}_cv_zh_cn，
+    # 英/韩配取 Locale_Character 的 cv_en / cv_ko
+    def cv_named(cid: int, key: str) -> str | None:
+        row = lines.get(f"{cid}_{key}") or {}
+        return clean_cv(row.get("zh") or row.get("en") or row.get("ko"))
+
     for cid, item in payload.items():
         ja, cn = cv_pair(int(cid))
         if ja:
             item["cvj"] = ja
         if cn and is_cn_dub(ja, cn):
             item["cvz"] = cn
+        en_cv = cv_named(int(cid), "cv_en")
+        ko_cv = cv_named(int(cid), "cv_ko")
+        if en_cv:
+            item["cve"] = en_cv
+        if ko_cv:
+            item["cvk"] = ko_cv
 
     # 国服先行角色：主雪碧图本身就是中文配音，无日语轨可切，
     # 前端按 zhOnly 隐藏中日切换并显示中配声优
@@ -786,6 +917,8 @@ def main():
     if not args.only and not args.limit:
         expected = {f"{k}.ogg" for k in payload}
         expected |= {f"{k}.zh.ogg" for k, v in payload.items() if v.get("fz")}
+        expected |= {f"{k}.en.ogg" for k, v in payload.items() if v.get("fe")}
+        expected |= {f"{k}.ko.ogg" for k, v in payload.items() if v.get("fk")}
         for p in OUT_AUDIO.glob("*.ogg"):
             if p.name not in expected:
                 p.unlink()
@@ -800,11 +933,17 @@ def main():
 
     n_voice = sum(v["n"] for v in payload.values())
     n_zh = sum(v.get("zc", 0) for v in payload.values())
+    n_en = sum(v.get("ec", 0) for v in payload.values())
+    n_ko = sum(v.get("kc", 0) for v in payload.values())
     size_mb = sum((OUT_AUDIO / f"{k}.ogg").stat().st_size for k in payload) / 1048576
-    size_zh = sum((OUT_AUDIO / f"{k}.zh.ogg").stat().st_size
-                  for k, v in payload.items() if v.get("fz")) / 1048576
-    print(f"\n完成：{len(payload)} 个角色，{n_voice} 条语音（中配 {n_zh} 条），"
-          f"音频 {size_mb:.1f} + {size_zh:.1f} MB")
+    extra_sizes = []
+    for ext, key in ((".zh", "fz"), (".en", "fe"), (".ko", "fk")):
+        extra_sizes.append(sum((OUT_AUDIO / f"{k}{ext}.ogg").stat().st_size
+                               for k, v in payload.items() if v.get(key)) / 1048576)
+    print(f"\n完成：{len(payload)} 个角色，{n_voice} 条语音"
+          f"（中配 {n_zh} / 英配 {n_en} / 韩配 {n_ko} 条），"
+          f"音频 {size_mb:.1f} + 中 {extra_sizes[0]:.1f} + 英 {extra_sizes[1]:.1f}"
+          f" + 韩 {extra_sizes[2]:.1f} MB")
     print(f"  音频目录 {OUT_AUDIO}")
     print(f"  索引 {OUT_JSON}  {OUT_JSON.stat().st_size/1024:.0f} KB")
 

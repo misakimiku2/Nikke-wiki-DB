@@ -5,7 +5,12 @@ export type Character = {
   names: { zh?: string; en?: string; ja?: string; ko?: string; tw?: string }
   desc: string | null
   descEn: string | null
+  descJa: string | null
+  descKo: string | null
   intro: string | null
+  introEn: string | null
+  introJa: string | null
+  introKo: string | null
   cv: string | null
   lines: number
   speaker: string | null
@@ -221,6 +226,7 @@ export async function loadCostumeTexts(): Promise<CostumeTextMap> {
  * 部队 squad（群聊标题与官方部队名匹配，部分角色缺失）、
  * 属性 element（人工对游戏整理，build/export_char_meta.mjs 的 ELEMENT_MANUAL 并入，
  * fire/water/wind/electric/iron；无战斗属性的 NPC 缺失）。
+ * 装弹数 ammo（游戏 CharacterShotTable 字段 17÷256，212 个可战斗角色有，概览卡武器格右下角展示）。
  */
 export type CharMeta = {
   burst?: number | null
@@ -229,6 +235,7 @@ export type CharMeta = {
   weapon?: string | null
   squad?: string | null
   element?: string | null
+  ammo?: number | null
 }
 export type CharMetaMap = Record<string, CharMeta>
 
@@ -263,7 +270,16 @@ export async function loadCharMeta(): Promise<CharMetaMap> {
  * 枪械类型/兵种/企业带官方名称与描述；squad 为部队世界观介绍（Locale_Character 的 squad_*_info）；
  * 属性 desc 待人工属性表并入后使用。企业/部队均为游戏内原文（换行分段）。
  */
-export type SpecTextEntry = { name?: string; desc?: string }
+export type SpecTextEntry = {
+  name?: string
+  desc?: string
+  nameEn?: string
+  nameKo?: string
+  nameJa?: string
+  descEn?: string
+  descKo?: string
+  descJa?: string
+}
 export type SpecTexts = {
   weapon: Record<string, SpecTextEntry>
   cls: Record<string, SpecTextEntry>
@@ -607,6 +623,27 @@ export async function loadSquadIcons(): Promise<SquadIcons> {
   return cacheSquadIcons
 }
 
+/** 部队名的其他语言 + 部队世界观介绍的翻译。
+ *  key 是部队中文名（char_meta.squad 用的就是中文名），缺官方译名的部队不在表里。 */
+export type SquadNames = {
+  names: Record<string, { en?: string; ko?: string; ja?: string }>
+  lore: Record<string, { en?: string; ko?: string; ja?: string }>
+}
+
+let cacheSquadNames: SquadNames | null = null
+
+export async function loadSquadNames(): Promise<SquadNames> {
+  if (cacheSquadNames) return cacheSquadNames
+  try {
+    cacheSquadNames = await getJSON<SquadNames>('/data/squad_names.json')
+  } catch {
+    cacheSquadNames = { names: {}, lore: {} }
+  }
+  cacheSquadNames.names = cacheSquadNames.names || {}
+  cacheSquadNames.lore = cacheSquadNames.lore || {}
+  return cacheSquadNames
+}
+
 /* 角色技能说明（desc 模板里的 {description_value_NN} 由前端按等级填充） */
 
 export type CharSkill = {
@@ -617,12 +654,24 @@ export type CharSkill = {
   values: (string | null)[][]
   levels: number
   icon: string
+  nameEn?: string
+  nameKo?: string
+  nameJa?: string
+  descEn?: string
+  descKo?: string
+  descJa?: string
+  kindEn?: string
+  kindKo?: string
+  kindJa?: string
 }
 
 export type CharSkillsData = {
   items: Record<string, CharSkill[]>
   /** 词组 ID → 解释行（描述里 <word_group=ID>词条</word_group> 的弹窗文本） */
   terms: Record<number, string[]>
+  termsEn?: Record<number, string[]>
+  termsKo?: Record<number, string[]>
+  termsJa?: Record<number, string[]>
 }
 
 let cacheSkills: CharSkillsData | null = null
@@ -633,19 +682,29 @@ export async function loadCharSkills(): Promise<CharSkillsData> {
     cacheSkills = await getJSON<CharSkillsData>('/data/char_skills.json')
     cacheSkills.items = cacheSkills.items || {}
     cacheSkills.terms = cacheSkills.terms || {}
+    cacheSkills.termsEn = cacheSkills.termsEn || {}
+    cacheSkills.termsKo = cacheSkills.termsKo || {}
+    cacheSkills.termsJa = cacheSkills.termsJa || {}
   } catch {
-    cacheSkills = { items: {}, terms: {} }
+    cacheSkills = { items: {}, terms: {}, termsEn: {}, termsKo: {}, termsJa: {} }
   }
   return cacheSkills
 }
 
 /* 角色好感剧情 / 咨询 映射（行数据本体按需走 loadStoryUnit） */
 
-export type CharStoryChapter = { t: string; n: number }
+export type CharStoryChapter = {
+  t: string
+  n: number
+  /** 章节名的 en/ko/ja（Locale_NikkeEpisode 官方文本；缺失回退 t） */
+  ts?: { en: string; ko: string; ja: string }
+}
 
 export type CharStoryRec = {
   id: number
   t: string
+  /** 剧情名的其他语言（zh = t 本体） */
+  ts?: { en?: string; ko?: string; ja?: string }
   lines: number
   /** 个人剧情段数 / 咨询会话数 */
   segs?: number
@@ -693,6 +752,14 @@ export type CharVoice = {
   /** 中文雪碧图中的起止秒数；国服缺失时没有 */
   zs?: number
   ze?: number
+  /** 英文台词与英配雪碧图起止秒数 */
+  xe?: string
+  es?: number
+  ee?: number
+  /** 韩文台词与韩配雪碧图起止秒数 */
+  xk?: string
+  ks?: number
+  ke?: number
   /** 同一角色有多套皮肤语音时，标注来自哪套皮肤 */
   g?: string
 }
@@ -703,14 +770,20 @@ export type CharVoiceData = {
   f: string
   /** 中文雪碧图（国服没有该角色语音时没有） */
   fz?: string
+  /** 英配 / 韩配雪碧图 */
+  fe?: string
+  fk?: string
   /** 语音总数 */
   n: number
-  /** 中文语音条数 */
+  /** 中文 / 英文 / 韩文语音条数 */
   zc?: number
-  /** 日配声优 */
+  ec?: number
+  kc?: number
+  /** 日配 / 中配 / 英配 / 韩配声优 */
   cvj?: string
-  /** 中配声优 */
   cvz?: string
+  cve?: string
+  cvk?: string
   /** 国服先行角色：主雪碧图就是中文配音，无日语轨（f 即中文） */
   zhOnly?: number
   cats: CharVoiceCat[]
@@ -736,9 +809,12 @@ export async function loadCharVoices(): Promise<Record<string, CharVoiceData>> {
 export type CharMsgLine = [
   kind: number,          // 0 角色 / 1 指挥官 / 2 系统
   sender: string | null, // MessengerMemberTable slug
-  text: string,
+  text: string,          // 简体中文
   next: number,
   choice: number,
+  en?: string,           // 英文
+  ko?: string,           // 韩文
+  ja?: string,           // 日文
 ]
 
 export type CharMsgRoom = {
@@ -1222,6 +1298,8 @@ export type StoryUnit = {
   label: string
   bucket: string
   title: string
+  /** 单元标题的其他语言（zh = title 本体）；数据来自 Locale_* 表，缺语言时没有 */
+  titles?: { en?: string; ko?: string; ja?: string }
   chapter: number | null
   segments: number
   lines: number
@@ -1230,13 +1308,14 @@ export type StoryUnit = {
   cover?: string | null
 }
 
-/** [说话人, 说话人ID, 文本] */
-export type StoryLine = [string, string, string]
+/** [说话人, 说话人ID, 简体中文, 英文, 韩文, 日文] */
+export type StoryLine = [string, string, string, string?, string?, string?]
 
 export type StoryCgRef = { h: string; n: string; d?: string }
 
-/** e = 段内 CG 事件：[台词行下标, 该行起的 CG 集合] */
-export type StorySegment = { g: string; t: string; l: StoryLine[]; e?: [number, StoryCgRef[]][] }
+/** e = 段内 CG 事件：[台词行下标, 该行起的 CG 集合]
+ *  ts = 段落标题的其他语言（zh = t 本体），顺序 [en, ko, ja]，缺语言时为空串 */
+export type StorySegment = { g: string; t: string; ts?: [string?, string?, string?]; l: StoryLine[]; e?: [number, StoryCgRef[]][] }
 
 export type StoryDetail = {
   id: number
@@ -1244,6 +1323,7 @@ export type StoryDetail = {
   label: string
   bucket: string
   title: string
+  titles?: { en?: string; ko?: string; ja?: string }
   chapter: number | null
   source: string
   segments: StorySegment[]
@@ -1347,7 +1427,20 @@ export type CgItem = {
   d?: number
 }
 
-export type CgLink = { u: number; i: number; s: string; t: string; n?: number; p?: string }
+export type CgLink = {
+  u: number
+  i: number
+  s: string
+  t: string
+  n?: number
+  p?: string
+  /** 首句台词的 en/ko/ja（story_lines 四语列，缺失回退 t） */
+  l4?: { en: string; ko: string; ja: string }
+  /** 说话人名的 en/ko/ja（角色档案，缺失回退 s） */
+  s4?: { en: string; ko: string; ja: string }
+  /** 段落标题的 en/ko/ja（Locale 官方名 / 主线段名表，缺失回退 p） */
+  p4?: { en: string; ko: string; ja: string }
+}
 
 export type CgIndex = {
   total: number

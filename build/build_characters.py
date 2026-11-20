@@ -204,6 +204,12 @@ def build_characters(con_target):
 
         desc_key = "c%03d_description" % cid
         d = data.get(desc_key) or {}
+
+        # 少数皮肤变体的签名 key 用了 3 位补零（如 17=阿妮斯：超级巨星 → 017_intro），
+        # 优先取常规 {cid}_intro，缺失时回退补零写法
+        def intro(lang="zh-CN"):
+            return g(f"{cid}_intro", lang) or g(f"{cid:03d}_intro", lang)
+
         rows.append((
             cid,
             CODE_FIX.get(cid, "c%03d" % cid),
@@ -215,7 +221,11 @@ def build_characters(con_target):
             d.get("zh-CN"),
             d.get("en"),
             d.get("ja"),
-            g(f"{cid}_intro"),
+            d.get("ko"),
+            intro(),
+            intro("en"),
+            intro("ja"),
+            intro("ko"),
             clean_cv(g(f"{cid}_cv_ja")),
             1 if d.get("zh-CN") else 0,
         ))
@@ -225,13 +235,13 @@ def build_characters(con_target):
         if cid in have:
             continue
         rows.append((cid, code, zh, en, None, None, None,
-                     None, None, None, None, None, 0))
+                     None, None, None, None, None, None, None, None, None, 0))
     have = {r[0] for r in rows}
     for cid, e in CN_EXTRA.items():
         if cid in have:
             continue
         rows.append((cid, e["code"], e["zh"], e["en"], None, None, None,
-                     e["desc"], None, None, e["intro"], e["cv"], 1))
+                     e["desc"], None, None, None, e["intro"], None, None, None, e["cv"], 1))
 
     # 无独立声优的 NPC 角色卡沿用本体声优：桃乐丝：异端→桃乐丝，诺雅：新生→诺雅
     CV_INHERIT = {9200: 233, 9201: 232}
@@ -240,16 +250,16 @@ def build_characters(con_target):
         if cid in idx and base_id in idx:
             base = rows[idx[base_id]]
             r = rows[idx[cid]]
-            rows[idx[cid]] = r[:11] + (base[11],) + r[12:]
+            rows[idx[cid]] = r[:15] + (base[15],) + r[16:]
 
     con_target.executemany(
         "INSERT OR REPLACE INTO character_entries"
         "(id, code, name_zh, name_en, name_ja, name_ko, name_tw,"
-        " desc_zh, desc_en, desc_ja, intro_zh, cv, has_desc)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", rows,
+        " desc_zh, desc_en, desc_ja, desc_ko, intro_zh, intro_en, intro_ja, intro_ko, cv, has_desc)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows,
     )
     con_target.commit()
-    with_desc = sum(1 for r in rows if r[12])
+    with_desc = sum(1 for r in rows if r[16])
     log(f"  写入角色 {len(rows)} 个（其中有介绍 {with_desc}）")
 
 
@@ -303,6 +313,21 @@ def link_speakers(con):
             SELECT c.line_count FROM characters c
             WHERE c.speaker_id = character_entries.speaker_id
           ), 0)
+    """)
+    # 剧情说话人表补上官方英/韩名，供阅读器按语言切换说话人显示
+    con.execute("""
+        UPDATE characters SET
+          name_en = COALESCE((
+            SELECT e.name_en FROM character_entries e
+            WHERE e.speaker_id = characters.speaker_id
+              AND e.name_en IS NOT NULL AND e.name_en != ''
+          ), name_en),
+          name_ko = COALESCE((
+            SELECT e.name_ko FROM character_entries e
+            WHERE e.speaker_id = characters.speaker_id
+              AND e.name_ko IS NOT NULL AND e.name_ko != ''
+          ), name_ko)
+        WHERE speaker_id IS NOT NULL
     """)
     con.commit()
     linked = con.execute(

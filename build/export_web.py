@@ -20,6 +20,139 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(ROOT, "data", "nikke.db")
 OUT = os.path.join(ROOT, "public", "data")
+SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
+
+
+# ---------------- 四语标题（en/ko/ja；zh 一律沿用现有中文字段） ----------------
+
+# decrypted 里与剧情标题相关的 Locale 表和 key 过滤器（减小扫描量）
+LOCALE_TITLE_TABLES = {
+    "Locale_Stage": ("chapter_name_%",),
+    "Locale_MainScenario": ("%_title",),
+    "Locale_SubScenario": ("%_title",),
+    "Locale_NikkeEpisode": ("%_title",),
+    "Locale_SuddenStory": ("%_title",),
+    "Locale_SideStory": ("%_title",),
+    "Locale_Counseling": ("%_title",),
+    "Locale_SubQuest": ("sub_quest_description_%",),
+    "Locale_Outpost": ("outpost_building_name_%",),
+    "Locale_System": ("RECORD_EVENT_TITLE%", "STORY_DUNGEON_TITLE%"),
+}
+
+
+def load_locale_titles():
+    """decrypted Locale 表里剧情标题相关 key 的四语值。
+
+    返回 {lower(Key): {"zh","en","ko","ja"}}；同一 key 出现在多张表/多个 dec
+    文件时先写入的非空值优先（与 build_db.backfill_line_locale 同规则）。
+    """
+    out = {}
+    dec_dir = os.path.join(SRC, "decrypted")
+    files = sorted(f for f in os.listdir(dec_dir) if f.endswith(".dec")) \
+        if os.path.isdir(dec_dir) else []
+    for fname in files:
+        path = os.path.join(dec_dir, fname).replace("\\", "/")
+        loc = None
+        try:
+            loc = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            tables = {r[0] for r in loc.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            for table, conds in LOCALE_TITLE_TABLES.items():
+                if table not in tables:
+                    continue
+                where = " OR ".join(["Key LIKE ?"] * len(conds))
+                for key, en, ko, ja, zh in loc.execute(
+                        f'SELECT Key, en, ko, ja, "zh-CN" FROM "{table}" WHERE {where}',
+                        conds):
+                    if not (en or ko or ja or zh):
+                        continue
+                    slot = out.setdefault(key.lower(), {})
+                    for lang, v in (("en", en), ("ko", ko), ("ja", ja), ("zh", zh)):
+                        if v and not slot.get(lang):
+                            slot[lang] = v.strip()
+        except Exception:
+            pass
+        finally:
+            if loc is not None:
+                loc.close()
+    return out
+
+
+_NORM_RE = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def norm_title(s):
+    """标题归一化（去标点/空白，保留 CJK），用于活动标题模糊对号。"""
+    return _NORM_RE.sub("", s or "").lower()
+
+
+def titles4(slot):
+    """Locale 槽位 -> {en,ko,ja}；一个语言都没有则返回 None。"""
+    if not slot:
+        return None
+    out = {k: slot[k] for k in ("en", "ko", "ja") if slot.get(k)}
+    return out or None
+
+
+# 支线任务的章节前缀各语言写法不同（zh【第2章】/ en Chapter 2 - / ko [2챕터] / ja「チャプター2」）
+SUBQUEST_DESC_PREFIX = {
+    "en": re.compile(r"^Chapter\s*\d+\s*[-–—]\s*"),
+    "ko": re.compile(r"^\[\d+\s*챕터\]\s*"),
+    "ja": re.compile(r"^「チャプター\d+」\s*"),
+}
+# 站内分类标签（与 web/src/ui.ts 的 cat_sub 行一致，非机翻）
+SUBQUEST_LABEL = {"en": "Sub Quest", "ko": "서브 퀘스트", "ja": "サブクエスト"}
+
+# 外传地点 slug 与 Locale_Outpost 的 key 差异（与上游 story_registry.OUTPOST_ALIASES 一致）
+OUTPOST_ALIASES = {
+    "cafe": "caffe", "clothingstore": "clothesstore", "command": "commandcenter",
+    "maidcafe": "maidcaffe", "police": "policestation", "shopping": "shoppingmall",
+    "tower": "radiotower",
+}
+
+# 咨询会话标题里皮肤名的语言差异（「与阿妮斯：超级巨星的咨询：01 /
+# Advising Anis: Star: 01 / 아니스 : 스타와의 상담 : 01 / アニス：スターとの面談：01」）
+COUNSEL_SKIN_SUFFIX = {
+    "zh": re.compile(r"的?(?:咨询|追忆|回忆)$"),
+    "ko": re.compile(r"(?:와|과|와 함께|과 함께)?의?\s*상담$"),
+    "ja": re.compile(r"との面談$"),
+}
+NIKKE_TITLE_SEP = {"zh": "：", "en": ": ", "ko": " : ", "ja": "："}
+
+
+def skin_of_counsel(loc, slug, slug_index=None):
+    """从 Locale_Counseling 会话标题解析皮肤名的四语值；解析失败的语言为空串。
+
+    slug_index：norm(slug)（去下划线） -> 真实 slug，用于 eleggboomandshock
+    这类 bucket 与会话 slug 下划线写法不一致的兜底。
+    """
+    if slug_index:
+        slug = slug_index.get(slug.replace("_", ""), slug)
+    slot = None
+    for i in range(1, 21):
+        s = loc.get(f"d_counseling_{slug}_{i:02d}_title".lower())
+        if s and s.get("zh"):
+            slot = s
+            break
+    if not slot:
+        return {}
+    out = {}
+    for lang in ("zh", "en", "ko", "ja"):
+        t = (slot.get(lang) or "").strip()
+        if not t:
+            continue
+        t = re.sub(r"\s*[:：]\s*\d+\s*$", "", t)          # 尾部会话编号
+        if lang == "zh":
+            t = re.sub(r"^与", "", t)
+        elif lang == "en":
+            t = re.sub(r"^Advising\s+", "", t, flags=re.I)
+        suf = COUNSEL_SKIN_SUFFIX.get(lang)
+        if suf:
+            t = suf.sub("", t)
+        parts = re.split(r"\s*[:：]\s*", t) if t else []
+        skin = parts[-1].strip() if parts else ""
+        out[lang] = skin if skin and len(parts) > 1 else ""
+    return out
 
 
 def dump(name, payload):
@@ -35,18 +168,20 @@ def main():
 
     # ---- 角色 ----
     chars = []
-    for (cid, code, zh, en, ja, ko, tw, desc, desc_en, intro, cv,
-         lines, sp, has_desc) in con.execute("""
+    for (cid, code, zh, en, ja, ko, tw, desc, desc_en, desc_ja, desc_ko,
+         intro, intro_en, intro_ja, intro_ko, cv, lines, sp, has_desc) in con.execute("""
         SELECT id, code, name_zh, name_en, name_ja, name_ko, name_tw,
-               desc_zh, desc_en, intro_zh, cv, line_count, speaker_id, has_desc
+               desc_zh, desc_en, desc_ja, desc_ko, intro_zh, intro_en, intro_ja, intro_ko,
+               cv, line_count, speaker_id, has_desc
         FROM character_entries ORDER BY line_count DESC, id
     """):
         chars.append({
             "id": cid, "code": code,
             "name": zh or en or code,
             "names": {"zh": zh, "en": en, "ja": ja, "ko": ko, "tw": tw},
-            "desc": desc, "descEn": desc_en,
-            "intro": intro, "cv": cv,
+            "desc": desc, "descEn": desc_en, "descJa": desc_ja, "descKo": desc_ko,
+            "intro": intro, "introEn": intro_en, "introJa": intro_ja, "introKo": intro_ko,
+            "cv": cv,
             "lines": lines or 0,
             "speaker": sp,
             "hasDesc": bool(has_desc),
@@ -59,9 +194,9 @@ def main():
 
     # ---- 技能 ----
     skills = []
-    for key, kind, zh, en, ja in con.execute(
-            "SELECT key, kind, zh, en, ja FROM skill_strings"):
-        skills.append({"key": key, "kind": kind, "zh": zh, "en": en, "ja": ja})
+    for key, kind, zh, en, ja, ko in con.execute(
+            "SELECT key, kind, zh, en, ja, ko FROM skill_strings"):
+        skills.append({"key": key, "kind": kind, "zh": zh, "en": en, "ja": ja, "ko": ko})
     dump("skills.json", {"total": len(skills), "items": skills})
 
     # ---- 剧情卡封面：取该剧情里第一张静态 CG（跳过封面/纯背景图） ----
@@ -141,6 +276,101 @@ def main():
         return val
 
     # ---- 剧情目录 ----
+    # 单元标题的四语数据（en/ko/ja；zh 沿用 title 字段本体）
+    locale_titles = load_locale_titles()
+    # 官方活动名（Locale_System 的 RECORD_EVENT_TITLE / STORY_DUNGEON_TITLE）
+    event_titles = {}
+    for key, slot in locale_titles.items():
+        if key.startswith("record_event_title") or key.startswith("story_dungeon_title"):
+            for nv in {norm_title(slot.get("zh")), norm_title(slot.get("en"))}:
+                if nv:
+                    event_titles.setdefault(nv, slot)
+    # 中文名 -> 角色四语名（个人剧情单元标题 = 角色名 + 皮肤名）
+    name4_of = {}
+    for c in chars:
+        zh = c["names"].get("zh")
+        if zh and zh not in name4_of:
+            name4_of[zh] = {k: c["names"].get(k) or "" for k in ("en", "ko", "ja")}
+    # 咨询会话 slug 索引（去下划线归一），供 bucket 写法不一致的皮肤兜底
+    counsel_slug_by_norm = {}
+    for key in locale_titles:
+        m = re.match(r"^d_counseling_(.+)_\d+_title$", key)
+        if m:
+            counsel_slug_by_norm.setdefault(m.group(1).replace("_", ""), m.group(1))
+
+    def unit_titles4(cat, bucket, title, ch):
+        """单元标题的 en/ko/ja（zh 沿用 title 本体）；查不到的语言不给，绝不机翻。"""
+        loc = locale_titles
+        if cat == "main" and ch is not None:
+            return titles4(loc.get(f"chapter_name_{ch:02d}"))
+        if cat == "event":
+            return titles4(event_titles.get(norm_title(title)))
+        if cat == "sub" and bucket.startswith("d_subquest_"):
+            fam = bucket[len("d_subquest_"):]
+            slot = None
+            for i in range(10):
+                s = loc.get(f"sub_quest_description_{fam}{i}")
+                if s and s.get("zh"):
+                    slot = s
+                    break
+            if not slot:
+                return None
+            out = {}
+            for lang in ("en", "ko", "ja"):
+                v = SUBQUEST_DESC_PREFIX[lang].sub("", slot.get(lang) or "").strip()
+                if v:
+                    out[lang] = f"{SUBQUEST_LABEL[lang]} · {v}"
+            return out or None
+        if cat == "side_story" and re.match(r"^s\d+$", bucket):
+            slot = loc.get(f"{bucket}_01_title")
+            if not slot:
+                return None
+            out = {}
+            for lang in ("en", "ko", "ja"):
+                v = re.sub(r"\s*[：:]\s*\d+\s*$", "", slot.get(lang) or "").strip()
+                if v:
+                    out[lang] = v
+            return out or None
+        if cat == "gaiden" and bucket.startswith("d_ex_") and bucket != "d_ex_redash":
+            slug = bucket[len("d_ex_"):]
+            slot = loc.get("outpost_building_name_" + OUTPOST_ALIASES.get(slug, slug))
+            return titles4(slot)
+        if cat == "nikke":
+            # 宝物剧情标题是站内组合名（「X · 宝物剧情」），没有官方四语名
+            if bucket.startswith("treasurestory_"):
+                return None
+            rest, collab = title, ""
+            if " · " in rest:
+                collab, rest = rest.split(" · ", 1)
+            # 先按标题全名查角色档案：部分角色的卡片名自带皮肤后缀
+            # （安妮：奇迹仙女 这类独立抽卡角色没有基础卡），四语名直接来自角色档案
+            names = name4_of.get(rest)
+            skin4 = {}
+            if names is None and "：" in rest:
+                char_zh, skin_zh = rest.split("：", 1)
+                names = name4_of.get(char_zh)
+                if bucket.startswith("d_nikke_"):
+                    skin4 = skin_of_counsel(loc, bucket[len("d_nikke_"):],
+                                            counsel_slug_by_norm)
+                    # 皮肤中文名与咨询标题解析对不上时不要硬拼
+                    if skin4.get("zh") and skin4["zh"] != skin_zh:
+                        skin4 = {}
+            out = {}
+            for lang in ("en", "ko", "ja"):
+                cn = (names or {}).get(lang) or ""
+                sn = skin4.get(lang) or ""
+                if names is not None and not skin4:
+                    v = cn          # 标题全名 / 纯角色名，直接用角色档案四语名
+                elif cn and sn:
+                    v = f"{cn}{NIKKE_TITLE_SEP[lang]}{sn}"
+                else:
+                    continue
+                if not v:
+                    continue
+                out[lang] = f"{collab} · {v}" if collab else v
+            return out or None
+        return None
+
     units = []
     for (uid, cat, label, bucket, title, ch, segs, lines, source) in con.execute("""
         SELECT id, category, category_label, bucket, title, chapter_no,
@@ -154,11 +384,15 @@ def main():
         if not segs or not lines:
             continue
         cover = cover_of.get(uid) or match_cover(bucket, title)
-        units.append({
+        unit = {
             "id": uid, "cat": cat, "label": label, "bucket": bucket,
             "title": title, "chapter": ch, "segments": segs,
             "lines": lines or 0, "source": source, "cover": cover,
-        })
+        }
+        titles = unit_titles4(cat, bucket, title, ch)
+        if titles:
+            unit["titles"] = titles
+        units.append(unit)
 
     # 主线个别章节脚本里没有 CG（第1/5/18/25章），借相邻章节封面兜底
     for i, u in enumerate(units):

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { Link, useParams } from 'react-router-dom'
 import { usePageTitle } from '../usePageTitle'
 import {
-  accentFor, artLabel, charArt, charAvatar, charThumb, combatModelName, EXPR_LABEL, loadCharArt, loadCharCombat,
+  accentFor, artLabel, charArt, charAvatar, charThumb, combatModelName, loadCharArt, loadCharCombat,
   loadCharImages, loadCharMessages, loadCharMeta, loadCharMi, loadCharSkills, loadCharSkillcut, loadCharStories,
   loadCharSpine, loadCharVoices, loadCharacters, loadCostumeTexts, loadSpecTexts, mainBase, nf, pickBurstAnim,
   burstBgSegment,
@@ -13,10 +13,10 @@ import {
   layerConfigFor,
   loadFavoriteStats, favoriteIcon, favoriteTierIndex, FAVORITE_EFFECTS, FAVORITE_GLOBAL_EFFECTS,
   type FavoriteStats, type FavoriteInfo,
-  CORE_MAX, CORE_RATE, equipIcon,
+  CORE_MAX, CORE_RATE, equipIcon, loadSquadNames,
   type CharArtMap, type CharBaseStat, type CharImages, type CharMetaMap, type Character, type CharMessagesData,
   type CharSkill, type CharSkillsData, type CharStoriesData, type CharVoiceData, type CostumeTextMap,
-  type SkillcutIndex, type SpecTexts, type SquadIcons, type StatCurves, type EquipStats, type EquipPart,
+  type SkillcutIndex, type SpecTexts, type SquadIcons, type SquadNames, type StatCurves, type EquipStats, type EquipPart,
   type CubeStats,
 } from '../data'
 import CounselChat from '../components/CounselChat'
@@ -26,6 +26,8 @@ import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Imm
 import MessageChat from '../components/MessageChat'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import VoiceList from '../components/VoiceList'
+import { pickLang, useLang } from '../lang'
+import { fmt, useUI, type UIKey } from '../ui'
 
 const EMPTY: SpineStatus = {
   ready: false, playing: true, time: 0, duration: 0, speed: 1, zoom: 1, anim: '', anims: [],
@@ -253,34 +255,35 @@ function StatIcon({ kind }: { kind: 'hp' | 'atk' | 'def' }) {
 /**
  * 表情按钮只放这几个「主表情」，其余（surprise / pain / rage / *_02 …）收进下拉，
  * 否则 420px 的侧栏会被十几个按钮挤爆。每套模型不一定都齐，缺的自动跳过。
+ * label 是 UI 词典 key（渲染时 t() 取当前语言）。
  */
-const CHIP_DEFS: Array<{ re: RegExp; label: string }> = [
-  { re: /^idle/, label: '待机' },
-  { re: /^delight/, label: '开心' },
-  { re: /^angry/, label: '生气' },
-  { re: /^sad/, label: '悲伤' },
-  { re: /^surp|^surpreise/, label: '惊讶' },
-  { re: /^shy/, label: '害羞' },
-  { re: /^think/, label: '思考' },
-  { re: /^action|^battle/, label: '动作' },
+const CHIP_DEFS: Array<{ re: RegExp; label: UIKey }> = [
+  { re: /^idle/, label: 'chip_idle' },
+  { re: /^delight/, label: 'chip_delight' },
+  { re: /^angry/, label: 'chip_angry' },
+  { re: /^sad/, label: 'chip_sad' },
+  { re: /^surp|^surpreise/, label: 'chip_surp' },
+  { re: /^shy/, label: 'chip_shy' },
+  { re: /^think/, label: 'chip_think' },
+  { re: /^action|^battle/, label: 'chip_action' },
 ]
 
 /** 战斗姿态（aim / cover）的动作 chips；to_aim / to_cover 是过渡，不进按钮 */
-const COMBAT_CHIP_DEFS: Array<{ re: RegExp; label: string }> = [
-  { re: /_idle$/, label: '待机' },
-  { re: /_fire$/, label: '射击' },
-  { re: /_reload$/, label: '换弹' },
-  { re: /_hit$/, label: '受击' },
-  { re: /_stun$/, label: '眩晕' },
+const COMBAT_CHIP_DEFS: Array<{ re: RegExp; label: UIKey }> = [
+  { re: /_idle$/, label: 'chip_idle' },
+  { re: /_fire$/, label: 'chip_fire' },
+  { re: /_reload$/, label: 'chip_reload' },
+  { re: /_hit$/, label: 'chip_hit' },
+  { re: /_stun$/, label: 'chip_stun' },
 ]
 
 /** 大招 cut-in：主动画由 pickBurstAnim 挑（命名太乱），其余 idle 当待机 */
-function pickBurstChips(anims: string[], model?: string): { label: string; anim: string }[] {
-  const out: { label: string; anim: string }[] = []
+function pickBurstChips(anims: string[], model?: string): { label: UIKey; anim: string }[] {
+  const out: { label: UIKey; anim: string }[] = []
   const burst = pickBurstAnim(anims, model)
-  if (burst) out.push({ label: '大招', anim: burst })
+  if (burst) out.push({ label: 'pose_burst', anim: burst })
   const idle = anims.find((a) => /(^|_)idle/i.test(a))
-  if (idle && idle !== burst) out.push({ label: '待机', anim: idle })
+  if (idle && idle !== burst) out.push({ label: 'chip_idle', anim: idle })
   return out
 }
 
@@ -294,6 +297,26 @@ const SPEC_CLS_ICN: Record<number, string> = {
 const SPEC_ELEMENT_ICN: Record<string, string> = {
   fire: 'element_fire', water: 'element_water', wind: 'element_wind',
   electric: 'element_elect', iron: 'element_iron',
+}
+
+/** 装备部位 → UI 词典 key（zh 列与 data.ts 的 EQUIP_PART_CN 一致） */
+const EQUIP_PART_KEY: Record<EquipPart, UIKey> = {
+  head: 'equip_part_head', arm: 'equip_part_arm', body: 'equip_part_body', leg: 'equip_part_leg',
+}
+/** T10 词条 key → UI 词典 key（zh 列与 data.ts 的 EQUIP_OPTIONS label 一致） */
+const EQUIP_OPT_KEY: Record<string, UIKey> = {
+  atk: 'opt_atk', def: 'opt_def', elem: 'opt_elem', critdmg: 'opt_critdmg', crit: 'opt_crit',
+  ammo: 'opt_ammo', hit: 'opt_hit', charge: 'opt_charge', chargespd: 'opt_chargespd',
+}
+/** 珍藏品效果名（data.ts 中文 label）→ UI 词典 key；未映射的回退原文 */
+const FAV_FX_KEY: Record<string, UIKey> = {
+  核心伤害增加: 'fav_fx_core',
+  防御力增加: 'opt_def',
+  最大装弹数增加: 'fav_fx_ammo',
+  普通攻击伤害增加: 'fav_fx_natk',
+  蓄力伤害增加: 'opt_charge',
+  所受伤害减少: 'fav_fx_dmgred',
+  掩体最大体力增加: 'fav_fx_coverhp',
 }
 
 /** 企业弹窗文案：游戏内无官方说明，人工撰写（与社区共识一致）；反常(5)有官方文本，不在此列 */
@@ -319,13 +342,27 @@ function SpecIcon({ icn }: { icn: string }) {
   return <i className="spec-icn" style={{ ['--icn' as string]: `url(/metaicon/${icn}.webp)` }} aria-hidden />
 }
 
-function animLabel(a: string): string {
-  if (EXPR_LABEL[a]) return EXPR_LABEL[a]
+/** EXPR_LABEL（data.ts 中文动画名）→ UI 词典 key；下拉选项按内容语言显示 */
+const EXPR_KEY: Record<string, UIKey> = {
+  idle: 'chip_idle', delight: 'chip_delight', angry: 'chip_angry', sad: 'chip_sad',
+  sorrow: 'expr_sorrow', surprise: 'chip_surp', surp: 'chip_surp', surpreise: 'chip_surp',
+  surprised: 'chip_surp', shy: 'chip_shy', shy2: 'chip_shy', think: 'chip_think',
+  worry: 'expr_worry', worried: 'expr_worry', no: 'expr_no', yes: 'expr_yes',
+  special: 'expr_special', action: 'chip_action', battle: 'expr_battle',
+  smile: 'expr_smile', happy: 'expr_happy', good: 'expr_good', pain: 'expr_pain',
+  rage: 'expr_rage', mad: 'expr_mad', cry: 'expr_cry', tear: 'expr_tear',
+  panic: 'expr_panic', scared: 'expr_scared', sleep: 'expr_sleep', serious: 'expr_serious',
+  void: 'expr_void', etc: 'expr_etc', go: 'expr_go', bad: 'expr_bad', close: 'expr_close',
+  expression_0: 'expr_expr0', expression_1: 'expr_expr1', bg_idle: 'expr_bg_idle',
+}
+
+function animLabel(a: string, tr: (k: UIKey) => string): string {
+  if (EXPR_KEY[a]) return tr(EXPR_KEY[a])
   const base = a.replace(/(?:_0?\d+|_alt|_blue)+$/, '')
   const tail = a.slice(base.length).replace(/^_/, '')
-  const zh = EXPR_LABEL[base]
-  if (zh) return tail ? `${zh} ${tail}` : zh
-  if (a.startsWith('talk')) return '口型 ' + a.slice(5).toUpperCase()
+  const key = EXPR_KEY[base]
+  if (key) return tail ? `${tr(key)} ${tail}` : tr(key)
+  if (a.startsWith('talk')) return `${tr('anim_talk')} ` + a.slice(5).toUpperCase()
   return a
 }
 
@@ -342,6 +379,11 @@ function SkillRow({ skill, lv, accent, onWord }: {
   skill: CharSkill; lv: number; accent: string
   onWord: (gid: number, term: string) => void
 }) {
+  const { lang } = useLang()
+  const t = useUI()
+  const kind = pickLang(lang, skill.kind, skill.kindEn, skill.kindKo, skill.kindJa)
+  const name = pickLang(lang, skill.name, skill.nameEn, skill.nameKo, skill.nameJa)
+  const desc = pickLang(lang, skill.desc, skill.descEn, skill.descKo, skill.descJa)
   const idx = Math.min(Math.max(lv, 1), Math.max(1, skill.levels)) - 1
   const vals = skill.values[idx] || []
   const nodes: ReactNode[] = []
@@ -349,8 +391,8 @@ function SkillRow({ skill, lv, accent, onWord }: {
   let last = 0
   let key = 0
   let m: RegExpExecArray | null
-  while ((m = re.exec(skill.desc))) {
-    if (m.index > last) nodes.push(<span key={key++}>{skill.desc.slice(last, m.index)}</span>)
+  while ((m = re.exec(desc))) {
+    if (m.index > last) nodes.push(<span key={key++}>{desc.slice(last, m.index)}</span>)
     if (m[1]) {
       nodes.push(
         <b key={key++} className="skill-val" style={{ color: accent }}>
@@ -362,14 +404,14 @@ function SkillRow({ skill, lv, accent, onWord }: {
       const term = m[3] || ''
       nodes.push(
         <button key={key++} className="word-ref" style={{ color: accent }}
-          onClick={() => onWord(gid, term)} title="查看技能资讯">
+          onClick={() => onWord(gid, term)} title={t('term_hint')}>
           {term}
         </button>,
       )
     }
     last = m.index + m[0].length
   }
-  if (last < skill.desc.length) nodes.push(<span key={key++}>{skill.desc.slice(last)}</span>)
+  if (last < desc.length) nodes.push(<span key={key++}>{desc.slice(last)}</span>)
   return (
     <div className="skill">
       {skill.icon ? (
@@ -385,18 +427,18 @@ function SkillRow({ skill, lv, accent, onWord }: {
       )}
       <div className="skill-main">
         <div className="skill-name">
-          <em className="skill-kind">{skill.kind || '技能'}</em>
-          <b>{skill.name}</b>
+          <em className="skill-kind">{kind || t('skill_kind_fallback')}</em>
+          <b>{name}</b>
           <span className="skill-lv">Lv.{Math.min(Math.max(lv, 1), Math.max(1, skill.levels))}</span>
         </div>
-        {skill.desc && <div className="skill-desc">{nodes}</div>}
+        {desc && <div className="skill-desc">{nodes}</div>}
       </div>
     </div>
   )
 }
 
-function pickChips(anims: string[], defs = CHIP_DEFS): { label: string; anim: string }[] {
-  const out: { label: string; anim: string }[] = []
+function pickChips(anims: string[], defs = CHIP_DEFS): { label: UIKey; anim: string }[] {
+  const out: { label: UIKey; anim: string }[] = []
   for (const d of defs) {
     const hit = anims.find((a) => d.re.test(a))
     if (hit) out.push({ label: d.label, anim: hit })
@@ -411,6 +453,8 @@ function defaultModesOpen(): boolean {
 
 export default function CharacterDetail() {
   const { id } = useParams()
+  const { lang } = useLang()
+  const t = useUI()
   const [list, setList] = useState<Character[] | null>(null)
   const [imgs, setImgs] = useState<CharImages>({})
   const [mi, setMi] = useState<Set<string>>(new Set())
@@ -498,6 +542,8 @@ export default function CharacterDetail() {
   const ioFileRef = useRef<HTMLInputElement>(null)
   /** 部队专属图标（部队中文名 → 图标路径，来自游戏 icons-squad 图集） */
   const [squadIcons, setSquadIcons] = useState<SquadIcons>({})
+  /** 部队名的其他语言 + 部队 lore 翻译（squad_names.json，按部队中文名索引，缺失时回退中文） */
+  const [squadNames, setSquadNames] = useState<SquadNames>({ names: {}, lore: {} })
   const [relTab, setRelTab] = useState<'stories' | 'counsel' | 'voices'>('stories')
   const [termPopup, setTermPopup] = useState<{ gid: number; term: string } | null>(null)
   const spineRef = useRef<SpineController | null>(null)
@@ -525,6 +571,7 @@ export default function CharacterDetail() {
     loadCharMeta().then(setCharMeta).catch(() => {})
     loadSpecTexts().then(setSpecTexts).catch(() => {})
     loadSquadIcons().then(setSquadIcons).catch(() => {})
+    loadSquadNames().then(setSquadNames).catch(() => {})
     loadCharStats().then(setCharStats).catch(() => {})
     loadStatCurves().then(setStatCurves).catch(() => setStatCurves({}))
     loadEquipStats().then(setEquipData).catch(() => {})
@@ -592,7 +639,7 @@ export default function CharacterDetail() {
   }, [pick, pose])
 
   const c = list?.find((x) => String(x.id) === id) || null
-  usePageTitle(c?.name)
+  usePageTitle(c ? pickLang(lang, c.name, c.names.en, c.names.ko, c.names.ja) : null)
   // 旧版渲染图（art 表里 old: true）不是皮肤，混在切换条里会让人以为是错图；
   // c010_01 这类曾被误标的，已按 ScenarioCharacterSettingTable / 皮肤表核实后恢复
   const vars = (c ? variantsOf(imgs, c.id) : []).filter((v) => !art[v]?.old)
@@ -764,7 +811,25 @@ export default function CharacterDetail() {
   if (!list) return <div className="loading">LOADING…</div>
   if (!c) return <div className="empty">CHARACTER NOT FOUND</div>
 
-  const desc = (c.desc || '').split('\n').filter(Boolean)
+  /** 属性卡内的部位 / 词条 / 珍藏品效果名按内容语言显示，未映射的回退中文原文 */
+  const partName = (p: EquipPart) => t(EQUIP_PART_KEY[p])
+  const optLabel = (key: string) => {
+    const k = EQUIP_OPT_KEY[key]
+    if (k) return t(k)
+    return EQUIP_OPTIONS.find((x) => x.key === key)?.label ?? key
+  }
+  const fxLabel = (label: string) => {
+    const k = FAV_FX_KEY[label]
+    return k ? t(k) : label
+  }
+
+  const desc = (pickLang(lang, c.desc, c.descEn, c.descKo, c.descJa) || '').split('\n').filter(Boolean)
+  const displayName = pickLang(lang, c.name, c.names.en, c.names.ko, c.names.ja)
+  const latinName = lang === 'zh' ? c.names.en : c.names.zh
+  // 皮肤文案只有中文；切到其他语言时用角色本体的对应语言签名，而不是半截中文
+  const introText = lang === 'zh'
+    ? (ct?.intro || c.intro)
+    : pickLang(lang, c.intro, c.introEn, c.introKo, c.introJa)
   const palette = tintFor(c.id)
   /** 校准模式：URL query 带 calib=1 时在大招视图显示背景板微调面板（人工对齐采数） */
   const calibMode = /[?&]calib=1/.test(window.location.search)
@@ -798,10 +863,11 @@ export default function CharacterDetail() {
     { atk: 0, hp: 0, def: 0 },
   )
 
-  /** 词条里的攻击力/防御力百分比，汇总后乘在最终三围上 */
+  /** 词条里的攻击力/防御力百分比，汇总后乘在最终三围上（只有 T10 装备才有词条） */
   let optAtkPct = 0
   let optDefPct = 0
   for (const part of EQUIP_PARTS) {
+    if (equip[part].tier !== 10) continue
     for (const o of equipOpts[part]) {
       if (!o.key || o.tier < 1) continue
       const opt = EQUIP_OPTIONS.find((x) => x.key === o.key)
@@ -820,19 +886,24 @@ export default function CharacterDetail() {
   }
   const typeOptions: SelectOpt[] = [
     { value: '', label: '—' },
-    ...EQUIP_OPTIONS.map((o) => ({ value: o.key, label: o.label })),
+    ...EQUIP_OPTIONS.map((o) => ({ value: o.key, label: optLabel(o.key) })),
   ]
 
-  /** 装备统计：9 类词条各自累计 */
+  /** 装备统计：9 类词条各自累计（只有 T10 装备才有词条） */
   const optSummary = EQUIP_OPTIONS.map((opt) => {
     let total = 0
     for (const part of EQUIP_PARTS) {
+      if (equip[part].tier !== 10) continue
       for (const o of equipOpts[part]) {
         if (o.key === opt.key && o.tier > 0) total += opt.tiers[o.tier - 1] ?? 0
       }
     }
-    return { key: opt.key, label: opt.label, total }
+    return { key: opt.key, label: optLabel(opt.key), total }
   })
+
+  /** 角色基础装弹数（CharacterShotTable 逆向）；装备/魔方/珍藏品的加成在下方汇总 */
+  const ammoPct = optSummary.find((o) => o.key === 'ammo')?.total ?? 0
+  const baseAmmo = meta?.ammo ?? null
 
   /** 魔方：等级决定三围固定加成（18 种魔方共用），技能效果按 Lv1-2 / 3-6 / 7-15 三档 */
   /** 未装备魔方时为 null，此时三围不含任何魔方加成 */
@@ -850,8 +921,11 @@ export default function CharacterDetail() {
   const cubeHpPct = cube?.affects === 'hp' ? cubeEffectVal : 0
   const cubeDefPct = cube?.affects === 'def' ? cubeEffectVal : 0
 
+  /** 珍藏品按武器职业分类：每个妮姬只能用自己武器类型的 R / SR 两款 */
+  const favWeapon = meta?.weapon ?? null
+  const favoriteChoices = favoriteData.filter((f) => f.cls === favWeapon)
   /** 珍藏品：选中款在对应阶段的三围固定加成（加法，与装备/魔方同类） */
-  const favorite = favoriteId == null ? null : favoriteData.find((f) => f.id === favoriteId) ?? null
+  const favorite = favoriteId == null ? null : favoriteData.find((f) => f.id === favoriteId && f.cls === favWeapon) ?? null
   const favoritePhaseCur = Math.min(Math.max(0, favoritePhase), 15)
   const favRow = favorite?.levels[favoritePhaseCur] ?? null
   const favoriteFlat = {
@@ -865,6 +939,15 @@ export default function CharacterDetail() {
   /** 珍藏品「防御力增加」（心灵的支柱）按阶段分档，计入 DEF 百分比乘算；其他战斗效果暂不计入 */
   const favDefEffect = favEffects.find((e) => e.label === '防御力增加')
   const favoriteDefPct = favDefEffect ? favDefEffect.tiers[favTier] ?? 0 : 0
+
+  /** 总装弹数：装备词条 + 魔方「最大装弹数增加」+ 珍藏品「最大装弹数增加」的百分比先加算，
+   *  再一次乘到基础值上（与三围词条的 Σ% 乘算同构），最后 round。 */
+  const cubeAmmoPct = cube?.key === 'artifact_all_6' ? cubeEffectVal : 0
+  const favAmmoEffect = favEffects.find((e) => e.label === '最大装弹数增加')
+  const favoriteAmmoPct = favAmmoEffect ? favAmmoEffect.tiers[favTier] ?? 0 : 0
+  const totalAmmoPct = ammoPct + cubeAmmoPct + favoriteAmmoPct
+  const totalAmmo = baseAmmo != null && totalAmmoPct > 0
+    ? Math.round(baseAmmo * (1 + totalAmmoPct / 100)) : null
 
   /** 曲线基础值 → 逐星突破（×1.02 + 固定值）→ 极限 ×1.02 → 好感 → ＋装备＋魔方＋珍藏品 → ×百分比 */
   let statCalc: {
@@ -938,7 +1021,7 @@ export default function CharacterDetail() {
   const applyPreset = (raw: string) => {
     const p = parsePreset(raw)
     if (!p) {
-      setIoMsg({ ok: false, text: '配装码无效：格式不正确或版本不匹配。' })
+      setIoMsg({ ok: false, text: t('io_invalid') })
       return
     }
     setLevel(Math.min(p.lv, LB_MAX_LEVEL[p.lb]))
@@ -956,15 +1039,15 @@ export default function CharacterDetail() {
       p.op[part].map(([key, tier]) => ({ key, tier })),
     ])) as typeof equipOpts)
     setIoText(encodePreset(p))
-    setIoMsg({ ok: true, text: '已应用配装：等级 / 突破 / 好感 / 装备词条 / 魔方 / 珍藏品全部导入。' })
+    setIoMsg({ ok: true, text: t('io_applied') })
   }
 
   const copyIo = async () => {
     try {
       await navigator.clipboard.writeText(ioText)
-      setIoMsg({ ok: true, text: '配装码已复制到剪贴板。' })
+      setIoMsg({ ok: true, text: t('io_copied') })
     } catch {
-      setIoMsg({ ok: false, text: '复制失败，请手动全选文本框内容复制。' })
+      setIoMsg({ ok: false, text: t('io_copy_fail') })
     }
   }
 
@@ -976,7 +1059,7 @@ export default function CharacterDetail() {
       setIoText(text)
       applyPreset(text)
     }
-    reader.onerror = () => setIoMsg({ ok: false, text: '文件读取失败。' })
+    reader.onerror = () => setIoMsg({ ok: false, text: t('io_read_fail') })
     reader.readAsText(file)
   }
 
@@ -990,48 +1073,82 @@ export default function CharacterDetail() {
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
-    setIoMsg({ ok: true, text: '配装文件已导出。' })
+    setIoMsg({ ok: true, text: t('io_exported') })
   }
+
+  /** 概览卡里的游戏术语按内容语言取官方文本，缺失时回退中文。 */
+  const specName = (e: { name?: string; nameEn?: string; nameKo?: string; nameJa?: string } | undefined, fallbackZh: string) =>
+    pickLang(lang, e?.name || fallbackZh, e?.nameEn, e?.nameKo, e?.nameJa)
+  const specDesc = (e: { desc?: string; descEn?: string; descKo?: string; descJa?: string } | undefined) =>
+    pickLang(lang, e?.desc || '', e?.descEn, e?.descKo, e?.descJa)
 
   const specItems: { key: string; label: string; node: ReactNode; style?: CSSProperties; popup?: { title: string; lines: string[]; img?: string } }[] = []
   if (meta?.squad) {
-    // 部队官方世界观介绍（游戏内部队档案原文），弹窗顶部带游戏内部队专属图标
-    const lore = specTexts.squad[meta.squad]?.split('\n') ?? ['该妮姬在游戏档案中的所属部队。']
+    // 部队官方世界观介绍（游戏内部队档案原文），弹窗顶部带游戏内部队专属图标；
+    // 部队名与 lore 翻译在 squad_names.json（按部队中文名索引），缺失时回退中文
+    const loreZh = specTexts.squad[meta.squad]
+    const loreLoc = squadNames.lore[meta.squad]
+    const lore = loreZh != null
+      ? pickLang(lang, loreZh, loreLoc?.en, loreLoc?.ko, loreLoc?.ja).split('\n')
+      : ['该妮姬在游戏档案中的所属部队。']
+    const squadName = pickLang(lang, meta.squad,
+      squadNames.names[meta.squad]?.en, squadNames.names[meta.squad]?.ko, squadNames.names[meta.squad]?.ja)
     specItems.push({
-      key: 'squad', label: '部队', node: meta.squad, style: { fontSize: 15 },
-      popup: { title: `关于【${meta.squad}】`, lines: lore, img: squadIcons[meta.squad] || squadIcons._default },
+      key: 'squad', label: t('spec_squad'), node: squadName, style: { fontSize: 15 },
+      popup: { title: fmt(t('popup_about'), { n: squadName }), lines: lore, img: squadIcons[meta.squad] || squadIcons._default },
     })
   }
   if (meta?.corp && SPEC_CORP[meta.corp]) {
     // 企业官方世界观介绍（回收研究所文本）；中央政府/伊甸园/V.T.C.(101-103)无官方文本，回退自拟
-    const corpLines = specTexts.corp[String(meta.corp)]?.desc?.split('\n') ?? SPEC_CORP_DESC[meta.corp]
+    const cp = specTexts.corp[String(meta.corp)]
+    const corpName = specName(cp, SPEC_CORP[meta.corp])
+    const corpDesc = specDesc(cp)
+    const corpLines = corpDesc
+      ? corpDesc.split('\n').filter(Boolean)
+      : SPEC_CORP_DESC[meta.corp]
     specItems.push({
-      key: 'corp', label: '企业', style: { fontSize: 15 },
+      key: 'corp', label: t('spec_corp'), style: { fontSize: 15 },
       node: (
         <span className="spec-weapon">
           {SPEC_CORP_ICN[meta.corp] && <SpecIcon icn={SPEC_CORP_ICN[meta.corp]} />}
-          {SPEC_CORP[meta.corp]}
+          {corpName}
         </span>
       ),
-      popup: { title: `关于【${SPEC_CORP[meta.corp]}】`, lines: corpLines },
+      popup: { title: fmt(t('popup_about'), { n: corpName }), lines: corpLines },
     })
   }
   if (meta?.weapon && SPEC_WEAPON[meta.weapon]) {
     const wt = specTexts.weapon[meta.weapon]
+    const weaponName = specName(wt, SPEC_WEAPON[meta.weapon])
+    const weaponDesc = specDesc(wt)
     specItems.push({
-      key: 'weapon', label: '武器', style: { fontSize: 15 },
+      key: 'weapon', label: t('spec_weapon'), style: { fontSize: 15 },
       node: (
         <span className="spec-weapon">
           <SpecIcon icn={`weapon_${meta.weapon}`} />
-          {SPEC_WEAPON[meta.weapon]}
+          {weaponName}
+          {baseAmmo != null && (
+            <span
+              className="spec-ammo"
+              title={totalAmmoPct > 0
+                ? `${t('spec_gv_ammo')} ${baseAmmo} × (1 + ${totalAmmoPct.toFixed(2)}%) = ${totalAmmo}`
+                : t('spec_gv_ammo')}
+            >
+              <SpecIcon icn="weapon_reload" />{totalAmmo ?? baseAmmo}
+            </span>
+          )}
         </span>
       ),
-      popup: wt?.desc ? { title: `关于【${wt.name || SPEC_WEAPON[meta.weapon]}】`, lines: [wt.desc] } : undefined,
+      popup: weaponDesc ? { title: fmt(t('popup_about'), { n: weaponName }), lines: [weaponDesc] } : undefined,
     })
   }
   if (meta?.burst && SPEC_BURST[meta.burst]) {
+    // 爆裂阶段显示名没有游戏文本，用 UI 词典（SPEC_BURST 数值 1/2/3/5 映射）
+    const burstLabel = meta.burst === 1 ? t('burst_1')
+      : meta.burst === 2 ? t('burst_2')
+        : meta.burst === 3 ? t('burst_3') : t('burst_all')
     specItems.push({
-      key: 'burst', label: '爆裂',
+      key: 'burst', label: t('spec_burst'),
       // 爆裂徽章用游戏原图标；5 = 全爆裂（小红帽），并列显示 Ⅰ Ⅱ Ⅲ 三枚
       node: meta.burst <= 3 ? (
         <SpecIcon icn={`burst_${meta.burst}`} />
@@ -1040,44 +1157,48 @@ export default function CharacterDetail() {
           {[1, 2, 3].map((b) => <SpecIcon key={b} icn={`burst_${b}`} />)}
         </span>
       ),
-      popup: { title: `关于【${SPEC_BURST[meta.burst]}】`, lines: SPEC_BURST_DESC[meta.burst] },
+      popup: { title: fmt(t('popup_about'), { n: burstLabel }), lines: SPEC_BURST_DESC[meta.burst] },
     })
   }
   if (meta?.cls && SPEC_CLS[meta.cls]) {
     const ct = specTexts.cls[String(meta.cls)]
+    const className = specName(ct, SPEC_CLS[meta.cls])
+    const classDesc = specDesc(ct)
     specItems.push({
-      key: 'cls', label: '兵种', style: { fontSize: 15 },
+      key: 'cls', label: t('spec_cls'), style: { fontSize: 15 },
       node: (
         <span className="spec-weapon">
           {SPEC_CLS_ICN[meta.cls] && <SpecIcon icn={SPEC_CLS_ICN[meta.cls]} />}
-          {SPEC_CLS[meta.cls]}
+          {className}
         </span>
       ),
-      popup: ct?.desc ? { title: `关于【${ct.name || SPEC_CLS[meta.cls]}】`, lines: [ct.desc] } : undefined,
+      popup: classDesc ? { title: fmt(t('popup_about'), { n: className }), lines: [classDesc] } : undefined,
     })
   }
   if (meta?.element && SPEC_ELEMENT[meta.element]) {
     const et = specTexts.element[meta.element]
+    const elementName = specName(et, SPEC_ELEMENT[meta.element])
+    const elementDesc = specDesc(et)
     specItems.push({
-      key: 'element', label: '属性', style: { fontSize: 15 },
+      key: 'element', label: t('spec_element'), style: { fontSize: 15 },
       node: (
         <span className="spec-weapon">
           <SpecIcon icn={SPEC_ELEMENT_ICN[meta.element]} />
-          {SPEC_ELEMENT[meta.element]}
+          {elementName}
         </span>
       ),
-      popup: et?.desc
-        ? { title: `关于【${et.name || SPEC_ELEMENT[meta.element]}】`, lines: [et.desc] }
+      popup: elementDesc
+        ? { title: fmt(t('popup_about'), { n: elementName }), lines: [elementDesc] }
         : undefined,
     })
   }
   specItems.push(
-    { key: 'lines', label: '剧情台词', node: c.lines > 0 ? nf(c.lines) : '—' },
-    { key: 'cv', label: '声优', node: c.cv || '未收录', style: { fontSize: 15 } },
-    { key: 'arts', label: '立绘', node: vars.length || '—' },
+    { key: 'lines', label: t('spec_lines'), node: c.lines > 0 ? nf(c.lines) : '—' },
+    { key: 'cv', label: t('spec_cv'), node: c.cv || t('spec_cv_none'), style: { fontSize: 15 } },
+    { key: 'arts', label: t('spec_arts'), node: vars.length || '—' },
     { key: 'gid', label: 'GAME ID', node: c.id, style: { fontSize: 15 } },
-    { key: 'ja', label: '日文名', node: c.names.ja || '—', style: { fontSize: 15 } },
-    { key: 'ko', label: '韩文名', node: c.names.ko || '—', style: { fontSize: 15 } },
+    { key: 'ja', label: t('spec_ja_name'), node: c.names.ja || '—', style: { fontSize: 15 } },
+    { key: 'ko', label: t('spec_ko_name'), node: c.names.ko || '—', style: { fontSize: 15 } },
   )
   /** 默认显示 6 个（与旧版一致），其余收进箭头展开；展开后再点收回 */
   const SPEC_DEFAULT = 6
@@ -1089,8 +1210,18 @@ export default function CharacterDetail() {
   }
 
   /** 弹窗：技能词条弹窗与概览卡说明弹窗共用同一套样式 */
+  const termLines = lang === 'en'
+    ? skillData.termsEn?.[termPopup?.gid ?? -1]
+    : lang === 'ko'
+      ? skillData.termsKo?.[termPopup?.gid ?? -1]
+      : lang === 'ja'
+        ? skillData.termsJa?.[termPopup?.gid ?? -1]
+        : skillData.terms[termPopup?.gid ?? -1]
   const popup = termPopup
-    ? { title: `关于【${termPopup.term}】`, lines: skillData.terms[termPopup.gid] || [] }
+    ? {
+        title: fmt(t('popup_about'), { n: termPopup.term }),
+        lines: termLines?.length ? termLines : (skillData.terms[termPopup.gid] || []),
+      }
     : specPopup
   const closePopup = () => {
     setTermPopup(null)
@@ -1103,14 +1234,14 @@ export default function CharacterDetail() {
       {popup && (
         <div className="word-modal" onClick={closePopup}>
           <div className="word-card" onClick={(e) => e.stopPropagation()}>
-            <button className="word-close" onClick={closePopup} aria-label="关闭">×</button>
+            <button className="word-close" onClick={closePopup} aria-label={t('common_close')}>×</button>
             {popup.img && <i className="word-logo" style={{ ['--logo' as string]: `url(${popup.img})` }} aria-hidden />}
             <div className="word-title">{popup.title}</div>
             {popup.lines.map((line, i) => (
               <div className="word-line" key={i}><i>◇</i><span>{line}</span></div>
             ))}
             {popup.lines.length === 0 && (
-              <div className="word-line"><i>◇</i><span>暂无这个词组的解释文本。</span></div>
+              <div className="word-line"><i>◇</i><span>{t('term_none')}</span></div>
             )}
           </div>
         </div>
@@ -1143,7 +1274,7 @@ export default function CharacterDetail() {
                       href={staticSrc}
                       target="_blank"
                       rel="noreferrer"
-                      title="在新标签页查看原图"
+                      title={t('char_view_orig')}
                     >↗</a>
                   )}
                 />
@@ -1179,28 +1310,28 @@ export default function CharacterDetail() {
               />
             ) : null}
             {stageLive && !modelReady && (
-              <div className="char-loading"><span className="cv-spin" />加载实时模型…</div>
+              <div className="char-loading"><span className="cv-spin" />{t('char_loading_model')}</div>
             )}
             {/* 有战斗/大招模型时徽标换成姿态切换；否则维持原来的实时徽标 */}
             {(combatAvail.aim || combatAvail.cover || burstName) ? (
               <div className={`char-modes ${modesOpen ? '' : 'is-collapsed'}`}>
                 <div className="char-modes-tabs">
                   <button className={pose === 'stand' ? 'on' : ''} onClick={() => setPose('stand')}>
-                    立绘
+                    {t('pose_stand')}
                   </button>
                   {combatAvail.aim && (
                     <button className={pose === 'aim' ? 'on' : ''} onClick={() => setPose('aim')}>
-                      射击
+                      {t('pose_aim')}
                     </button>
                   )}
                   {combatAvail.cover && (
                     <button className={pose === 'cover' ? 'on' : ''} onClick={() => setPose('cover')}>
-                      掩体
+                      {t('pose_cover')}
                     </button>
                   )}
                   {burstName && (
                     <button className={pose === 'burst' ? 'on' : ''} onClick={() => setPose('burst')}>
-                      大招
+                      {t('pose_burst')}
                     </button>
                   )}
                 </div>
@@ -1208,14 +1339,14 @@ export default function CharacterDetail() {
                   className="char-modes-toggle"
                   onClick={() => setModesOpen((v) => !v)}
                   aria-expanded={modesOpen}
-                  title={modesOpen ? '收起姿态切换' : '展开姿态切换'}
+                  title={modesOpen ? t('modes_collapse') : t('modes_expand')}
                 >
                   <i className="char-modes-arrow" aria-hidden />
                 </button>
               </div>
             ) : (
               <div className={`char-live ${modelReady ? 'on' : ''}`}>
-                <i />{modelReady ? '实时模型' : '模型加载中'}
+                <i />{modelReady ? t('cg_live_model') : t('char_live_loading')}
               </div>
             )}
 
@@ -1232,7 +1363,7 @@ export default function CharacterDetail() {
                         key={v}
                         className={`vt-thumb ${v === current ? 'on' : ''}`}
                         onClick={() => setPick(v)}
-                        title={`${spine.has(v) ? `${label} · 可动` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
+                        title={`${spine.has(v) ? `${label} · ${t('vt_live_tag')}` : label}${costumeTexts[v]?.desc ? `\n${costumeTexts[v].desc.replace(/\n/g, ' ')}` : ''}`}
                       >
                         <img src={charThumb(v, mi)} alt={label} loading="lazy" />
                         {spine.has(v) && <i className="vt-live" />}
@@ -1243,7 +1374,7 @@ export default function CharacterDetail() {
                     className="variants-toggle"
                     onClick={() => setSkinsOpen((v) => !v)}
                     aria-expanded={skinsOpen}
-                    title={skinsOpen ? '收起皮肤列表' : '展开皮肤列表'}
+                    title={skinsOpen ? t('variants_collapse') : t('variants_expand')}
                   >
                     <i className="variants-toggle-arrow" aria-hidden />
                   </button>
@@ -1266,23 +1397,23 @@ export default function CharacterDetail() {
               <div className="char-anims">
                 {/* 第二形态切换：仅站姿模型存在成套变体动画时出现 */}
                 {formInfo && (
-                  <div className="char-form-switch" role="group" aria-label="形态切换">
+                  <div className="char-form-switch" role="group" aria-label={t('form_1')}>
                     <button
                       className={form === 0 ? 'on' : ''}
                       onClick={() => switchForm(0)}
-                      title="形态①"
-                    >形态①</button>
+                      title={t('form_1')}
+                    >{t('form_1')}</button>
                     <button
                       className={form === 1 ? 'on' : ''}
                       onClick={() => switchForm(1)}
-                      title="形态②（第二种外观）"
-                    >形态②</button>
+                      title={t('form_2_title')}
+                    >{t('form_2')}</button>
                   </div>
                 )}
                 {chips.length === 0 && (
                   <span className="char-anims-hint">
-                    {pose === 'stand' ? '表情动画载入中…'
-                      : pose === 'burst' ? '大招动画载入中…' : '战斗动作载入中…'}
+                    {pose === 'stand' ? t('anims_loading_stand')
+                      : pose === 'burst' ? t('anims_loading_burst') : t('anims_loading_combat')}
                   </span>
                 )}
                 {chips.map((c2) => (
@@ -1292,7 +1423,7 @@ export default function CharacterDetail() {
                     onClick={() => spineRef.current?.setAnim(c2.anim)}
                     title={c2.anim}
                   >
-                    {c2.label}
+                    {t(c2.label)}
                   </button>
                 ))}
                 {extras.length > 0 && (
@@ -1300,12 +1431,14 @@ export default function CharacterDetail() {
                     className={`char-more ${onMore ? 'on' : ''}`}
                     value={onMore ? status.anim : ''}
                     onChange={(e) => e.target.value && spineRef.current?.setAnim(e.target.value)}
-                    title={pose === 'stand' ? '更多表情' : '更多动作'}
+                    title={pose === 'stand' ? t('more_anims_stand')
+                      : pose === 'burst' ? t('more_anims_burst') : t('more_anims_combat')}
                   >
                     <option value="">
-                      {pose === 'stand' ? '更多表情' : pose === 'burst' ? '更多动画' : '更多动作'}
+                      {pose === 'stand' ? t('more_anims_stand')
+                        : pose === 'burst' ? t('more_anims_burst') : t('more_anims_combat')}
                     </option>
-                    {extras.map((a) => <option key={a} value={a}>{animLabel(a)}</option>)}
+                    {extras.map((a) => <option key={a} value={a}>{animLabel(a, t)}</option>)}
                   </select>
                 )}
               </div>
@@ -1325,12 +1458,12 @@ export default function CharacterDetail() {
                   onPointerCancel={onSeekEnd}
                   onBlur={onSeekEnd}
                   onChange={(e) => onSeek(Number(e.target.value))}
-                  aria-label="动画时间轴"
+                  aria-label={t('cg_timeline')}
                 />
                 <span className="cv-time dim">{fmtTime(status.duration)}</span>
               </div>
               <div className="char-bar-row">
-                <button className="cb-play" onClick={toggle} disabled={!modelReady} title="播放 / 暂停（空格）">
+                <button className="cb-play" onClick={toggle} disabled={!modelReady} title={t('voice_play_pause')}>
                   <PlayPauseIcon playing={status.playing} size="15" />
                 </button>
                 <label className="cb-speed">
@@ -1351,20 +1484,16 @@ export default function CharacterDetail() {
                       setCameraFollow(next)
                       spineRef.current?.setCameraFollow?.(next)
                     }}
-                    title={
-                      cameraFollow
-                        ? '镜头运镜：开（画面锁定，不能拖拽/缩放；关闭后可手动调整）'
-                        : '镜头运镜：关（不再自动运镜，可拖拽或滚轮调整画面）'
-                    }
+                    title={cameraFollow ? t('cam_t_follow_on') : t('cam_t_follow_off')}
                   >
-                    运镜 {cameraFollow ? '开' : '关'}
+                    {t('cam_follow')} {cameraFollow ? t('cam_on') : t('cam_off')}
                   </button>
                 )}
-                <button className="cb-btn" onClick={resetView} title="复位取景（双击画面也可以）">
+                <button className="cb-btn" onClick={resetView} title={t('char_reset_title')}>
                   ⟲ {status.zoom.toFixed(1)}×
                 </button>
-                <button className="cb-btn" onClick={saveFrame} title="保存当前帧为 PNG">⤓</button>
-                <button className="cb-btn" onClick={immersive.toggle} title="全屏查看模型（Esc 退出）">
+                <button className="cb-btn" onClick={saveFrame} title={t('char_save_title')}>⤓</button>
+                <button className="cb-btn" onClick={immersive.toggle} title={t('char_fullscreen_title')}>
                   <ExpandIcon />
                 </button>
               </div>
@@ -1373,21 +1502,21 @@ export default function CharacterDetail() {
         </div>
 
         <div className="detail-info">
-          <Link to="/characters" className="reader-back">← 角色列表</Link>
+          <Link to="/characters" className="reader-back">{t('detail_back')}</Link>
 
           <div className="detail-code" style={{ marginTop: 22 }}>{c.code}</div>
-          <h1 className="detail-title">{c.name}</h1>
-          <div className="detail-latin">{c.names.en || '—'}</div>
+          <h1 className="detail-title">{displayName}</h1>
+          <div className="detail-latin">{latinName || '—'}</div>
 
-          {(ct?.intro || c.intro) && (
-            <div className="detail-quote">「{ct?.intro || c.intro}」</div>
+          {introText && (
+            <div className="detail-quote">「{introText}」</div>
           )}
 
           <div className="detail-desc">
             {desc.length > 0 ? (
               desc.map((p, i) => <p key={i}>{p}</p>)
             ) : (
-              <p style={{ color: 'var(--dim-2)' }}>暂未收录这个角色的介绍文本。</p>
+              <p style={{ color: 'var(--dim-2)' }}>{t('detail_desc_none')}</p>
             )}
           </div>
 
@@ -1397,7 +1526,7 @@ export default function CharacterDetail() {
                 key={it.key}
                 className={`${i >= SPEC_DEFAULT ? 'spec-extra' : ''} ${it.popup ? 'spec-click' : ''}`}
                 onClick={it.popup ? () => setSpecPopup(it.popup!) : undefined}
-                title={it.popup ? '点击查看说明' : undefined}
+                title={it.popup ? t('spec_click_hint') : undefined}
                 role={it.popup ? 'button' : undefined}
               >
                 <span>{it.label}</span>
@@ -1409,7 +1538,7 @@ export default function CharacterDetail() {
                 className="spec-toggle"
                 onClick={() => setSpecOpen((v) => !v)}
                 aria-expanded={specOpen}
-                title={specOpen ? '收起' : `展开其余 ${specHidden} 项`}
+                title={specOpen ? t('story_cast_collapse') : fmt(t('spec_expand'), { n: specHidden })}
               >
                 <i className="spec-toggle-arrow" aria-hidden />
               </button>
@@ -1426,19 +1555,19 @@ export default function CharacterDetail() {
                     className={statTab === 'level' ? 'on' : ''}
                     onClick={() => setStatTab('level')}
                     aria-selected={statTab === 'level'}
-                  >等级 <i>LEVEL</i></button>
+                  >{t('stat_tab_level')} <i>LEVEL</i></button>
                   <button
                     role="tab"
                     className={statTab === 'equip' ? 'on' : ''}
                     onClick={() => setStatTab('equip')}
                     aria-selected={statTab === 'equip'}
-                  >装备 <i>EQUIP</i></button>
+                  >{t('stat_tab_equip')} <i>EQUIP</i></button>
                   <button
                     role="tab"
                     className={statTab === 'cube' ? 'on' : ''}
                     onClick={() => setStatTab('cube')}
                     aria-selected={statTab === 'cube'}
-                  >魔方 <i>CUBE</i></button>
+                  >{t('stat_tab_cube')} <i>CUBE</i></button>
                 </div>
                 <div className="statbox-head-end">
                   {statTab === 'level'
@@ -1446,15 +1575,15 @@ export default function CharacterDetail() {
                     : statTab === 'cube'
                       ? (cube
                         ? <b className="statbox-lv"><i>LV.</i>{cubeLvCur}</b>
-                        : <b className="statbox-lv is-none" title="未装备魔方">—</b>)
+                        : <b className="statbox-lv is-none" title={t('cube_none_title')}>—</b>)
                       : (
                         <button
                           type="button"
                           className={`stat-toggle ${statOpen ? 'on' : ''}`}
                           onClick={() => setStatOpen((v) => !v)}
                           aria-expanded={statOpen}
-                          aria-label="装备属性统计"
-                          title={statOpen ? '收起装备属性统计' : '查看装备提供的全部属性'}
+                          aria-label={t('equip_stat_title')}
+                          title={statOpen ? t('equip_stat_collapse') : t('equip_stat_expand')}
                         ><ChartIcon /></button>
                       )}
                   <button
@@ -1463,8 +1592,8 @@ export default function CharacterDetail() {
                     onClick={openIo}
                     aria-haspopup="dialog"
                     aria-expanded={ioOpen}
-                    aria-label="导入导出配装"
-                    title="导入 / 导出配装"
+                    aria-label={t('io_title')}
+                    title={t('io_title')}
                   ><IoIcon /></button>
                 </div>
               </div>
@@ -1478,7 +1607,7 @@ export default function CharacterDetail() {
                   max={lbMax}
                   value={lv}
                   onChange={(e) => setLevel(Number(e.target.value))}
-                  aria-label="角色等级"
+                  aria-label={t('skill_lv')}
                 />
 
                 <div className="stat-grid">
@@ -1497,30 +1626,30 @@ export default function CharacterDetail() {
                 </div>
 
                 <div className="stat-row">
-                  <span className="stat-label">突破</span>
-                  <div className="stat-stars" role="group" aria-label="突破星级">
+                  <span className="stat-label">{t('stat_lb')}</span>
+                  <div className="stat-stars" role="group" aria-label={t('stat_lb')}>
                     {[1, 2, 3].map((n) => (
                       <button
                         key={n}
                         className={n <= limitBreak ? 'on' : ''}
                         onClick={() => setLimitBreak(limitBreak === n ? n - 1 : n)}
-                        title={`${n} 星突破 · 等级上限 ${LB_MAX_LEVEL[n]}`}
+                        title={fmt(t('stat_lb_title'), { n, m: LB_MAX_LEVEL[n] })}
                         aria-pressed={n <= limitBreak}
                       >★</button>
                     ))}
                   </div>
-                  <span className="stat-hint">{baseStat.rarity} · 上限 {lbMax} 级</span>
+                  <span className="stat-hint">{fmt(t('stat_hint_lb'), { r: baseStat.rarity, n: lbMax })}</span>
                 </div>
 
                 <div className="stat-row">
-                  <span className="stat-label">极限</span>
-                  <div className="stat-core" role="group" aria-label="极限突破等级">
+                  <span className="stat-label">{t('stat_core')}</span>
+                  <div className="stat-core" role="group" aria-label={t('stat_core')}>
                     {Array.from({ length: CORE_MAX }, (_, i) => (
                       <button
                         key={i}
                         className={i < core ? 'on' : ''}
                         onClick={() => setCore(core === i + 1 ? i : i + 1)}
-                        title={`极限突破 Lv.${i + 1} · 三围 +${((i + 1) * CORE_RATE * 100).toFixed(0)}%`}
+                        title={fmt(t('stat_core_title'), { n: i + 1, p: ((i + 1) * CORE_RATE * 100).toFixed(0) })}
                         aria-pressed={i < core}
                       />
                     ))}
@@ -1534,7 +1663,7 @@ export default function CharacterDetail() {
                     onClick={() => setAffOpen((v) => !v)}
                     aria-expanded={affOpen}
                   >
-                    <span className="stat-label">好感</span>
+                    <span className="stat-label">{t('stat_aff')}</span>
                     <b>{affection}</b>
                     <span className="stat-aff-pct">+{(affection * AFFECTION_PER_LV * 100).toFixed(1)}%</span>
                     <i className="stat-aff-arrow" aria-hidden />
@@ -1548,9 +1677,9 @@ export default function CharacterDetail() {
                         max={affMax}
                         value={affection}
                         onChange={(e) => setAffection(Number(e.target.value))}
-                        aria-label="好感等级"
+                        aria-label={t('stat_aff')}
                       />
-                      <span className="stat-hint">上限 {affMax}</span>
+                      <span className="stat-hint">{fmt(t('stat_aff_max'), { n: affMax })}</span>
                     </div>
                   )}
                 </div>
@@ -1558,15 +1687,15 @@ export default function CharacterDetail() {
                 {/* 珍藏品：好感下方，点击娃娃图标选择，阶段滑块实时计入三围 */}
                 <div className={`fav ${favorite ? 'has' : ''} ${favPickOpen ? 'pop-open' : ''}`}>
                   <div className="fav-head">
-                    <span className="stat-label">珍藏品</span>
+                    <span className="stat-label">{t('stat_fav')}</span>
                     <button
                       type="button"
-                      className={`fav-orb ${favorite ? '' : 'is-empty'}`}
+                      className={`fav-orb ${favorite ? `rare-${favorite.rare.toLowerCase()}` : 'is-empty'}`}
                       onClick={() => setFavPickOpen(true)}
                       aria-haspopup="dialog"
                       aria-expanded={favPickOpen}
-                      aria-label={favorite ? `${favorite.name}，点击更换` : '点击选择珍藏品'}
-                      title={favorite ? '点击更换珍藏品' : '点击选择珍藏品'}
+                      aria-label={favorite ? fmt(t('cube_sel_aria'), { n: favorite.name }) : t('stat_fav_pick')}
+                      title={favorite ? t('stat_fav_change') : t('stat_fav_pick')}
                     >
                       {favorite && !favIconBroken ? (
                         <img src={favoriteIconSrc} alt="" onError={() => setFavIconBroken(true)} />
@@ -1576,12 +1705,12 @@ export default function CharacterDetail() {
                     </button>
                     <div className="fav-meta">
                       <b className={favorite ? '' : 'is-none'}>
-                        {favorite ? favorite.name : '未装备'}
+                        {favorite ? favorite.name : t('stat_unequipped')}
                       </b>
                       <span>
                         {favorite
                           ? `${favorite.rare} · ${favorite.weapon} · P${favoritePhaseCur}`
-                          : '点击图标选择收集品娃娃'}
+                          : t('stat_fav_pick_hint')}
                       </span>
                     </div>
                   </div>
@@ -1595,7 +1724,7 @@ export default function CharacterDetail() {
                         max={15}
                         value={favoritePhaseCur}
                         onChange={(e) => setFavoritePhase(Number(e.target.value))}
-                        aria-label="珍藏品阶段"
+                        aria-label={t('stat_fav')}
                       />
                       <div className="stat-grid fav-grid">
                         <div><span><StatIcon kind="hp" />HP</span><b>+{nf(favoriteFlat.hp)}</b></div>
@@ -1607,17 +1736,17 @@ export default function CharacterDetail() {
                           const isDef = fx.label === '防御力增加'
                           return (
                             <div className={`fav-fx-row ${isDef ? 'is-def' : ''}`} key={i}>
-                              <span>{fx.label} <i>{fx.skill}</i></span>
+                              <span>{fxLabel(fx.label)} <i>{fx.skill}</i></span>
                               <b>+{fx.tiers[favTier]}{fx.unit}</b>
                               {isDef && statCalc && favoriteDefPct > 0 && (
-                                <em>已计入 DEF ≈+{nf(statCalc.favoriteDefFlat)}</em>
+                                <em>{fmt(t('stat_fav_def_note'), { n: nf(statCalc.favoriteDefFlat) })}</em>
                               )}
                             </div>
                           )
                         })}
                         {FAVORITE_GLOBAL_EFFECTS.map((fx, i) => (
                           <div className="fav-fx-row is-global" key={`g${i}`}>
-                            <span>{fx.label}</span>
+                            <span>{fxLabel(fx.label)}</span>
                             <b>+{fx.tiers[favTier]}{fx.unit}</b>
                           </div>
                         ))}
@@ -1626,14 +1755,14 @@ export default function CharacterDetail() {
                   )}
 
                   {favPickOpen && (
-                    <div className="fav-pop" role="dialog" aria-label="选择珍藏品" ref={favPopRef}>
+                    <div className="fav-pop" role="dialog" aria-label={t('stat_fav_pick')} ref={favPopRef}>
                       <div className="cube-pop-head">
-                        <span>选择珍藏品 <i>FAVORITE ITEM</i></span>
+                        <span>{t('stat_fav_pick')} <i>FAVORITE ITEM</i></span>
                         <button
                           type="button"
                           className="cube-pop-close"
                           onClick={() => setFavPickOpen(false)}
-                          aria-label="关闭"
+                          aria-label={t('common_close')}
                         >×</button>
                       </div>
                       <div className="fav-grid-pick">
@@ -1643,9 +1772,9 @@ export default function CharacterDetail() {
                           onClick={() => { setFavoriteId(null); setFavPickOpen(false) }}
                         >
                           <span className="cube-cell-orb is-empty"><span className="fav-ghost">◇</span></span>
-                          <span className="cube-cell-name">未装备</span>
+                          <span className="cube-cell-name">{t('stat_unequipped')}</span>
                         </button>
-                        {favoriteData.map((f) => (
+                        {favoriteChoices.map((f) => (
                           <button
                             key={f.id}
                             type="button"
@@ -1658,7 +1787,7 @@ export default function CharacterDetail() {
                             }}
                             title={`${f.name} · ${f.rare} ${f.weapon}`}
                           >
-                            <span className="cube-cell-orb">
+                            <span className={`cube-cell-orb rare-${f.rare.toLowerCase()}`}>
                               <img src={favoriteIcon(f.cls)} alt="" loading="lazy" />
                             </span>
                             <span className="cube-cell-name">{f.rare} {f.name.replace(/（限量版）/, '')}</span>
@@ -1672,8 +1801,10 @@ export default function CharacterDetail() {
               ) : statTab === 'equip' ? (
               <div className="statbox-body">
                 <div className="equip-grid">
-                  {equipRows.map((r) => (
-                    <div className="equip-cell" key={r.part}>
+                  {equipRows.map((r) => {
+                    const pn = partName(r.part)
+                    return (
+                    <div className={`equip-cell ${r.tier < 10 ? 'is-simple' : ''}`} key={r.part}>
                       <div className="equip-cell-head">
                         <img
                           className="equip-icn"
@@ -1681,7 +1812,7 @@ export default function CharacterDetail() {
                           alt=""
                           loading="lazy"
                         />
-                        <span className="equip-part">{EQUIP_PART_CN[r.part]}</span>
+                        <span className="equip-part">{pn}</span>
                       </div>
                       <div className="equip-cell-sel">
                         <select
@@ -1690,9 +1821,9 @@ export default function CharacterDetail() {
                           onChange={(e) => setEquip((v) => ({
                             ...v, [r.part]: { ...v[r.part], tier: Number(e.target.value) },
                           }))}
-                          aria-label={`${EQUIP_PART_CN[r.part]}品阶`}
+                          aria-label={fmt(t('equip_tier_aria'), { p: pn })}
                         >
-                          {EQUIP_TIERS.map((t) => <option key={t} value={t}>T{t}</option>)}
+                          {EQUIP_TIERS.map((tv) => <option key={tv} value={tv}>T{tv}</option>)}
                         </select>
                         <select
                           className="equip-sel"
@@ -1700,7 +1831,7 @@ export default function CharacterDetail() {
                           onChange={(e) => setEquip((v) => ({
                             ...v, [r.part]: { ...v[r.part], enhance: Number(e.target.value) },
                           }))}
-                          aria-label={`${EQUIP_PART_CN[r.part]}强化`}
+                          aria-label={fmt(t('equip_enh_aria'), { p: pn })}
                         >
                           {Array.from({ length: EQUIP_MAX_ENHANCE + 1 }, (_, k) => (
                             <option key={k} value={k}>+{k}</option>
@@ -1712,7 +1843,7 @@ export default function CharacterDetail() {
                         {r.hp > 0 && <i>HP {nf(r.hp)}</i>}
                         {r.def > 0 && <i>DEF {nf(r.def)}</i>}
                       </div>
-                      <div className="equip-cell-opts">
+                      {r.tier === 10 && <div className="equip-cell-opts">
                         {equipOpts[r.part].map((o, i) => {
                           const opt = EQUIP_OPTIONS.find((x) => x.key === o.key)
                           const tierOptions: SelectOpt[] = opt
@@ -1720,7 +1851,7 @@ export default function CharacterDetail() {
                               value: String(k + 1),
                               label: `Lv.${k + 1} · ${v.toFixed(2)}%`,
                               short: `Lv.${k + 1}`,
-                              title: `${opt.label} Lv.${k + 1} · ${v.toFixed(2)}%（出现率 ${EQUIP_TIER_ODDS[k]}）`,
+                              title: `${optLabel(opt.key)} Lv.${k + 1} · ${v.toFixed(2)}%（${fmt(t('equip_odds'), { n: EQUIP_TIER_ODDS[k] })}）`,
                             }))
                             : [{ value: '', label: '—' }]
                           return (
@@ -1732,42 +1863,51 @@ export default function CharacterDetail() {
                                   tier: v ? (o.tier || DEFAULT_TIER) : 0,
                                 })}
                                 options={typeOptions}
-                                label={`${EQUIP_PART_CN[r.part]}词条 ${i + 1} 类型`}
+                                label={fmt(t('equip_opt_type_aria'), { p: pn, i: i + 1 })}
                               />
                               <OptSelect
                                 value={o.tier ? String(o.tier) : ''}
                                 onChange={(v) => updateOpt(r.part, i, { tier: Number(v) || 0 })}
                                 options={tierOptions}
-                                label={`${EQUIP_PART_CN[r.part]}词条 ${i + 1} 档位`}
-                                placeholder={opt ? '档位' : '—'}
+                                label={fmt(t('equip_opt_tier_aria'), { p: pn, i: i + 1 })}
+                                placeholder={opt ? t('equip_tier_ph') : '—'}
                               />
                             </div>
                           )
                         })}
-                      </div>
+                      </div>}
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 <div className="equip-total">
-                  <span>装备合计</span>
+                  <span>{t('equip_total')}</span>
                   <i>ATK +{nf(equipTotal.atk)}</i>
                   <i>HP +{nf(equipTotal.hp)}</i>
                   <i>DEF +{nf(equipTotal.def)}</i>
+                  {totalAmmo != null && (
+                    <i title={fmt(t('equip_ammo_title'), {
+                      b: baseAmmo ?? 0, e: ammoPct.toFixed(2), c: cubeAmmoPct.toFixed(2), f: favoriteAmmoPct.toFixed(2),
+                    })}>
+                      {t('equip_ammo_tag')} {nf(totalAmmo)}
+                    </i>
+                  )}
                 </div>
 
                 {statOpen && (
                   <div className="equip-summary">
-                    <div className="equip-summary-head">装备属性统计</div>
+                    <div className="equip-summary-head">{t('equip_stat_title')}</div>
                     <div className="equip-summary-main">
-                      <div><span>攻击力</span><b>+{nf(equipTotal.atk)}</b></div>
-                      <div><span>体力</span><b>+{nf(equipTotal.hp)}</b></div>
-                      <div><span>防御力</span><b>+{nf(equipTotal.def)}</b></div>
+                      <div><span>{t('equip_sum_atk')}</span><b>+{nf(equipTotal.atk)}</b></div>
+                      <div><span>{t('equip_sum_hp')}</span><b>+{nf(equipTotal.hp)}</b></div>
+                      <div><span>{t('equip_sum_def')}</span><b>+{nf(equipTotal.def)}</b></div>
                     </div>
                     <div className="equip-summary-grid">
                       {optSummary.map((o) => {
                         const flat = o.key === 'atk' ? statCalc.optAtkFlat
                           : o.key === 'def' ? statCalc.optDefFlat : 0
+                        const ammoTotal = o.key === 'ammo' ? totalAmmo : null
                         return (
                           <div key={o.key}>
                             <span>{o.label}</span>
@@ -1776,6 +1916,13 @@ export default function CharacterDetail() {
                                 {o.total > 0 ? `+${o.total.toFixed(2)}%` : '—'}
                               </b>
                               {flat > 0 && <em>≈+{nf(flat)}</em>}
+                              {ammoTotal != null && (
+                                <em title={fmt(t('equip_ammo_note'), {
+                                  e: ammoPct, c: cubeAmmoPct, f: favoriteAmmoPct,
+                                })}>
+                                  {fmt(t('equip_ammo_flat'), { b: baseAmmo ?? 0, n: nf(ammoTotal) })}
+                                </em>
+                              )}
                             </span>
                           </div>
                         )
@@ -1793,8 +1940,8 @@ export default function CharacterDetail() {
                     style={{ ['--cube' as string]: cube?.color ? `#${cube.color}` : undefined }}
                     onClick={() => setCubePickOpen(true)}
                     aria-haspopup="dialog"
-                    aria-label={cube ? `已装备 ${cube.name}，点击更换` : '未装备魔方，点击选择'}
-                    title={cube ? `${cube.name} · 点击更换` : '点击选择魔方'}
+                    aria-label={cube ? fmt(t('cube_sel_aria'), { n: cube.name }) : t('cube_none_aria')}
+                    title={cube ? `${cube.name} · ${t('cube_change')}` : t('cube_pick')}
                   >
                     {!cube || cubeIconBroken === cube.iconId ? (
                       <CubeGhost />
@@ -1808,8 +1955,8 @@ export default function CharacterDetail() {
                     )}
                   </button>
                   <span className="cube-name">
-                    {cube ? cube.name : '未装备'}
-                    <i>点击更换</i>
+                    {cube ? pickLang(lang, cube.name, cube.nameEn) : t('stat_unequipped')}
+                    <i>{t('cube_change')}</i>
                   </span>
                 </div>
 
@@ -1821,7 +1968,7 @@ export default function CharacterDetail() {
                   value={cubeLvCur}
                   disabled={!cube}
                   onChange={(e) => setCubeLv(Number(e.target.value))}
-                  aria-label="魔方等级"
+                  aria-label={t('cube_lv_aria')}
                 />
 
                 <div className="stat-grid">
@@ -1841,36 +1988,36 @@ export default function CharacterDetail() {
 
                 <div className="cube-fx">
                   <div className="cube-fx-row">
-                    <span>{cube?.effect ?? '技能效果'}</span>
+                    <span>{cube?.effect ?? t('cube_effect')}</span>
                     <b className={cube && cubeEffectVal > 0 ? '' : 'is-none'}>
                       {cube && cubeEffectVal > 0 ? `+${cubeEffectVal}${cube.unit}` : '—'}
                     </b>
                   </div>
                   <div className="cube-fx-row">
-                    <span>优越代码伤害增加</span>
+                    <span>{t('opt_elem')}</span>
                     <b className={cubeElem != null ? '' : 'is-none'}>
                       {cubeElem != null ? `+${cubeElem}%` : '—'}
                     </b>
                   </div>
                   <div className="cube-fx-row is-meta">
-                    <span>可装备妮姬</span>
-                    <b>{cubeRow ? `${cubeRow.slots} 名` : '—'}</b>
+                    <span>{t('cube_slots')}</span>
+                    <b>{cubeRow ? `${cubeRow.slots} ${t('cube_slots_n')}` : '—'}</b>
                   </div>
                 </div>
 
                 <p className="cube-note">
-                  三围加成由等级决定，18 种魔方通用；技能效果在 Lv.3 / Lv.7 各升一档。
+                  {t('cube_note')}
                 </p>
 
                 {cubePickOpen && (
-                  <div className="cube-pop" role="dialog" aria-label="选择魔方" ref={cubePopRef}>
+                  <div className="cube-pop" role="dialog" aria-label={t('cube_pick')} ref={cubePopRef}>
                       <div className="cube-pop-head">
-                        <span>选择魔方 <i>CUBE</i></span>
+                        <span>{t('cube_pick')} <i>CUBE</i></span>
                         <button
                           type="button"
                           className="cube-pop-close"
                           onClick={() => setCubePickOpen(false)}
-                          aria-label="关闭"
+                          aria-label={t('common_close')}
                         >×</button>
                       </div>
                       <div className="cube-grid">
@@ -1880,7 +2027,7 @@ export default function CharacterDetail() {
                           onClick={() => { setCubeId(null); setCubePickOpen(false) }}
                         >
                           <span className="cube-cell-orb is-empty"><CubeGhost /></span>
-                          <span className="cube-cell-name">未装备</span>
+                          <span className="cube-cell-name">{t('stat_unequipped')}</span>
                         </button>
                         {cubeData.cubes.map((cb) => (
                           <button
@@ -1904,38 +2051,38 @@ export default function CharacterDetail() {
               )}
 
               {ioOpen && (
-                <div className="io-pop" role="dialog" aria-label="导入导出配装" ref={ioPopRef}>
+                <div className="io-pop" role="dialog" aria-label={t('io_title')} ref={ioPopRef}>
                   <div className="cube-pop-head">
-                    <span>导入 / 导出配装 <i>BUILD CODE</i></span>
+                    <span>{t('io_title')} <i>BUILD CODE</i></span>
                     <button
                       type="button"
                       className="cube-pop-close"
                       onClick={() => setIoOpen(false)}
-                      aria-label="关闭"
+                      aria-label={t('common_close')}
                     >×</button>
                   </div>
                   <div className="io-body">
                     <p className="io-lead">
-                      等级、突破、极限、好感、装备词条、魔方与珍藏品已打包成一行配装码,可复制分享或存成文件。
+                      {t('io_lead')}
                     </p>
                     <textarea
                       className="io-code"
                       value={ioText}
                       onChange={(e) => { setIoText(e.target.value); setIoMsg(null) }}
                       spellCheck={false}
-                      aria-label="配装码"
-                      placeholder="粘贴配装码后点击下方导入…"
+                      aria-label={t('io_title')}
+                      placeholder={t('io_ph')}
                     />
                     {ioMsg && (
                       <p className={`io-msg ${ioMsg.ok ? 'ok' : 'err'}`}>{ioMsg.text}</p>
                     )}
                     <div className="io-actions">
-                      <button type="button" className="io-act primary" onClick={copyIo}>复制配装码</button>
-                      <button type="button" className="io-act" onClick={() => applyPreset(ioText)}>导入并应用</button>
+                      <button type="button" className="io-act primary" onClick={copyIo}>{t('io_copy')}</button>
+                      <button type="button" className="io-act" onClick={() => applyPreset(ioText)}>{t('io_apply')}</button>
                     </div>
                     <div className="io-actions sub">
-                      <button type="button" className="io-act ghost" onClick={exportIoFile}>导出为文件</button>
-                      <button type="button" className="io-act ghost" onClick={() => ioFileRef.current?.click()}>从文件导入</button>
+                      <button type="button" className="io-act ghost" onClick={exportIoFile}>{t('io_export_file')}</button>
+                      <button type="button" className="io-act ghost" onClick={() => ioFileRef.current?.click()}>{t('io_import_file')}</button>
                     </div>
                     <input
                       ref={ioFileRef}
@@ -1953,7 +2100,7 @@ export default function CharacterDetail() {
             </section>
 
             <div className="statbox-disclaimer">
-              *数值为逆向推算，仅供参考。
+              {t('stat_disclaimer')}
             </div>
             </>
           )}
@@ -1961,9 +2108,9 @@ export default function CharacterDetail() {
           {skills && skills.length > 0 && (
             <section className="skillbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
               <div className="skillbox-head">
-                <span className="skillbox-title">技能说明 <i>SKILLS</i></span>
+                <span className="skillbox-title">{t('skill_title')} <i>SKILLS</i></span>
                 <label className="skill-lv">
-                  等级
+                  {t('skill_lv')}
                   <select value={skillLv} onChange={(e) => setSkillLv(Number(e.target.value))}>
                     {Array.from({ length: Math.max(...skills.map((s) => s.levels), 1) },
                       (_, k) => k + 1).map((lv) => (
@@ -1983,23 +2130,23 @@ export default function CharacterDetail() {
             <section className="storybox" id="storybox" style={{ ['--acc' as string]: accentFor(c.id) }}>
               <div className="storybox-head">
                 <span className="storybox-title">
-                  {relStories.length || relCounsel.length ? '好感剧情' : '角色语音'}
+                  {relStories.length || relCounsel.length ? t('rel_title') : t('char_voice_title')}
                   {' '}<i>{relStories.length || relCounsel.length ? 'STORIES' : 'VOICE'}</i>
                 </span>
                 <div className="story-tabs">
                   {relStories.length > 0 && (
                     <button className={relTab === 'stories' ? 'on' : ''} onClick={() => setRelTab('stories')}>
-                      个人剧情 <b>{relStories.length}</b>
+                      {t('rel_stories')} <b>{relStories.length}</b>
                     </button>
                   )}
                   {relCounsel.length > 0 && (
                     <button className={relTab === 'counsel' ? 'on' : ''} onClick={() => setRelTab('counsel')}>
-                      咨询 <b>{relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)}</b>
+                      {t('rel_counsel')} <b>{relCounsel.reduce((a, x) => a + (x.sessions || 0), 0)}</b>
                     </button>
                   )}
                   {hasVoices && (
                     <button className={relTab === 'voices' ? 'on' : ''} onClick={() => setRelTab('voices')}>
-                      语音 <b>{voice.n}</b>
+                      {t('rel_voices')} <b>{voice.n}</b>
                     </button>
                   )}
                 </div>
@@ -2011,22 +2158,24 @@ export default function CharacterDetail() {
                     <div key={r.id} className="story-block">
                       {/* 只有多卷时才需要卷名分隔；单卷直接平铺章节 */}
                       {relStories.length > 1 && (
-                        <div className="story-block-label"><b>{r.t}</b></div>
+                        <div className="story-block-label"><b>{pickLang(lang, r.t, r.ts?.en, r.ts?.ko, r.ts?.ja)}</b></div>
                       )}
                       <div className="story-eps">
                         {(r.chapters ?? []).map((ch, ci) => (
                           <Link key={ci} to={`/story/${r.id}?ch=${ci}`} className="story-ep">
                             <span className="story-ep-no">{String(ci + 1).padStart(2, '0')}</span>
-                            <span className="story-ep-name">{ch.t}</span>
-                            <span className="story-ep-meta">{nf(ch.n)} 句</span>
+                            <span className="story-ep-name">
+                              {pickLang(lang, ch.t, ch.ts?.en, ch.ts?.ko, ch.ts?.ja)}
+                            </span>
+                            <span className="story-ep-meta">{nf(ch.n)} {t('unit_lines')}</span>
                             <span className="story-ep-go">→</span>
                           </Link>
                         ))}
                         {!r.chapters?.length && (
                           <Link to={`/story/${r.id}`} className="story-ep">
                             <span className="story-ep-no">01</span>
-                            <span className="story-ep-name">阅读全文</span>
-                            <span className="story-ep-meta">{nf(r.lines)} 句</span>
+                            <span className="story-ep-name">{t('story_read_all')}</span>
+                            <span className="story-ep-meta">{nf(r.lines)} {t('unit_lines')}</span>
                             <span className="story-ep-go">→</span>
                           </Link>
                         )}
@@ -2039,7 +2188,8 @@ export default function CharacterDetail() {
                   units={relCounsel}
                   accent={accentFor(c.id)}
                   avatar={charAvatar(mainBase(imgs, c.id), mi)}
-                  charName={c.name}
+                  charName={displayName}
+                  chars={list ?? []}
                 />
               ) : relTab === 'voices' && voice ? (
                 <VoiceList key={c.id} data={voice} accent={accentFor(c.id)} />
@@ -2050,21 +2200,22 @@ export default function CharacterDetail() {
           {hasMsg && msgData && (
             <section className="storybox msgbox" id="msgbox" style={{ ['--acc' as string]: accentFor(c.id) }}>
               <div className="storybox-head">
-                <span className="storybox-title">巴拉短信 <i>BLA BLA</i></span>
-                <span className="msgbox-meta">{msgRooms.length} 段 · {nf(msg?.lines ?? 0)} 条</span>
+                <span className="storybox-title">{t('msg_title')} <i>BLA BLA</i></span>
+                <span className="msgbox-meta">{fmt(t('msg_count_meta'), { n: msgRooms.length, m: nf(msg?.lines ?? 0) })}</span>
               </div>
               <MessageChat
                 key={c.id}
                 data={msgData}
                 rooms={msgRooms}
                 accent={accentFor(c.id)}
-                charName={c.name}
+                charName={displayName}
+                chars={list ?? []}
                 avatarOf={avatarOf}
               />
             </section>
           )}
 
-          <Link to="/characters" className="backlink">← 返回角色列表</Link>
+          <Link to="/characters" className="backlink">{t('detail_backlist')}</Link>
         </div>
       </div>
     </div>

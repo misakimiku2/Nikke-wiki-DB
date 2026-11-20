@@ -3,12 +3,19 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   accentFor, charPortraitSmall, loadCharImages, loadCharMi, loadCharacters, loadStoryCast,
   loadStoryFlow, loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
-  type CharImages, type Character, type CounselFlow, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StoryUnit,
+  type CharImages, type Character, type CounselFlow, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StorySegment, type StoryUnit,
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
 import StorySmsInline from '../components/StorySmsInline'
 import EventHero, { eventHeroSlug } from '../components/EventHero'
 import { usePageTitle } from '../usePageTitle'
+import { commanderName, pickLang, useLang, type ContentLang } from '../lang'
+import { fmt, useUI, type UIKey } from '../ui'
+
+/** 段落标题按内容语言取值（ts = [en, ko, ja]），缺语言回退中文。 */
+function segTitle(lang: ContentLang, seg: Pick<StorySegment, 't' | 'ts'>): string {
+  return pickLang(lang, seg.t, seg.ts?.[0], seg.ts?.[1], seg.ts?.[2])
+}
 
 type Frame = {
   fg: string | null
@@ -72,6 +79,7 @@ function StoryCgBg({
   /** 额外显示门槛（移动端 HUD 收起时为 false），paint 每帧读 ref */
   btnGate?: React.MutableRefObject<boolean>
 }) {
+  const t = useUI()
   const btnRef = useRef<HTMLButtonElement>(null)
   const fgSlots = [useRef<HTMLImageElement>(null), useRef<HTMLImageElement>(null)]
   const bgSlots = [useRef<HTMLImageElement>(null), useRef<HTMLImageElement>(null)]
@@ -282,7 +290,7 @@ function StoryCgBg({
           const cg = e.currentTarget.dataset.cg
           if (cg) onOpen(cg)
         }}
-        title="打开 CG 查看器"
+        title={t('reader_open_cg')}
       >
         ⤢
       </button>
@@ -316,6 +324,8 @@ function ReaderNav({
     }
     return seen
   }, [index])
+  const { lang } = useLang()
+  const t = useUI()
 
   const list = useMemo(
     () => index.filter((u) => u.cat === panelCat),
@@ -341,7 +351,7 @@ function ReaderNav({
       {open && <div className="rn-backdrop" onClick={onClose} />}
       <aside className={`reader-nav-panel${open ? ' open' : ''}`} aria-hidden={!open}>
         <div className="rn-head">
-          <span>剧情目录</span>
+          <span>{t('reader_toc')}</span>
           <button className="rn-close" onClick={onClose} aria-label="收起目录">×</button>
         </div>
 
@@ -352,7 +362,7 @@ function ReaderNav({
               className={`rn-cat${panelCat === c.cat ? ' on' : ''}`}
               onClick={() => setPanelCat(c.cat)}
             >
-              {c.label}<em>{c.n}</em>
+              {t(`cat_${c.cat}` as UIKey)}<em>{c.n}</em>
             </button>
           ))}
         </div>
@@ -366,7 +376,9 @@ function ReaderNav({
                 className={`rn-item${u.id === detail.id ? ' on' : ''}`}
                 onClick={narrow}
               >
-                <span className="rn-title">{u.title}</span>
+                <span className="rn-title">
+                  {pickLang(lang, u.title, u.titles?.en, u.titles?.ko, u.titles?.ja)}
+                </span>
                 <span className="rn-meta">{nf(u.lines)}</span>
               </Link>
               {u.id === detail.id && detail.segments.length > 1
@@ -380,7 +392,7 @@ function ReaderNav({
                       onClick={narrow}
                     >
                       <span>{String(i + 1).padStart(2, '0')}</span>
-                      {seg.t || `第 ${i + 1} 章`}
+                      {segTitle(lang, seg) || `第 ${i + 1} 章`}
                     </Link>
                   ))}
                 </div>
@@ -390,12 +402,12 @@ function ReaderNav({
         </div>
 
         <div className="rn-foot">
-          <Link to={backTo} className="rn-back" onClick={narrow}>← 返回剧情目录</Link>
+          <Link to={backTo} className="rn-back" onClick={narrow}>{t('reader_back_index')}</Link>
         </div>
       </aside>
 
       {!open && (
-        <button className="reader-nav-edge" onClick={onOpen} title="展开剧情目录">目录</button>
+        <button className="reader-nav-edge" onClick={onOpen} title={t('reader_toc')}>{t('reader_toc')}</button>
       )}
     </>
   )
@@ -403,10 +415,15 @@ function ReaderNav({
 
 export default function StoryReader() {
   const { id } = useParams()
+  const { lang } = useLang()
+  const t = useUI()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [detail, setDetail] = useState<StoryDetail | null>(null)
-  usePageTitle(detail ? `${detail.title} · ${detail.label}` : null)
+  const unitTitle = detail
+    ? pickLang(lang, detail.title, detail.titles?.en, detail.titles?.ko, detail.titles?.ja)
+    : ''
+  usePageTitle(detail ? `${unitTitle} · ${detail.label}` : null)
   const [index, setIndex] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
   const [smsData, setSmsData] = useState<StorySmsData | null>(null)
@@ -564,6 +581,14 @@ export default function StoryReader() {
     return m
   }, [chars])
 
+  // 部分 NPC 的剧情 speaker id 对不上角色档案的 speaker_id，但中文名能对上；
+  // 英文/韩文模式按名字再兜底一次。
+  const nameMap = useMemo(() => {
+    const m: Record<string, Character> = {}
+    for (const c of chars) if (c.names.zh) m[c.names.zh] = c
+    return m
+  }, [chars])
+
   // 给每行编号，和搜索索引的 lineIdx 对齐，用于跳转定位；
   // 同时把段内 CG 事件摊平成全局 run 列表（每个 run = 一张图从某行开始显示）
   const { blocks, frames } = useMemo(() => {
@@ -571,7 +596,16 @@ export default function StoryReader() {
     let n = 0
     if (!detail) return { blocks: [] as Block[], frames }
     const blocks: Block[] = detail.segments.map((seg) => {
-      const lines = seg.l.map(([sp, spid, txt]) => ({ sp, spid, txt, no: n++ }))
+      const lines = seg.l.map(([sp, spid, zh, en, ko, ja]) => {
+        const c = speakerMap[spid] || nameMap[sp]
+        const isCommander = spid === 'Self' || spid === 'Choice' || sp === '指挥官'
+        const spDisp = lang === 'zh'
+          ? sp
+          : isCommander
+            ? commanderName(lang)
+            : pickLang(lang, sp, c?.names.en, c?.names.ko, c?.names.ja)
+        return { sp: spDisp, spid, txt: pickLang(lang, zh, en, ko, ja), no: n++ }
+      })
       const runs = new Map<number, number>()   // 行下标 -> run 序号
       for (const [at, refs] of seg.e || []) {
         if (!refs.length) continue
@@ -607,7 +641,7 @@ export default function StoryReader() {
       return { t: seg.t, g: seg.g, lines, runs, seq }
     })
     return { blocks, frames }
-  }, [detail, flowMap, picks])
+  }, [detail, flowMap, picks, lang, speakerMap, nameMap])
 
   const hasCg = frames.length > 0
 
@@ -662,7 +696,7 @@ export default function StoryReader() {
   const total = blocks.reduce((a, b) => a + b.lines.length, 0)
   const chapterSeg = chapterIndex !== null ? detail.segments[chapterIndex] : null
   const chapterTitle = chapterSeg && chapterIndex !== null
-    ? (chapterSeg.t || `第 ${chapterIndex + 1} 章`)
+    ? (segTitle(lang, chapterSeg) || `第 ${chapterIndex + 1} 章`)
     : ''
   const shownBlocks = chapterIndex !== null ? blocks.slice(chapterIndex, chapterIndex + 1) : blocks
   const shownTotal = chapterSeg ? chapterSeg.l.length : total
@@ -688,28 +722,28 @@ export default function StoryReader() {
         {/* 移动端目录入口：竖签在窄屏隐藏，列表页同样用右下角 HUD */}
         {narrow && (
           <div className="reader-hud">
-            <button className="hud-btn" onClick={() => rememberNav(true)} title="展开剧情目录">
+            <button className="hud-btn" onClick={() => rememberNav(true)} title={t('reader_toc')}>
               目录
             </button>
           </div>
         )}
         <div className="reader">
         <div className="reader-head">
-          <Link to={backTo} className="reader-back">← 剧情目录</Link>
+          <Link to={backTo} className="reader-back">{t('reader_back_index')}</Link>
           <div className="reader-title">
-            <span className="reader-cat">{detail.label}</span>
-            <h1>{detail.title}</h1>
-            <span className="reader-count">{nf(total)} 句 · {detail.segments.length} 章</span>
+            <span className="reader-cat">{t(`cat_${detail.cat}` as UIKey)}</span>
+            <h1>{unitTitle}</h1>
+            <span className="reader-count">{nf(total)} {t('unit_lines')} · {detail.segments.length} {t('unit_chapters')}</span>
           </div>
           <div className="reader-nav">
             {prev && (
               <Link to={`/story/${prev.id}`} title={prev.title} className="nav-btn">
-                {catWord === '活动' ? '← 上个活动' : '← 上话'}
+                {catWord === '活动' ? t('reader_prev_event') : t('reader_prev_ep')}
               </Link>
             )}
             {next && (
               <Link to={`/story/${next.id}`} title={next.title} className="nav-btn">
-                {catWord === '活动' ? '下个活动 →' : '下话 →'}
+                {catWord === '活动' ? t('reader_next_event') : t('reader_next_ep')}
               </Link>
             )}
           </div>
@@ -725,7 +759,7 @@ export default function StoryReader() {
           )}
           {cast.length > 0 && (
             <section className="story-cast">
-              <h2 className="cast-heading">登场角色</h2>
+              <h2 className="cast-heading">{t('story_cast')}</h2>
               <div
                 ref={castRowRef}
                 className={`cast-row${castClamp && !castExpanded ? ' clamped' : ''}`}
@@ -736,6 +770,7 @@ export default function StoryReader() {
                 {cast.map((c) => {
                   const base = mainBase(imgs, c.id)
                   const src = charPortraitSmall(base, mi)
+                  const nm = pickLang(lang, c.name, c.names.en, c.names.ko, c.names.ja)
                   return (
                     <Link
                       key={c.id}
@@ -744,10 +779,10 @@ export default function StoryReader() {
                       style={{ ['--tint' as string]: accentFor(c.id) }}
                     >
                       <span className="cast-visual">
-                        {src ? <img src={src} alt={c.name} loading="lazy" />
-                          : <span className="cast-fallback">{c.name.slice(0, 1)}</span>}
+                        {src ? <img src={src} alt={nm} loading="lazy" />
+                          : <span className="cast-fallback">{nm.slice(0, 1)}</span>}
                       </span>
-                      <span className="cast-name" title={c.name}>{c.name}</span>
+                      <span className="cast-name" title={nm}>{nm}</span>
                     </Link>
                   )
                 })}
@@ -758,21 +793,28 @@ export default function StoryReader() {
                   className="cast-toggle"
                   onClick={() => setCastExpanded((v) => !v)}
                 >
-                  {castExpanded ? '收起登场角色' : `展开全部登场角色 · 共 ${cast.length} 人`}
+                  {castExpanded
+                    ? t('story_cast_collapse')
+                    : lang === 'zh'
+                      ? `展开全部登场角色 · 共 ${cast.length} 人`
+                      : t('story_cast_expand')}
                 </button>
               )}
             </section>
           )}
           {detail.segments.map((seg, i) => {
-            const preview = seg.l[0]?.[2]?.replace(/\n/g, ' ') || ''
+            const first = seg.l[0]
+            const preview = first
+              ? pickLang(lang, first[2] || '', first[3], first[4], first[5]).replace(/\n/g, ' ')
+              : ''
             return (
               <Link key={seg.g + i} to={`/story/${detail.id}?ch=${i}`} className="chapter-row">
                 <span className="chapter-no">{String(i + 1).padStart(2, '0')}</span>
                 <span className="chapter-main">
-                  <span className="chapter-name">{seg.t || `第 ${i + 1} 章`}</span>
+                  <span className="chapter-name">{segTitle(lang, seg) || `第 ${i + 1} 章`}</span>
                   {preview && <span className="chapter-preview">{preview}</span>}
                 </span>
-                <span className="chapter-meta">{nf(seg.l.length)} 句</span>
+                <span className="chapter-meta">{nf(seg.l.length)} {t('unit_lines')}</span>
                 <span className="chapter-arrow">→</span>
               </Link>
             )
@@ -780,10 +822,11 @@ export default function StoryReader() {
         </div>
 
         <div className="reader-foot">
-          <Link to={backTo} className="btn">← 返回目录</Link>
+          <Link to={backTo} className="btn">{t('reader_back_index')}</Link>
           {next && (
             <Link to={`/story/${next.id}`} className="btn primary">
-              {catWord === '活动' ? '下个活动：' : '下一话：'}{next.title} →
+              {catWord === '活动' ? t('reader_next_event_colon') : t('reader_next_ep_colon')}
+              {pickLang(lang, next.title, next.titles?.en, next.titles?.ko, next.titles?.ja)} →
             </Link>
           )}
         </div>
@@ -830,13 +873,13 @@ export default function StoryReader() {
               className={`hud-btn${bgOn ? ' on' : ''}`}
               onClick={toggleBg}
               aria-pressed={bgOn}
-              title="阅读背景开关（关闭后仅保留正文，更省电）"
+              title={t('reader_bg_toggle')}
             >
               CG
             </button>
           )}
           {hudOpen && (
-            <button className="hud-btn" onClick={() => rememberNav(true)} title="展开剧情目录">
+            <button className="hud-btn" onClick={() => rememberNav(true)} title={t('reader_toc')}>
               目录
             </button>
           )}
@@ -845,7 +888,7 @@ export default function StoryReader() {
             className="hud-btn hud-toggle"
             onClick={toggleHud}
             aria-expanded={hudOpen}
-            title={hudOpen ? '收起悬浮按钮' : '展开悬浮按钮'}
+            title={hudOpen ? t('reader_hud_hide') : t('reader_hud_show')}
           >
             {hudOpen ? '⌄' : '⌃'}
           </button>
@@ -854,24 +897,24 @@ export default function StoryReader() {
 
       <div className="reader-head">
         <Link to={chapterIndex !== null ? `/story/${detail.id}` : '/story'} className="reader-back">
-          {chapterIndex !== null ? '← 章节列表' : '← 剧情目录'}
+          {chapterIndex !== null ? t('reader_back_chapters') : t('reader_back_index')}
         </Link>
         <div className="reader-title">
-          <span className="reader-cat">{detail.label}</span>
-          <h1>{chapterIndex !== null ? chapterTitle : detail.title}</h1>
-          <span className="reader-count">{nf(shownTotal)} 句</span>
+          <span className="reader-cat">{t(`cat_${detail.cat}` as UIKey)}</span>
+          <h1>{chapterIndex !== null ? chapterTitle : unitTitle}</h1>
+          <span className="reader-count">{nf(shownTotal)} {t('unit_lines')}</span>
         </div>
-        {chapterIndex !== null && <div className="reader-sub">{detail.title}</div>}
+        {chapterIndex !== null && <div className="reader-sub">{unitTitle}</div>}
         <div className="reader-nav">
           {chapterIndex !== null ? (
             <>
-              {prevCh !== null && <Link to={`/story/${detail.id}?ch=${prevCh}`} className="nav-btn">← 上一章</Link>}
-              {nextCh !== null && <Link to={`/story/${detail.id}?ch=${nextCh}`} className="nav-btn">下一章 →</Link>}
+              {prevCh !== null && <Link to={`/story/${detail.id}?ch=${prevCh}`} className="nav-btn">{t('reader_prev_ch')}</Link>}
+              {nextCh !== null && <Link to={`/story/${detail.id}?ch=${nextCh}`} className="nav-btn">{t('reader_next_ch')}</Link>}
             </>
           ) : (
             <>
               {prev && <Link to={`/story/${prev.id}`} title={prev.title} className="nav-btn">← 上话</Link>}
-              {next && <Link to={`/story/${next.id}`} title={next.title} className="nav-btn">下话 →</Link>}
+              {next && <Link to={`/story/${next.id}`} title={next.title} className="nav-btn">{t('reader_next_ep')}</Link>}
             </>
           )}
         </div>
@@ -880,7 +923,8 @@ export default function StoryReader() {
       <div className="reader-body">
         {shownBlocks.map((seg, si) => (
           <section key={seg.g + si} className="seg" data-g={seg.g}>
-            {seg.t && chapterIndex === null && <h2 className="seg-title">{seg.t}</h2>}
+            {chapterIndex === null && segTitle(lang, seg)
+              && <h2 className="seg-title">{segTitle(lang, seg)}</h2>}
             {seg.seq.map((item) => {
               if (item.t === 'choice') {
                 const first = item.lines[0]
@@ -888,7 +932,7 @@ export default function StoryReader() {
                 const sel = picks[key]
                 return (
                   <div className="cc-choice" key={`choice${first}`}>
-                    <span className="cc-choice-label">你的回答</span>
+                    <span className="cc-choice-label">{t('cc_choice')}</span>
                     {item.lines.map((li, oi) => (
                       <button
                         key={li}
@@ -910,7 +954,7 @@ export default function StoryReader() {
               return (
                 <Fragment key={ln.no}>
                   {inlineSms[seg.g]?.[li]?.map((g) => (
-                    <StorySmsInline key={g.g} group={g} />
+                    <StorySmsInline key={g.g} group={g} chars={chars} />
                   ))}
                   <div
                     id={`L${ln.no}`}
@@ -928,7 +972,7 @@ export default function StoryReader() {
               )
             })}
             {inlineSms[seg.g]?.[seg.lines.length]?.map((g) => (
-              <StorySmsInline key={g.g} group={g} />
+              <StorySmsInline key={g.g} group={g} chars={chars} />
             ))}
           </section>
         ))}
@@ -937,19 +981,19 @@ export default function StoryReader() {
       <div className="reader-foot">
         {chapterIndex !== null ? (
           <>
-            <Link to={`/story/${detail.id}`} className="btn">← 返回章节列表</Link>
+            <Link to={`/story/${detail.id}`} className="btn">{t('reader_back_chapters')}</Link>
             {nextCh !== null && (
               <Link to={`/story/${detail.id}?ch=${nextCh}`} className="btn primary">
-                下一章：{detail.segments[nextCh].t || `第 ${nextCh + 1} 章`} →
+                {t('reader_next_ch_colon')}{segTitle(lang, detail.segments[nextCh]) || fmt(t('chapter_fmt'), { n: nextCh + 1 })} →
               </Link>
             )}
           </>
         ) : (
           <>
-            <Link to={backTo} className="btn">← 返回目录</Link>
+            <Link to={backTo} className="btn">{t('reader_back_index')}</Link>
             {next && (
               <Link to={`/story/${next.id}`} className="btn primary">
-                下一话：{next.title} →
+                {t('reader_next_ep_colon')}{pickLang(lang, next.title, next.titles?.en, next.titles?.ko, next.titles?.ja)} →
               </Link>
             )}
           </>

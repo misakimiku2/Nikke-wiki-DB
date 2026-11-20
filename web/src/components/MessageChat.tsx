@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CharMessagesData, CharMsgRoom } from '../data'
+import { nf, type CharMessagesData, type CharMsgLine, type CharMsgRoom, type Character } from '../data'
+import { commanderName, pickLang, useLang, type ContentLang } from '../lang'
+import { fmt, useUI, type UIKey } from '../ui'
 
+/** 短信正文按内容语言取值；缺失时回退简中。 */
+const textOf = (ln: CharMsgLine, lang: ContentLang): string =>
+  lang === 'en' ? (ln[5] || ln[2])
+    : lang === 'ko' ? (ln[6] || ln[2])
+      : lang === 'ja' ? (ln[7] || ln[2])
+        : ln[2]
+
+/** 房间类别 → UI 词典 key */
+const CAT_KEY: Record<string, UIKey | null> = {
+  blabla: 'msg_cat_blabla',
+  main: 'msg_cat_main',
+}
+/** CAT_KEY 没有词典 key 时的中文回退（zh 渲染与现行一致） */
 const CAT_LABEL: Record<string, string> = {
   blabla: '巴拉聊天',
   main: '主线短信',
@@ -16,29 +31,32 @@ type FlowItem =
   | { t: 'choice'; group: number[]; start: number }
 
 /** 会话头像：私聊用角色头像，群聊加一个成员数角标；没有头像时用首字兜底 */
-function RoomAvatar({ room, avatarOf, small = false }: {
+function RoomAvatar({ room, avatarOf, name, small = false }: {
   room: CharMsgRoom
   avatarOf: (id: number) => string | null
+  /** 显示名（本地化后的房间标题），仅在没有头像时取首字兜底 */
+  name?: string
   small?: boolean
 }) {
   const first = room.m[0]
   const url = first ? avatarOf(first[0]) : null
   return (
     <span className={`mc-avatar ${small ? 'sm' : ''}`}>
-      {url ? <img src={url} alt="" loading="lazy" /> : <b>{room.t.slice(0, 1)}</b>}
+      {url ? <img src={url} alt="" loading="lazy" /> : <b>{(name || room.t).slice(0, 1)}</b>}
       {isGroup(room) && <i>{room.m.length > 1 ? room.m.length : Object.keys(room.sn).length}</i>}
     </span>
   )
 }
 
 /** 会话列表里的最后一句预览，跳过选项和系统提示 */
-function previewOf(room: CharMsgRoom): string {
+function previewOf(room: CharMsgRoom, lang: ContentLang): string {
   for (let i = room.l.length - 1; i >= 0; i--) {
-    const [kind, , text, , choice] = room.l[i]
+    const [kind, , , , choice] = room.l[i]
     if (choice || kind === 2) continue
-    return text.replace(/\s*\n\s*/g, ' ')
+    return textOf(room.l[i], lang).replace(/\s*\n\s*/g, ' ')
   }
-  return room.l[room.l.length - 1]?.[2]?.replace(/\s*\n\s*/g, ' ') || ''
+  const last = room.l[room.l.length - 1]
+  return last ? textOf(last, lang).replace(/\s*\n\s*/g, ' ') : ''
 }
 
 /**
@@ -55,13 +73,28 @@ export default function MessageChat({
   accent,
   charName,
   avatarOf,
+  chars = [],
 }: {
   data: CharMessagesData
   rooms: string[]
   accent: string
   charName: string
   avatarOf: (id: number) => string | null
+  chars?: Character[]
 }) {
+  const { lang } = useLang()
+  const t = useUI()
+  const charById = useMemo(() => new Map(chars.map((c) => [c.id, c])), [chars])
+
+  /** 房间标题显示名：私聊标题就是角色中文名时换成本地化角色名；
+   *  群聊名与对不上档案的成员保留数据原文（无官方翻译）。 */
+  const titleOf = (room: CharMsgRoom): string => {
+    if (isGroup(room)) return room.t
+    const first = room.m[0]
+    if (!first || !first[1] || room.t !== first[1]) return room.t
+    const ch = first[0] != null ? charById.get(first[0]) : undefined
+    return ch ? pickLang(lang, ch.name, ch.names.en, ch.names.ko, ch.names.ja) : room.t
+  }
   const [ri, setRi] = useState(0)
   const [cat, setCat] = useState<'all' | 'chat' | 'group'>('all')
   const [open, setOpen] = useState(false)
@@ -126,11 +159,11 @@ export default function MessageChat({
   }, [visible, q, data])
 
   const groups = useMemo(() => {
-    if (cat === 'chat') return [{ key: 'chat', label: '聊天', rooms: listRooms }]
-    if (cat === 'group') return [{ key: 'group', label: '群组', rooms: listRooms }]
+    if (cat === 'chat') return [{ key: 'chat', label: 'msg_group_chat' as UIKey, rooms: listRooms }]
+    if (cat === 'group') return [{ key: 'group', label: 'msg_group_group' as UIKey, rooms: listRooms }]
     return [
-      { key: 'chat', label: '聊天', rooms: listRooms.filter((id) => data.rooms[id] && !isGroup(data.rooms[id])) },
-      { key: 'group', label: '群组', rooms: listRooms.filter((id) => data.rooms[id] && isGroup(data.rooms[id])) },
+      { key: 'chat', label: 'msg_group_chat' as UIKey, rooms: listRooms.filter((id) => data.rooms[id] && !isGroup(data.rooms[id])) },
+      { key: 'group', label: 'msg_group_group' as UIKey, rooms: listRooms.filter((id) => data.rooms[id] && isGroup(data.rooms[id])) },
     ].filter((g) => g.rooms.length > 0)
   }, [cat, listRooms, data])
 
@@ -166,6 +199,9 @@ export default function MessageChat({
   const hasChoice = Object.keys(picks).some((k) => k.startsWith(currentId + ':'))
   const pickKey = (start: number) => `${currentId}:${start}`
   const switchable = rooms.length > 1
+  /** 房间类别显示名：优先走 UI 词典（CAT_KEY），无 key 的类别回退中文现行文案 */
+  const catKey = CAT_KEY[room.c]
+  const catName = (catKey ? t(catKey) : '') || CAT_LABEL[room.c] || '巴拉聊天'
 
   return (
     <div className="mc">
@@ -173,31 +209,31 @@ export default function MessageChat({
         <div className="mc-picker mc-picker-full">
           <div className="mc-picker-head">
             <button className="mc-back" onClick={() => { setOpen(false); setQ('') }}>
-              ← 返回聊天
+              {t('msg_back')}
             </button>
-            <span className="mc-picker-title">选择聊天</span>
-            <span className="mc-picker-total">{rooms.length} 个</span>
+            <span className="mc-picker-title">{t('msg_pick_title')}</span>
+            <span className="mc-picker-total">{fmt(t('msg_count_total'), { n: rooms.length })}</span>
           </div>
           <div className="mc-picker-bar">
             <input
               className="mc-search"
-              placeholder="搜索聊天或成员"
+              placeholder={t('msg_search_ph')}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
           <div className="mc-cats">
             <button className={cat === 'all' ? 'on' : ''} onClick={() => setCat('all')}>
-              全部 <b>{counts.all}</b>
+              {t('voice_all')} <b>{counts.all}</b>
             </button>
             {counts.chat > 0 && (
               <button className={cat === 'chat' ? 'on' : ''} onClick={() => setCat('chat')}>
-                聊天 <b>{counts.chat}</b>
+                {t('msg_group_chat')} <b>{counts.chat}</b>
               </button>
             )}
             {counts.group > 0 && (
               <button className={cat === 'group' ? 'on' : ''} onClick={() => setCat('group')}>
-                群组 <b>{counts.group}</b>
+                {t('msg_group_group')} <b>{counts.group}</b>
               </button>
             )}
           </div>
@@ -205,7 +241,7 @@ export default function MessageChat({
             {groups.map((g) => (
               <div className="mc-group" key={g.key}>
                 {cat === 'all' && (
-                  <div className="mc-group-label">{g.label} <b>{g.rooms.length}</b></div>
+                  <div className="mc-group-label">{t(g.label)} <b>{g.rooms.length}</b></div>
                 )}
                 {g.rooms.map((id) => {
                   const r = data.rooms[id]
@@ -223,46 +259,48 @@ export default function MessageChat({
                         setQ('')
                       }}
                     >
-                      <RoomAvatar room={r} avatarOf={avatarOf} small />
+                      <RoomAvatar room={r} avatarOf={avatarOf} name={titleOf(r)} small />
                       <span className="mc-item-main">
-                        <b>{r.t}</b>
-                        <span>{previewOf(r)}</span>
+                        <b>{titleOf(r)}</b>
+                        <span>{previewOf(r, lang)}</span>
                       </span>
                       <span className="mc-item-side">
-                        <em>{no ? `${no} · ` : ''}{r.l.length} 条</em>
-                        {r.c === 'main' && <i>主线</i>}
+                        <em>{no ? `${no} · ` : ''}{nf(r.l.length)} {t('unit_msgs')}</em>
+                        {r.c === 'main' && <i>{t('msg_main_tag')}</i>}
                       </span>
                     </button>
                   )
                 })}
               </div>
             ))}
-            {listRooms.length === 0 && <div className="mc-empty">没有匹配的聊天</div>}
+            {listRooms.length === 0 && <div className="mc-empty">{t('msg_none_matched')}</div>}
           </div>
         </div>
       ) : (
         <>
           <div className="mc-top">
             <div className="mc-current">
-              <RoomAvatar room={room} avatarOf={avatarOf} />
+              <RoomAvatar room={room} avatarOf={avatarOf} name={titleOf(room)} />
               <div className="mc-current-main">
-                <b>{room.t}</b>
+                <b>{titleOf(room)}</b>
                 <em>
-                  {CAT_LABEL[room.c] || '巴拉聊天'}
-                  {' · '}{isGroup(room) ? `群聊 ${room.m.length > 1 ? room.m.length : Object.keys(room.sn).length} 人` : '私聊'}
-                  {' · '}{room.l.length} 条
+                  {catName}
+                  {' · '}{isGroup(room)
+                    ? fmt(t('msg_group_n'), { n: room.m.length > 1 ? room.m.length : Object.keys(room.sn).length })
+                    : t('msg_private')}
+                  {' · '}{nf(room.l.length)} {t('unit_msgs')}
                 </em>
               </div>
             </div>
             <div className="mc-top-actions">
               {hasChoice && (
-                <button className="mc-reset" onClick={() => setPicks({})} title="重新选择本条聊天的回复">
-                  ↺ 重选
+                <button className="mc-reset" onClick={() => setPicks({})} title={t('msg_reset_title')}>
+                  {t('msg_reset_pick')}
                 </button>
               )}
               {switchable && (
                 <button className="mc-switch" onClick={() => setOpen(true)}>
-                  切换聊天 <i>▾</i>
+                  {t('msg_switch')} <i>▾</i>
                 </button>
               )}
             </div>
@@ -274,7 +312,7 @@ export default function MessageChat({
                 const sel = picks[pickKey(it.start)]
                 return (
                   <div className="cc-choice" key={`c${it.start}`}>
-                    <span className="cc-choice-label">你的回复</span>
+                    <span className="cc-choice-label">{t('cc_choice_reply')}</span>
                     {it.group.map((ln, oi) => (
                       <button
                         key={ln}
@@ -283,14 +321,15 @@ export default function MessageChat({
                         onClick={() => setPicks((p) => ({ ...p, [pickKey(it.start)]: oi }))}
                       >
                         <i />
-                        <span>{room.l[ln][2]}</span>
+                        <span>{textOf(room.l[ln], lang)}</span>
                       </button>
                     ))}
                   </div>
                 )
               }
 
-              const [kind, slug, text] = room.l[it.i]
+              const [kind, slug] = room.l[it.i]
+              const text = textOf(room.l[it.i], lang)
               const prev = idx > 0 ? flow[idx - 1] : null
               const prevLine = prev?.t === 'line' ? room.l[prev.i] : null
               const sameSpeaker = kind === 0 && prevLine?.[0] === 0 && prevLine?.[1] === slug
@@ -306,7 +345,7 @@ export default function MessageChat({
                 return (
                   <div className="cc-msg me" key={`p${it.i}`}>
                     <div className="cc-bubble">
-                      <span className="cc-name">指挥官</span>
+                      <span className="cc-name">{commanderName(lang)}</span>
                       <p>{text}</p>
                     </div>
                   </div>
@@ -314,7 +353,10 @@ export default function MessageChat({
               }
 
               const meta = slug ? room.sn[slug] : undefined
-              const name = meta?.[1] || charName
+              const memChar = meta?.[0] != null ? charById.get(meta[0]) : undefined
+              const name = memChar
+                ? pickLang(lang, memChar.name, memChar.names.en, memChar.names.ko, memChar.names.ja)
+                : (meta?.[1] || charName)
               const avatar = meta?.[0] != null ? avatarOf(meta[0]) : null
               return (
                 <div className="cc-msg" key={`m${it.i}`}>
@@ -330,13 +372,13 @@ export default function MessageChat({
                 </div>
               )
             })}
-            {flow.length === 0 && <div className="cc-loading">这个聊天没有可显示的文本。</div>}
+            {flow.length === 0 && <div className="cc-loading">{t('cc_empty')}</div>}
           </div>
 
           {visible.length > 1 && (
             <div className="cc-foot mc-foot">
               <button className="cc-nav" disabled={ri <= 0} onClick={() => setRi((v) => Math.max(0, v - 1))}>
-                ← 上一个
+                {t('cc_prev')}
               </button>
               <span className="cc-pos">{Math.min(ri, visible.length - 1) + 1} / {visible.length}</span>
               <button
@@ -344,7 +386,7 @@ export default function MessageChat({
                 disabled={ri >= visible.length - 1}
                 onClick={() => setRi((v) => Math.min(visible.length - 1, v + 1))}
               >
-                下一个 →
+                {t('cc_next')}
               </button>
             </div>
           )}

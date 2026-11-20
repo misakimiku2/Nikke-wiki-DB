@@ -38,7 +38,7 @@ const OUT = path.join(ROOT, 'public', 'data', 'char_messages.json')
 const CHARS = path.join(ROOT, 'public', 'data', 'characters.json')
 
 const NICKNAME_RE = /\{AccountData\.NickName\}/g
-const clean = (s) => (s == null ? s : s.replace(NICKNAME_RE, '指挥官'))
+const clean = (s, nick = '指挥官') => (s == null ? s : s.replace(NICKNAME_RE, nick))
 const norm = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
 // 手工兜底：房间 slug / 角色内部命名与 characters.json 英文名对不上时
@@ -314,12 +314,19 @@ function main() {
 
   const rows = loadMessages()
   console.log(`消息 ${rows.length} 条`)
-  const textStmt = msgDb?.prepare('select "zh-CN" as z from Locale_SuddenMessage where Key=?')
+  const textStmt = msgDb?.prepare(
+    'select "zh-CN" as z, en, ko, ja from Locale_SuddenMessage where Key=?')
   const textOf = (key) => {
     try {
-      return textStmt?.get(key)?.z || ''
+      const r = textStmt?.get(key)
+      return {
+        zh: clean(r?.z),
+        en: clean(r?.en, 'Commander'),
+        ko: clean(r?.ko, '지휘관'),
+        ja: clean(r?.ja, '指揮官'),
+      }
     } catch {
-      return ''
+      return { zh: '', en: '', ko: '', ja: '' }
     }
   }
 
@@ -432,19 +439,20 @@ function main() {
       continue
     }
 
-    // 行：kind / sender / text / next / choice
+    // 行：kind / sender / 简中 / next / choice / 英文 / 韩文 / 日文
     // 先保留全部有文本的行，再按 id 建索引；ref 指向被丢掉的空行时退化为顺序往下。
     const kept = []
     for (const r of list) {
-      const text = clean(textOf(r.key))
-      if (!text) continue
+      const text = textOf(r.key)
+      if (!text.zh && !text.en && !text.ko && !text.ja) continue
       kept.push({ r, text })
     }
     const idxOf = new Map(kept.map((x, i) => [x.r.id, i]))
     const lines = kept.map(({ r, text }) => {
       const kind = r.type === 2 ? 0 : r.type === 1 ? 1 : 2
       const next = r.ref && idxOf.has(r.ref) ? idxOf.get(r.ref) : -1
-      return [kind, kind === 0 ? r.sender : null, text, next, r.choice ? 1 : 0]
+      return [kind, kind === 0 ? r.sender : null, text.zh, next, r.choice ? 1 : 0,
+        text.en, text.ko, text.ja]
     })
     if (lines.length === 0) {
       skipped.push({ room: roomId, group, key, lines: 0 })

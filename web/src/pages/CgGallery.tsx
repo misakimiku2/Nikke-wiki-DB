@@ -3,6 +3,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   CG_CATS, loadCgIndex, loadSpineModels, nf, setLinks, visibleCgs, type CgIndex,
 } from '../data'
+import { fmt, useUI, type UIKey } from '../ui'
+
+const CG_CAT_KEY: Record<string, UIKey> = {
+  '01_活动剧情CG': 'cg_cat_event',
+  '02_主线剧情CG': 'cg_cat_main',
+  '03_支线剧情CG': 'cg_cat_sub',
+  '04_角色过场': 'cg_cat_chara',
+  '05_其他动态CG': 'cg_cat_other',
+}
 
 const PAGE = 60
 
@@ -14,6 +23,7 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'error' | 'readonly'
  * 这里不再放灯箱，也不再引用离线合成的动画 WebP。
  */
 export default function CgGallery() {
+  const t = useUI()
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const [data, setData] = useState<CgIndex | null>(null)
@@ -257,7 +267,7 @@ export default function CgGallery() {
       <div className="sec-head">
         <div>
           <div className="idx">03 / GALLERY</div>
-          <h2>CG 图鉴</h2>
+          <h2>{t('cg_title')}</h2>
         </div>
         <div className="meta">{nf(pool.length)} IMAGES</div>
       </div>
@@ -266,7 +276,7 @@ export default function CgGallery() {
         <div className="search-box">
           <input
             className="search"
-            placeholder="搜索 CG 名称或活动键"
+            placeholder={t('cg_search_ph')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -275,47 +285,47 @@ export default function CgGallery() {
               type="button"
               className="search-clear"
               onClick={() => setQ('')}
-              aria-label="清空搜索"
-              title="清空"
+              aria-label={t('common_clear_search')}
+              title={t('common_clear')}
             >
               ×
             </button>
           )}
         </div>
         <button className={`chip ${cat === 'all' ? 'on' : ''}`} onClick={() => setCat('all')}>
-          全部
+          {t('cg_all')}
         </button>
         {CG_CATS.map((c) => (
           <button key={c.key} className={`chip ${cat === c.key ? 'on' : ''}`} onClick={() => setCat(c.key)}>
-            {c.label}
+            {t(CG_CAT_KEY[c.key] ?? 'cg_cat_other')}
           </button>
         ))}
         <button className={`chip ${onlyLinked ? 'on' : ''}`} onClick={() => setOnlyLinked((v) => !v)}>
-          有剧情
+          {t('cg_linked')}
         </button>
         <button className={`chip ${onlyCover ? 'on' : ''}`} onClick={() => setOnlyCover((v) => !v)}>
-          封面 {nCover}
+          {t('cg_badge_cover')} {nCover}
         </button>
         {writable.current && (
           <button className={`chip ${editMode ? 'on' : ''}`} onClick={enterEdit}>
-            {editMode ? '退出标注' : '标注模式'}
+            {editMode ? t('cg_annotate_exit') : t('cg_annotate')}
           </button>
         )}
       </div>
 
       {editMode && (
         <div className="pickbar">
-          <b>标注模式</b>
-          <span>点卡片 = 标记／取消「活动封面」；已标 {nCover} 张 · 活动覆盖 {coverStats.done}/{coverStats.total}</span>
+          <b>{t('cg_annotate')}</b>
+          <span>{fmt(t('cg_annotate_hint'), { n: nCover, d: coverStats.done, t: coverStats.total })}</span>
           <span className={`pick-save ${saveState}`}>
-            {saveState === 'saving' ? '保存中…' : saveState === 'saved' ? '已写入 cg_flags.json'
-              : saveState === 'error' ? '保存失败' : '改动自动保存'}
+            {saveState === 'saving' ? t('cg_annotate_saving') : saveState === 'saved' ? t('cg_annotate_done')
+              : saveState === 'error' ? t('cg_annotate_fail') : t('cg_annotate_autosave')}
           </span>
         </div>
       )}
 
       {filtered.length === 0 ? (
-        <div className="empty">没有匹配的 CG</div>
+        <div className="empty">{t('cg_none')}</div>
       ) : (
         <>
           <div className="cg-grid">
@@ -333,13 +343,15 @@ export default function CgGallery() {
                   saveRef.current() // 进查看器前先存渲染进度与滚动位置
                   navigate(`/cg/${encodeURIComponent(it.n)}`)
                 }}
-                  title={editMode ? `${it.n}（点击${marked ? '取消' : '标为'}封面）` : `${it.n} · 打开查看器`}
+                  title={editMode
+                    ? `${it.n}${fmt(t('cg_pick_hint'), { a: marked ? t('cg_annotate_unmark') : t('cg_annotate_mark'), b: t('cg_badge_cover') })}`
+                    : `${it.n} · ${t('cg_open_viewer')}`}
                 >
                   <img src={`/img/s/${it.h}.webp`} alt={it.n} loading="lazy" />
-                  {marked && <span className="cg-tag">封面</span>}
-                  {(it.d === 1 || spine.has(it.n)) && <span className="cg-dyn">动</span>}
+                  {marked && <span className="cg-tag">{t('cg_badge_cover')}</span>}
+                  {(it.d === 1 || spine.has(it.n)) && <span className="cg-dyn">{t('cg_badge_anim')}</span>}
                   {setInfo.get(it.n) && (
-                    <span className="cg-set">集 {setInfo.get(it.n)!.size + 1}</span>
+                    <span className="cg-set">{fmt(t('cg_set_n'), { n: setInfo.get(it.n)!.size + 1 })}</span>
                   )}
                   {linkCountOf(it) > 0 && <span className="cg-badge">{linkCountOf(it)}</span>}
                 </button>
@@ -347,7 +359,7 @@ export default function CgGallery() {
             })}
           </div>
           <div ref={sentinel} className="cg-more">
-            {limit < filtered.length ? '加载中…' : `— 共 ${nf(filtered.length)} 张 —`}
+            {limit < filtered.length ? t('common_loading') : fmt(t('cg_count_total'), { n: nf(filtered.length) })}
           </div>
         </>
       )}

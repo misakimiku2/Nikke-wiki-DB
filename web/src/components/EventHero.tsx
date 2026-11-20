@@ -1,5 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { StoryDetail } from '../data'
+import { pickLang, useLang } from '../lang'
+import { fmt, useUI } from '../ui'
 
 /**
  * 剧情主视觉卡片（主线 / 活动章节目录页顶部）。
@@ -38,35 +40,38 @@ export default function EventHero({
     : cover
       ? `/cover/${cover}.webp`
       : null
-  const kicker = detail.cat === 'main' ? '主线剧情' : '剧情活动'
+  const { lang } = useLang()
+  const t = useUI()
+  const locTitle = pickLang(lang, detail.title, detail.titles?.en, detail.titles?.ko, detail.titles?.ja)
+  const kicker = detail.cat === 'main' ? t('cat_main') : t('cat_event')
   const firstChapter = detail.segments[0]
   const preview = (firstChapter?.l ?? [])
-    .map((row) => row?.[2]?.replace(/\n/g, ' ') ?? '')
+    .map((row) => pickLang(lang, row?.[2] ?? '', row?.[3], row?.[4], row?.[5]).replace(/\n/g, ' '))
     .filter(Boolean)
     .join(' ')
     .slice(0, 108)
 
   return (
-    <section className={`event-hero${art ? '' : ' no-art'}`} aria-label={`${detail.title} 剧情卡片`}>
+    <section className={`event-hero${art ? '' : ' no-art'}`} aria-label={fmt(t('hero_card_aria'), { n: locTitle })}>
       {art && (
         <div className="eh-art">
           <div className="eh-stage">
-            <img className="eh-poster" src={art} alt={`${detail.title} 主视觉`} />
+            <img className="eh-poster" src={art} alt={fmt(t('hero_poster_alt'), { n: locTitle })} />
           </div>
         </div>
       )}
 
       <div className="eh-info">
         <span className="eh-kicker">{kicker}</span>
-        <h2 className={`eh-title${slug ? '' : ' eh-title-alt'}`}>{detail.title}</h2>
+        <h2 className={`eh-title${slug ? '' : ' eh-title-alt'}`}>{locTitle}</h2>
         <div className="eh-meta">
-          <span>{detail.segments.length} 章</span>
-          <span>{detail.segments.reduce((a, s) => a + s.l.length, 0)} 句</span>
-          <span>简中文本</span>
+          <span>{detail.segments.length} {t('unit_chapters')}</span>
+          <span>{detail.segments.reduce((a, s) => a + s.l.length, 0)} {t('unit_lines')}</span>
+          <span>{t('hero_text_lang')}</span>
         </div>
         {preview && <p className="eh-lede">{preview}…</p>}
         <div className="eh-actions">
-          <Link className="btn primary" to={`/story/${detail.id}?ch=0`}>开始阅读</Link>
+          <Link className="btn primary" to={`/story/${detail.id}?ch=0`}>{t('story_start')}</Link>
         </div>
       </div>
     </section>

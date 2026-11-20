@@ -11,6 +11,18 @@ import Notice, { NoticeDetail } from './pages/Notice'
 import CgGallery from './pages/CgGallery'
 import CgView from './pages/CgView'
 import { applyTheme, getInitialTheme, type Theme } from './theme'
+import { LANGS, useLang } from './lang'
+import { useUI, type UIKey } from './ui'
+
+/** 顶栏导航（桌面横排 / 移动端抽屉共用同一份配置；drawerOnly 只进抽屉） */
+const NAV: { to: string; end?: boolean; label: UIKey; drawerOnly?: boolean }[] = [
+  { to: '/', end: true, label: 'nav_home' },
+  { to: '/characters', label: 'nav_characters' },
+  { to: '/story', label: 'nav_story' },
+  { to: '/search', label: 'nav_search' },
+  { to: '/cg', label: 'nav_cg' },
+  { to: '/notice', label: 'notice_title', drawerOnly: true },
+]
 
 /**
  * 点进新页面回到顶部。之前没有这一步，从列表页深处点进角色页会保留列表的
@@ -29,10 +41,29 @@ function ScrollToTop() {
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme)
+  const { lang, setLang } = useLang()
+  const t = useUI()
+  const [menuOpen, setMenuOpen] = useState(false)
+  const { pathname } = useLocation()
 
   useEffect(() => {
     applyTheme(theme)
   }, [theme])
+
+  // 路由变化收起移动端抽屉；抽屉打开时锁住页面滚动
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [pathname])
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [menuOpen])
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
 
   /**
    * 切换主题。支持 View Transitions 的浏览器从点击处做圆形遮罩向四周扩散；
@@ -91,32 +122,64 @@ export default function App() {
             <img className="brand-logo" src="/site-logo.webp" alt="NIKKE 资料库" />
           </Link>
           <nav className="nav">
-            <NavLink to="/" end className={({ isActive }) => (isActive ? 'on' : '')}>
-              首页
-            </NavLink>
-            <NavLink to="/characters" className={({ isActive }) => (isActive ? 'on' : '')}>
-              角色
-            </NavLink>
-            <NavLink to="/story" className={({ isActive }) => (isActive ? 'on' : '')}>
-              剧情
-            </NavLink>
-            <NavLink to="/search" className={({ isActive }) => (isActive ? 'on' : '')}>
-              搜索
-            </NavLink>
-            <NavLink to="/cg" className={({ isActive }) => (isActive ? 'on' : '')}>
-              CG
-            </NavLink>
+            {NAV.filter((n) => !n.drawerOnly).map((n) => (
+              <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? 'on' : '')}>
+                {t(n.label)}
+              </NavLink>
+            ))}
           </nav>
-          <button
-            className="theme-toggle"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}
-            aria-label="切换主题"
-          >
-            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-          </button>
+          <div className="topbar-actions">
+            <div className="lang-toggle" role="group" aria-label="内容语言">
+              {LANGS.map((l) => (
+                <button
+                  key={l.key}
+                  className={lang === l.key ? 'on' : ''}
+                  onClick={() => setLang(l.key)}
+                  title={`内容语言：${l.label}`}
+                  aria-pressed={lang === l.key}
+                >
+                  {l.short}
+                </button>
+              ))}
+            </div>
+            <button
+              className="theme-toggle"
+              onClick={toggleTheme}
+              title={theme === 'dark' ? '切换到亮色' : '切换到暗色'}
+              aria-label="切换主题"
+            >
+              {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+            </button>
+            {/* 移动端：导航收进抽屉（≤860px 显示按钮，桌面隐藏） */}
+            <button
+              className="menu-toggle"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
+            >
+              {menuOpen ? <CloseIcon /> : <MenuIcon />}
+            </button>
+          </div>
         </div>
       </header>
+      {menuOpen && (
+        <div className="mobile-menu" onClick={() => setMenuOpen(false)}>
+          <nav className="mobile-nav" onClick={(e) => e.stopPropagation()} aria-label="站点导航">
+            {NAV.map((n) => (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.end}
+                className={({ isActive }) => (isActive ? 'on' : '')}
+                onClick={() => setMenuOpen(false)}
+              >
+                {t(n.label)}
+                <i aria-hidden>→</i>
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      )}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/characters" element={<Characters />} />
@@ -131,6 +194,23 @@ export default function App() {
         <Route path="*" element={<Stub code="404" title="页面不存在" note="回到首页" />} />
       </Routes>
     </>
+  )
+}
+
+/** 移动端抽屉开关：三横线 / 关闭叉 */
+function MenuIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  )
+}
+
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
   )
 }
 

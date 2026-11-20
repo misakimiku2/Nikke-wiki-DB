@@ -79,7 +79,9 @@ python build/normalize_cube_icons.py                 # 统一裁紧 / 缩放，�
 python build/export_ui_icons.py "icons-favoriteitem(hd)" --out favoriteicon --only "si_favoriteitem_ar_00,si_favoriteitem_mg_00,si_favoriteitem_rl_00,si_favoriteitem_sg_00,si_favoriteitem_smg_00,si_favoriteitem_sr_00,favoriteitem_common_prop_00,favoriteitem_common_prop_01,favoriteitem_common_prop_02"
 #   珍藏品图标：6 职业 Q 版娃娃（R/SR 共用），dp 池 icons-favoriteitem(hd)
 python build/build_char_spine.py          # → public/spine_char  角色 Spine 站姿模型
-python build/export_char_voices.py        # → public/voice + public/data/char_voices.json 角色语音（日语+国服中文）
+python build/export_char_voices.py        # → public/voice + public/data/char_voices.json 角色语音（日配 + 国服中配 + 国际服英配/韩配）
+#   英/韩语音来自游戏内下载的语言包：<patch>/en、<patch>/ko（结构同 ja 池）。
+#   每种语言每个角色一条 OGG 雪碧图，保留每条语音的起止秒数。
 # 角色三围（HP/ATK/DEF）由 nikke_extract 生成：python scripts/export_char_stats.py
 #   → staging/char_stats.json、staging/stat_curves.json，拷到 public/data/ 即可
 # 装备与魔方同理：python scripts/export_equip.py / export_cubes.py
@@ -114,6 +116,34 @@ VITE_NO_PUBLIC=1 npm run build            # 只出 assets，不拷 6G 素材（�
 ```
 
 `build/rerender_spine.py` 用于单独重渲染某个 Spine 模型，不必全量重跑。
+
+### 多语言（简中 / 英文 / 韩文 / 日文）
+
+- **文本**：`Locale_*.lsc` 本身是十语并列的 SQLite（`zh-CN / en / ja / ko / zh-TW / de / th / fr / es`）。
+  `build_db.py` 的 `backfill_line_locale()` 会按台词 key 从所有 `Locale_*` 表回填
+  `story_lines.text_en / text_ko / text_ja`，不依赖上游剧情 JSON 是否带这些字段；
+  主线/活动之外的个人剧情、支线、咨询、日常也一次补齐。
+- **角色 / 技能**：`build_characters.py` 读取 `desc_ja/desc_ko`、`intro_en/intro_ja/intro_ko`；
+  `skill_strings` 本来就带 en/ja/ko，`export_char_skills.py` 输出
+  `nameEn/nameKo/nameJa/descEn/descKo/descJa` 与 `termsEn/termsKo/termsJa`。
+- **巴拉短信**：`export_char_messages.mjs` 在行尾追加英文/韩文/日文三列，前端按内容语言切换。
+- **语音**：在游戏内把语音语言切到 English / 한국어，客户端会下载到 `<patch>/en`、`<patch>/ko`
+  （与 `ja` 池同构）。`export_char_voices.py` 扫描三个池，输出 `.en.ogg` / `.ko.ogg` 雪碧图与每条的时间轴；
+  日配就是主雪碧图 `<id>.ogg`，无需单独提取。
+- **剧情标题**：`story_index.json` 的 `titles`、剧情分片每段的 `ts:[en,ko,ja]`、`char_stories.json` 的记录 `ts`
+  与章节 `ts`（Locale_NikkeEpisode 官方章节名）由 `export_web.py / export_story.py / export_char_stories.py`
+  按 bucket 前缀查 Locale 表生成；主线小节名来自 `build/main_section_names.json`
+  （上游 `export_main_section_names.py` 现输出四语）。覆盖率见 `verify.py` 输出
+  （main/side_story 单元 100%、nikke 89%、event 51%、sub 71%；查不到官方译名的一律回退中文）。
+- **CG 剧情链接**：`export_cg.py` 给每条链接回填 `l4/s4/p4`（段落首句台词、说话人名、段落标题的
+  en/ko/ja，来源 story_lines 四语列 + 角色档案 + Locale 标题/主线段名表）；无官方译名的（旁白、
+  NPC 说话人、event 段名等）回退中文原文。
+- **部队名**：`public/data/squad_names.json`（export_char_meta.mjs 产出）提供部队名与世界观介绍的四语译名，
+  key 为中文名；人工部队名无官方译名不进表。
+- **搜索**：`export_search.py` 按语言输出四套分片（manifest v2：`shards: {zh,en,ko,ja}`），
+  前端按内容语言加载对应分片搜索，行号跨语言对齐。
+- **界面**：顶栏 `中 / EN / KO / JA` 切换游戏内容文本与界面 chrome；界面文案词典在 `web/src/ui.ts`
+  （四列元组，缺 key 回退简中）。公告正文仍为中文。
 
 ### 重新提取分层立绘素材（FG/BG）
 

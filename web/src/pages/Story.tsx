@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { loadStoryIndex, nf, type StoryUnit } from '../data'
+import { pickLang, useLang } from '../lang'
+import { useUI, type UIKey } from '../ui'
 
 export default function Story() {
   const [units, setUnits] = useState<StoryUnit[] | null>(null)
   const [params, setParams] = useSearchParams()
+  const { lang } = useLang()
+  const t = useUI()
 
   useEffect(() => {
     loadStoryIndex().then(setUnits).catch(() => setUnits([]))
@@ -48,7 +52,7 @@ export default function Story() {
       <div className="sec-head">
         <div>
           <div className="idx">02 / STORY</div>
-          <h2>剧情全文</h2>
+          <h2>{t('story_title')}</h2>
         </div>
         <div className="meta">{nf(units.length)} EPISODES · {nf(units.reduce((a, b) => a + b.lines, 0))} LINES</div>
       </div>
@@ -60,43 +64,46 @@ export default function Story() {
             className={`chip ${cat === c.cat ? 'on' : ''}`}
             onClick={() => pickCat(c.cat)}
           >
-            {c.label} · {c.n}
+            {t(`cat_${c.cat}` as UIKey)} · {c.n}
           </button>
         ))}
       </div>
 
       {shown.length === 0 ? (
-        <div className="empty">暂无剧情</div>
+        <div className="empty">{t('story_none')}</div>
       ) : (
         <div className="story-grid">
-          {shown.map((u) => (
-            <Link key={u.id} to={`/story/${u.id}`} className="story-card">
-              <div className="story-cover">
-                {u.cover
-                  ? <img src={`/cover/${u.cover}.webp`} alt="" loading="lazy" />
-                  : (
-                    /* 没有可用 CG 的剧情用排印式封面兜底：首字描边水印。
-                       标题、句数已在卡片正文里，这里不再重复。 */
-                    <span className="story-cover-fallback" aria-hidden>
-                      <span className="scf-mark">{u.title.slice(0, 1)}</span>
-                    </span>
-                  )}
-                <span className="story-no">
-                  {u.chapter !== null && u.chapter !== undefined
-                    ? String(u.chapter).padStart(2, '0')
-                    : u.label.slice(0, 2)}
-                </span>
-              </div>
-              <div className="story-body">
-                <h3>{u.title}</h3>
-                <div className="story-meta">
-                  <span>{nf(u.lines)} 句</span>
-                  <span>{u.segments} 段</span>
-                  {u.source === 'locale_fill' && <span className="tag">补全</span>}
+          {shown.map((u) => {
+            const title = pickLang(lang, u.title, u.titles?.en, u.titles?.ko, u.titles?.ja)
+            return (
+              <Link key={u.id} to={`/story/${u.id}`} className="story-card">
+                <div className="story-cover">
+                  {u.cover
+                    ? <img src={`/cover/${u.cover}.webp`} alt="" loading="lazy" />
+                    : (
+                      /* 没有可用 CG 的剧情用排印式封面兜底：首字描边水印。
+                         标题、句数已在卡片正文里，这里不再重复。 */
+                      <span className="story-cover-fallback" aria-hidden>
+                        <span className="scf-mark">{title.slice(0, 1)}</span>
+                      </span>
+                    )}
+                  <span className="story-no">
+                    {u.chapter !== null && u.chapter !== undefined
+                      ? String(u.chapter).padStart(2, '0')
+                      : u.label.slice(0, 2)}
+                  </span>
                 </div>
-              </div>
-            </Link>
-          ))}
+                <div className="story-body">
+                  <h3>{title}</h3>
+                  <div className="story-meta">
+                    <span>{nf(u.lines)} {t('unit_lines')}</span>
+                    <span>{u.segments} {t('unit_segs')}</span>
+                    {u.source === 'locale_fill' && <span className="tag">{t('story_fill')}</span>}
+                  </div>
+                </div>
+              </Link>
+            )
+          })}
         </div>
       )}
     </div>

@@ -25,24 +25,46 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(ROOT, "data", "nikke.db")
 MANIFEST = os.path.join(ROOT, "public", "manifest.json")
 OUT = os.path.join(ROOT, "public", "data", "cg_index.json")
+CHARS = os.path.join(ROOT, "public", "data", "characters.json")
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from export_story import load_locale_titles   # noqa: E402  剧情标题四语（Stage/MainScenario/NikkeEpisode/Counseling…）
+
+
+def load_char_names():
+    """角色中文名 -> {en,ko,ja}（characters.json 的 names 列），供链接说话人本地化。"""
+    try:
+        d = json.load(open(CHARS, encoding="utf-8"))
+    except Exception:
+        return {}
+    items = d.get("items", []) if isinstance(d, dict) else d
+    out = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        zh = it.get("name")
+        names = it.get("names") or {}
+        if zh and (names.get("en") or names.get("ko") or names.get("ja")):
+            out[zh] = {l: names.get(l) for l in ("en", "ko", "ja")}
+    return out
 
 
 def main():
     con = sqlite3.connect(DB)
 
-    # ---- 段落元信息：segment_id -> (unit_id, 标题, 行数, 单元内起始行号) ----
+    # ---- 段落元信息：segment_id -> (unit_id, 标题, 行数, 单元内起始行号, group_key) ----
     # 排序必须与 export_story.py 的分片结构一致（unit -> seg.sort_order -> seq）
     seg_rows = con.execute("""
-        SELECT s.id, s.unit_id, s.title, s.part,
+        SELECT s.id, s.unit_id, s.title, s.part, s.group_key,
                (SELECT COUNT(*) FROM story_lines l WHERE l.segment_id = s.id)
         FROM story_segments s ORDER BY s.unit_id, s.sort_order
     """).fetchall()
     counter = defaultdict(int)   # unit_id -> 累计行号
-    seg_meta = {}                # sid -> (uid, title, lcount, base)
-    for (sid, uid, stitle, spart, lcount) in seg_rows:
+    seg_meta = {}                # sid -> (uid, title, lcount, base, group_key)
+    for (sid, uid, stitle, spart, gkey, lcount) in seg_rows:
         if not lcount:
             continue
-        seg_meta[sid] = (uid, stitle or spart or "", lcount, counter[uid])
+        seg_meta[sid] = (uid, stitle or spart or "", lcount, counter[uid], gkey)
         counter[uid] += lcount
 
     # ---- 行 -> 段内偏移；段落首句 ----
@@ -56,13 +78,29 @@ def main():
             line_pos[lid] = off
 
     first_line = {}
-    for sid, sp, txt in con.execute("""
-        SELECT segment_id, speaker, text_zh FROM story_lines
+    for sid, sp, txt, en, ko, ja in con.execute("""
+        SELECT segment_id, speaker, text_zh, text_en, text_ko, text_ja FROM story_lines
         WHERE text_zh IS NOT NULL AND text_zh <> ''
         ORDER BY segment_id, seq
     """):
         if sid not in first_line:
-            first_line[sid] = (sp or "", txt)
+            first_line[sid] = (sp or "", txt, en or "", ko or "", ja or "")
+
+    # ---- 四语回填用的表 ----
+    locale_titles = load_locale_titles()
+    # 主线段名不走 Locale 表（export_main_section_names.py 从游戏 UI 文本提取），
+    # 与 Locale 命中的条目合并成一张 group_key -> 四语 的查找表
+    section_names = {}
+    try:
+        with open(os.path.join(ROOT, "build", "main_section_names.json"), encoding="utf-8") as f:
+            section_names = json.load(f)
+    except Exception:
+        pass
+    for gk, v in section_names.items():
+        key = f"{gk}_title"
+        if key not in locale_titles and all(v.get(l) for l in ("en", "ko", "ja", "zh")):
+            locale_titles[key] = {l: v[l] for l in ("zh", "en", "ko", "ja")}
+    char_names = load_char_names()
 
     # ---- CG -> 段落（同段落多行合并，保留最靠上的触发点）----
     links = defaultdict(dict)    # cg -> {sid: (off, speaker, text)}
@@ -77,26 +115,44 @@ def main():
         off = line_pos.get(lid, 0)
         d = links[cg]
         if sid not in d or off < d[sid][0]:
-            sp, txt = first_line.get(sid, ("", ""))
+            sp, txt = first_line.get(sid, ("", ""))[:2]
             d[sid] = (off, sp, txt)
 
     out_links = {}
     n_entries = 0
+    n_l4 = n_s4 = n_p4 = 0
     for cg, segs in links.items():
         lst = []
         for sid, (off, sp, txt) in sorted(segs.items(), key=lambda x: seg_meta[x[0]][3]):
-            uid, stitle, lcount, base = seg_meta[sid]
-            lst.append({
+            uid, stitle, lcount, base, gkey = seg_meta[sid]
+            entry = {
                 "u": uid,
                 "i": base + off,          # 定位行号（单元内绝对行）
                 "s": sp,
                 "t": (txt or "")[:120],
                 "n": lcount,              # 段落行数
                 "p": stitle,              # 段落标题
-            })
+            }
+            # 四语回填：段落标题（Locale 官方名）、首句台词、说话人名。
+            # 只在 zh 数据与库内/官方简中一致时给，避免上游改动后错配。
+            fl = first_line.get(sid)
+            if fl and all(fl[2:]) and (fl[1] or "")[:120] == entry["t"]:
+                entry["l4"] = {"en": fl[2], "ko": fl[3], "ja": fl[4]}
+                n_l4 += 1
+            nm = char_names.get(sp)
+            if nm and all(nm.values()):
+                entry["s4"] = nm
+                n_s4 += 1
+            loc4 = locale_titles.get(f"{gkey}_title") if gkey else None
+            if loc4 and all(loc4.get(l) for l in ("en", "ko", "ja")) \
+                    and loc4.get("zh") == stitle:
+                entry["p4"] = {l: loc4[l] for l in ("en", "ko", "ja")}
+                n_p4 += 1
+            lst.append(entry)
         out_links[cg] = lst
         n_entries += len(lst)
     print(f"有关联的 CG：{len(out_links)} 个，段落条目 {n_entries} 条")
+    print(f"  四语回填：台词 {n_l4} / 说话人 {n_s4} / 段名 {n_p4}")
 
     manifest = json.load(open(MANIFEST, encoding="utf-8"))
     covers = {n for (n,) in con.execute("SELECT name FROM cg_assets WHERE is_cover=1")}

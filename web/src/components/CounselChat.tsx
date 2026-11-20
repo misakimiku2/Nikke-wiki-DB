@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   loadCounselFlow, loadStoryUnit,
-  type CharStoryRec, type CounselFlow, type StoryDetail,
+  type CharStoryRec, type Character, type CounselFlow, type StoryDetail,
 } from '../data'
+import { commanderName, pickLang, useLang } from '../lang'
+import { useUI } from '../ui'
 
 type LineKind = 'char' | 'player' | 'narr'
 
@@ -20,12 +22,17 @@ export default function CounselChat({
   accent,
   avatar,
   charName,
+  chars = [],
 }: {
   units: CharStoryRec[]
   accent: string
   avatar: string | null
   charName: string
+  /** 角色档案：发言人中文名 / speaker id 对上时用本地化角色名 */
+  chars?: Character[]
 }) {
+  const { lang } = useLang()
+  const t = useUI()
   const [ui, setUi] = useState(0)
   const [si, setSi] = useState(0)
   const [detail, setDetail] = useState<StoryDetail | null>(null)
@@ -33,6 +40,21 @@ export default function CounselChat({
   const [picks, setPicks] = useState<Record<string, number>>({})
   const feedRef = useRef<HTMLDivElement>(null)
   const firstMount = useRef(true)
+
+  /** 与 StoryReader 同一套发言人解析：先按 speaker id，再按中文名兜底 */
+  const speakerName = useMemo(() => {
+    const bySpeaker: Record<string, Character> = {}
+    const byName: Record<string, Character> = {}
+    for (const c of chars) {
+      if (c.speaker) bySpeaker[c.speaker] = c
+      if (c.names.zh) byName[c.names.zh] = c
+    }
+    return (sp: string, spid: string): string => {
+      if (lang === 'zh') return sp
+      const c = bySpeaker[spid] || byName[sp]
+      return c ? pickLang(lang, sp, c.names.en, c.names.ko, c.names.ja) : sp
+    }
+  }, [chars, lang])
 
   const unit = units[Math.min(ui, units.length - 1)]
 
@@ -119,7 +141,7 @@ export default function CounselChat({
         <div className="cc-units">
           {units.map((u, i) => (
             <button key={u.id} className={i === ui ? 'on' : ''} onClick={() => setUi(i)}>
-              {u.t}
+              {pickLang(lang, u.t, u.ts?.en, u.ts?.ko, u.ts?.ja)}
             </button>
           ))}
         </div>
@@ -129,7 +151,7 @@ export default function CounselChat({
         <div className="cc-pills">
           {sessions.map((s, i) => (
             <button key={s.g} className={i === si ? 'on' : ''} onClick={() => setSi(i)}
-              title={s.t}>
+              title={pickLang(lang, s.t, s.ts?.[0], s.ts?.[1], s.ts?.[2])}>
               {String(i + 1).padStart(2, '0')}
             </button>
           ))}
@@ -137,14 +159,14 @@ export default function CounselChat({
       )}
 
       <div className="cc-feed" ref={feedRef}>
-        {!detail && <div className="cc-loading">载入对话中…</div>}
+        {!detail && <div className="cc-loading">{t('cc_loading')}</div>}
         {detail && seg && rendered.map((it) => {
           if (it.t === 'choice') {
             const key = pickKeyOf(it.grp[0])
             const sel = picks[key]
             return (
               <div className="cc-choice" key={`c${it.grp[0]}`}>
-                <span className="cc-choice-label">你的回答</span>
+                <span className="cc-choice-label">{t('cc_choice')}</span>
                 {it.grp.map((ln, oi) => (
                   <button
                     key={ln}
@@ -153,21 +175,22 @@ export default function CounselChat({
                     onClick={() => setPicks((p) => ({ ...p, [key]: oi }))}
                   >
                     <i />
-                    <span>{seg.l[ln - 1][2]}</span>
+                    <span>{pickLang(lang, seg.l[ln - 1][2], seg.l[ln - 1][3], seg.l[ln - 1][4], seg.l[ln - 1][5])}</span>
                   </button>
                 ))}
               </div>
             )
           }
           const n = it.n
-          const [sp, , txt] = seg.l[n - 1]
+          const [sp, spid, zh, en, ko, ja] = seg.l[n - 1]
+          const txt = pickLang(lang, zh, en, ko, ja)
           const kind = kinds[n - 1]
           if (kind === 'narr') return <div className="cc-narr" key={`n${n}`}>{txt}</div>
           if (kind === 'player') {
             return (
               <div className="cc-msg me" key={`p${n}`}>
                 <div className="cc-bubble">
-                  <span className="cc-name">指挥官</span>
+                  <span className="cc-name">{commanderName(lang)}</span>
                   <p>{txt}</p>
                 </div>
               </div>
@@ -177,29 +200,30 @@ export default function CounselChat({
           const idx = rendered.findIndex((x) => x.t === 'line' && x.n === n)
           const prev = idx > 0 ? rendered[idx - 1] : null
           const prevIsChar = !!prev && prev.t === 'line' && kinds[prev.n - 1] === 'char'
+          const spDisp = sp ? speakerName(sp, spid) : charName
           return (
             <div className="cc-msg" key={`m${n}`}>
               {!prevIsChar && (
                 avatar
                   ? <span className="cc-ava"><img src={avatar} alt="" loading="lazy" /></span>
-                  : <span className="cc-ava cc-ava-ph" aria-hidden>{(sp || charName).slice(0, 1)}</span>
+                  : <span className="cc-ava cc-ava-ph" aria-hidden>{spDisp.slice(0, 1)}</span>
               )}
               <div className="cc-bubble">
-                <span className="cc-name" style={{ color: accent }}>{sp || charName}</span>
+                <span className="cc-name" style={{ color: accent }}>{spDisp}</span>
                 <p>{txt}</p>
               </div>
             </div>
           )
         })}
         {detail && seg && rendered.length === 0 && (
-          <div className="cc-loading">这个会话没有可显示的文本。</div>
+          <div className="cc-loading">{t('cc_empty')}</div>
         )}
       </div>
 
       {multi && (
         <div className="cc-foot">
           <button className="cc-nav" disabled={si <= 0} onClick={() => setSi((v) => Math.max(0, v - 1))}>
-            ← 上一次
+            {t('cc_prev')}
           </button>
           <span className="cc-pos">{si + 1} / {sessions.length}</span>
           <button
@@ -207,7 +231,7 @@ export default function CounselChat({
             disabled={si >= sessions.length - 1}
             onClick={() => setSi((v) => Math.min(sessions.length - 1, v + 1))}
           >
-            下一次 →
+            {t('cc_next')}
           </button>
         </div>
       )}

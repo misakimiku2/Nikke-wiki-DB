@@ -154,14 +154,22 @@ def main():
     chars = json.load(open(os.path.join(ROOT, "public", "data", "characters.json"), encoding="utf-8"))["items"]
 
     kind_label = {}
-    for (k, zh) in db.execute("select key, zh from skill_strings where key like 'skill_name_%'"):
-        kind_label[k] = zh
+    for (k, zh, en, ko, ja) in db.execute(
+            "select key, zh, en, ko, ja from skill_strings where key like 'skill_name_%'"):
+        kind_label[k] = (zh, en, ko, ja)
 
-    def text(key):
+    def text_langs(key):
+        """技能 key -> (zh, en, ko, ja)；国际服缺条目时回退国服中文。"""
         if not key:
-            return None
-        r = db.execute("select zh from skill_strings where key=?", (key,)).fetchone()
-        return r[0] if r else None
+            return (None, None, None, None)
+        r = db.execute("select zh, en, ko, ja from skill_strings where key=?", (key,)).fetchone()
+        if r:
+            return r
+        zh = cn_strings.get(key)
+        return (zh, None, None, None) if zh else (None, None, None, None)
+
+    def text_any(key):
+        return next((x for x in text_langs(key) if x), None)
 
     # 国服文案回退：表内键与国际服同构（{sid}_name / {sid}_description / {gid}_{n}_add_des）
     cn_db = None
@@ -174,20 +182,32 @@ def main():
     except Exception as e:
         print(f"! 国服 Locale_Skill 读取失败（跳过）：{e}")
 
-    def text_any(key):
-        return text(key) or cn_strings.get(key) or None
-
     # 词组表：<词组ID>_<行号>_add_des → 专有名词解释（游戏内「技能资讯」弹窗）
-    terms = {}
-    for (k, zh) in db.execute("select key, zh from skill_strings where key like '%_add_des'"):
-        m = re.match(r"^(\d+)_(\d+)_add_des$", k)
-        if m and zh:
-            terms.setdefault(int(m.group(1)), []).append((int(m.group(2)), clean(zh)))
+    terms = {"zh": {}, "en": {}, "ko": {}, "ja": {}}
+
+    def add_term(key, zh, en, ko, ja):
+        m = re.match(r"^(\d+)_(\d+)_add_des$", key)
+        if not m:
+            return
+        gid, n = int(m.group(1)), int(m.group(2))
+        for lang, val in (("zh", zh), ("en", en), ("ko", ko), ("ja", ja)):
+            if val:
+                terms[lang].setdefault(gid, {})[n] = clean(val)
+
+    for (k, zh, en, ko, ja) in db.execute(
+            "select key, zh, en, ko, ja from skill_strings where key like '%_add_des'"):
+        add_term(k, zh, en, ko, ja)
     for k, zh in cn_strings.items():
-        m = re.match(r"^(\d+)_(\d+)_add_des$", k)
-        if m and zh:
-            terms.setdefault(int(m.group(1)), []).append((int(m.group(2)), clean(zh)))
-    terms = {gid: [t for _n, t in sorted(lines)] for gid, lines in terms.items()}
+        add_term(k, zh, None, None, None)
+    terms = {lang: {gid: [t for _n, t in sorted(lines.items())] for gid, lines in table.items()}
+             for lang, table in terms.items()}
+
+    # 国服先行角色的槽位名（SkillInfoTable 无行，kind 只能按槽位推导）
+    SLOT_KIND = {
+        1: ("技能1", "Skill 1", "스킬 1", "スキル1"),
+        2: ("技能2", "Skill 2", "스킬 2", "スキル2"),
+        3: ("爆裂技能", "Burst Skill", "버스트 스킬", "バーストスキル"),
+    }
 
     items = {}
     no_level = 0
@@ -197,33 +217,78 @@ def main():
         for pre in "12":
             for slot in range(10):
                 sid_s = f"{pre}{uid:03d}{slot}"
-                nm = text_any(sid_s + "_name")
+                nm_zh, nm_en, nm_ko, nm_ja = text_langs(sid_s + "_name")
+                nm = nm_zh or nm_en or nm_ko or nm_ja
                 if not nm:
                     continue
                 sid = int(sid_s)
                 rec = info.get(sid)
                 if rec is None:
-                    desc = text_any(sid_s + "_description") or ""
+                    desc_zh, desc_en, desc_ko, desc_ja = text_langs(sid_s + "_description")
                     if uid >= 8000:
                         # 国服先行角色（SkillInfoTable 无行）：kind 由槽位推导，无逐级数值
-                        kind = {1: "技能1", 2: "技能2", 3: "爆裂技能"}.get(slot, "")
-                        skills.append({"sid": sid, "kind": kind, "name": nm, "desc": clean(desc),
+                        kind_zh, kind_en, kind_ko, kind_ja = SLOT_KIND.get(slot, ("", "", "", ""))
+                        skills.append({"sid": sid, "kind": kind_zh, "name": nm,
+                                       "desc": clean(desc_zh or ""),
                                        "values": [], "levels": 10, "icon": ""})
+                        added = skills[-1]
                     else:
-                        skills.append({"sid": sid, "kind": "", "name": nm, "desc": clean(desc),
+                        skills.append({"sid": sid, "kind": "", "name": nm,
+                                       "desc": clean(desc_zh or ""),
                                        "values": [], "levels": 0, "icon": ""})
+                        added = skills[-1]
+                        kind_en = kind_ko = kind_ja = ""
+                    if nm_en:
+                        added["nameEn"] = nm_en
+                    if nm_ko:
+                        added["nameKo"] = nm_ko
+                    if nm_ja:
+                        added["nameJa"] = nm_ja
+                    if desc_en:
+                        added["descEn"] = clean(desc_en)
+                    if desc_ko:
+                        added["descKo"] = clean(desc_ko)
+                    if desc_ja:
+                        added["descJa"] = clean(desc_ja)
+                    if kind_en:
+                        added["kindEn"] = kind_en
+                    if kind_ko:
+                        added["kindKo"] = kind_ko
+                    if kind_ja:
+                        added["kindJa"] = kind_ja
                     no_level += 1
                     continue
-                kind = kind_label.get((rec["kind"] or "").removeprefix("Locale_Skill:"), "")
+                kind_zh, kind_en, kind_ko, kind_ja = kind_label.get(
+                    (rec["kind"] or "").removeprefix("Locale_Skill:"), ("", "", "", ""))
                 desc_ref = rec["desc_ref"] or (sid_s + "_description")
-                desc = text(desc_ref.removeprefix("Locale_Skill:")) \
-                    or text(f"{sid_s}_description") or ""
+                d1 = text_langs(desc_ref.removeprefix("Locale_Skill:"))
+                d2 = text_langs(f"{sid_s}_description")
+                desc_zh, desc_en, desc_ko, desc_ja = (a or b for a, b in zip(d1, d2))
                 levels = rec["levels"]
                 max_lv = max(levels)
                 values = [levels.get(lv) or [] for lv in range(1, max_lv + 1)]
-                skills.append({"sid": sid, "kind": kind, "name": nm,
-                               "desc": clean(desc), "values": values, "levels": max_lv,
-                               "icon": rec.get("icon", "")})
+                sk = {"sid": sid, "kind": kind_zh, "name": nm,
+                      "desc": clean(desc_zh or ""), "values": values, "levels": max_lv,
+                      "icon": rec.get("icon", "")}
+                if nm_en:
+                    sk["nameEn"] = nm_en
+                if nm_ko:
+                    sk["nameKo"] = nm_ko
+                if nm_ja:
+                    sk["nameJa"] = nm_ja
+                if desc_en:
+                    sk["descEn"] = clean(desc_en)
+                if desc_ko:
+                    sk["descKo"] = clean(desc_ko)
+                if desc_ja:
+                    sk["descJa"] = clean(desc_ja)
+                if kind_en:
+                    sk["kindEn"] = kind_en
+                if kind_ko:
+                    sk["kindKo"] = kind_ko
+                if kind_ja:
+                    sk["kindJa"] = kind_ja
+                skills.append(sk)
         if skills:
             order = {"技能1": 0, "技能2": 1, "爆裂技能": 2}
             skills.sort(key=lambda s: (order.get(s["kind"], 3), s["sid"]))
@@ -234,7 +299,9 @@ def main():
             print(json.dumps({uid: items.get(uid)}, ensure_ascii=False, indent=1)[:2000])
 
     with open(OUT, "w", encoding="utf-8") as f:
-        json.dump({"total": len(items), "items": items, "terms": terms}, f,
+        json.dump({"total": len(items), "items": items,
+                   "terms": terms["zh"], "termsEn": terms["en"],
+                   "termsKo": terms["ko"], "termsJa": terms["ja"]}, f,
                   ensure_ascii=False, separators=(",", ":"))
 
     n_skills = sum(len(v) for v in items.values())

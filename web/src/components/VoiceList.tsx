@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PlayPauseIcon from './PlayPauseIcon'
 import type { CharVoice, CharVoiceCat, CharVoiceData } from '../data'
+import { useLang } from '../lang'
+import { fmt, useUI, type UIKey } from '../ui'
 
 /**
- * 角色语音区（日配 + 国服中配）。
+ * 角色语音区（国服中配 + 日配 + 国际服英配 / 韩配）。
  *
  * 每种语言是一条 OGG 雪碧图。播放不走 <audio> + currentTime：媒体元素的
  * currentTime 有更新粒度，seek 到片段起点时也可能落到后一个 Ogg 包，导致
@@ -11,11 +13,12 @@ import type { CharVoice, CharVoiceCat, CharVoiceData } from '../data'
  * AudioBufferSourceNode.start(when, offset, duration) 片段播放，起止是
  * 采样级精确的。
  *
- * 国服版本落后，中文语音是可选的：某条没有中文时回退日语，并标出「中配缺失」；
- * 整个角色没有中文时只显示日配，并给出提示。
+ * 中配来自国服池（版本较旧，可能缺条）；英/韩配来自国际服语言包，
+ * 某条缺失时该语言模式下直接跳过，不回退到别的语言。
  */
 
-type Clip = { url: string; s: number; e: number; zh: boolean }
+type VoiceLang = 'zh' | 'ja' | 'en' | 'ko'
+type Clip = { url: string; s: number; e: number; lang: VoiceLang }
 
 const SHARED: {
   ctx: AudioContext | null
@@ -34,8 +37,8 @@ function getCtx(): AudioContext {
 
 function cacheBuffer(key: string, buf: AudioBuffer) {
   SHARED.cache.set(key, buf)
-  // 一条雪碧图解码后可能有几十 MB，只保留最近两个（通常就是中日两张）
-  while (SHARED.cache.size > 2) {
+  // 一条雪碧图解码后可能有几十 MB，最多保留最近四张（中/日/英/韩）
+  while (SHARED.cache.size > 4) {
     const first = SHARED.cache.keys().next().value
     if (first === undefined) break
     SHARED.cache.delete(first)
@@ -43,9 +46,21 @@ function cacheBuffer(key: string, buf: AudioBuffer) {
 }
 
 const hasZhClip = (v: CharVoice) => v.zs != null && v.ze != null
+const hasEnClip = (v: CharVoice) => v.es != null && v.ee != null && v.ee > v.es
+const hasKoClip = (v: CharVoice) => v.ks != null && v.ke != null && v.ke > v.ks
 // 登录语音（titlecall）部分角色只有中文音频（国服先配、国际服池无对应日语），
 // 这类条目 s == e == 0，日配模式下不可播放，列表与计数都要跳过。
 const hasJaClip = (v: CharVoice) => v.e > v.s
+
+/** 配音页签固定短标签：与顶栏语言切换按钮同款字形（中 / JA / EN / KO），
+ *  不随界面语言变化——点击只挪高亮，按钮文本永远不变 */
+const VOICE_SHORT: Record<VoiceLang, string> = { zh: '中', ja: 'JA', en: 'EN', ko: 'KO' }
+
+/** 语音类别名（cat.k）→ UI 词典 key；不在表里的类别回退数据自带的中文 */
+const CAT_KEY: Record<string, UIKey> = {
+  lobby: 'voice_cat_lobby', outpost: 'voice_cat_outpost', upgrade: 'voice_cat_upgrade',
+  field: 'voice_cat_field', battle: 'voice_cat_battle', title: 'voice_cat_title',
+}
 
 export default function VoiceList({
   data,
@@ -54,12 +69,31 @@ export default function VoiceList({
   data: CharVoiceData
   accent: string
 }) {
-  const hasZh = !!data.fz && (data.zc ?? 0) > 0
+  const { lang: contentLang } = useLang()
+  const t = useUI()
+  /** 类别 chip 显示名：按 cat.k 查 UI 词典，未知类别回退数据自带的中文 */
+  const catLabel = (k: string, zh: string): string => {
+    const key = CAT_KEY[k]
+    return key ? t(key) : zh
+  }
   // 国服先行角色（婴宁/画皮）：只有国服中文配音，主雪碧图 f 本身就是中文轨
   const zhOnly = !!data.zhOnly
+  const hasZh = (!!data.fz && (data.zc ?? 0) > 0) || zhOnly
+  const hasEn = !!data.fe && (data.ec ?? 0) > 0
+  const hasKo = !!data.fk && (data.kc ?? 0) > 0
+  const flatVoices = data.cats.flatMap((c) => c.v)
+  const jaTotal = flatVoices.filter(hasJaClip).length
+  const enTotal = data.ec ?? 0
+  const koTotal = data.kc ?? 0
+  const zhTotal = zhOnly ? flatVoices.filter(hasJaClip).length : (data.zc ?? 0)
   const [cat, setCat] = useState('all')
-  const [showJa, setShowJa] = useState(false)
-  const [lang, setLang] = useState<'zh' | 'ja'>(hasZh ? 'zh' : 'ja')
+  const [lang, setLang] = useState<VoiceLang>(() => {
+    if (contentLang === 'en' && hasEn) return 'en'
+    if (contentLang === 'ko' && hasKo) return 'ko'
+    if (contentLang === 'ja' && !zhOnly && jaTotal > 0) return 'ja'
+    if (contentLang === 'zh' && hasZh) return 'zh'
+    return zhOnly || !jaTotal ? 'zh' : 'ja'
+  })
   const [active, setActive] = useState<CharVoice | null>(null)
   const [playing, setPlaying] = useState(false)
   const [pos, setPos] = useState(0)
@@ -76,9 +110,19 @@ export default function VoiceList({
   const playToken = useRef(0)
   const loadCount = useRef(0)
 
-  const missingVoices = data.cats.flatMap((c) => c.v).filter((v) => !hasZhClip(v))
+  const hasClip = (v: CharVoice, l: VoiceLang) =>
+    l === 'zh' ? (zhOnly ? v.e > v.s : hasZhClip(v))
+      : l === 'en' ? hasEnClip(v)
+        : l === 'ko' ? hasKoClip(v)
+          : hasJaClip(v)
+  const missingVoices = flatVoices.filter((v) => !hasClip(v, 'zh'))
   const missingLove = missingVoices.filter((v) => /_Lobby_(?:Touch|Stay)_Love_/.test(v.id)).length
-  const currentCv = zhOnly ? (data.cvz ?? data.cvj) : lang === 'zh' ? data.cvz : data.cvj
+  const currentCv = zhOnly
+    ? (data.cvz ?? data.cvj)
+    : lang === 'zh' ? data.cvz
+      : lang === 'en' ? data.cve
+        : lang === 'ko' ? data.cvk
+          : data.cvj
 
   // 皮肤筛选：g 有值的条目来自独立皮肤的语音套组。与类别同一行内单选：
   // 选皮肤时清空类别，选类别时清空皮肤。
@@ -90,20 +134,14 @@ export default function VoiceList({
   const [skin, setSkin] = useState<string | null>(null)
 
   const voices = useMemo(() => {
-    const vis = lang === 'zh' ? hasZhClip : hasJaClip
-    const flat = data.cats.flatMap((c) => c.v)
-    if (skin) return flat.filter((v) => vis(v) && v.g === skin)
+    const vis = (v: CharVoice) => hasClip(v, lang)
+    if (skin) return flatVoices.filter((v) => vis(v) && v.g === skin)
     if (cat !== 'all') return (data.cats.find((c) => c.k === cat)?.v ?? []).filter(vis)
-    return flat.filter(vis)
-  }, [data, cat, skin, lang])
-  const jaTotal = useMemo(
-    () => data.cats.reduce((a, c) => a + c.v.filter(hasJaClip).length, 0),
-    [data],
-  )
+    return flatVoices.filter(vis)
+  }, [data, cat, skin, lang, zhOnly])
 
   // 每个 chip 的计数 = 点击它之后会看到的条数
-  const flatVoices = data.cats.flatMap((c) => c.v)
-  const chipCount = (list: CharVoice[]) => list.filter(lang === 'zh' ? hasZhClip : hasJaClip).length
+  const chipCount = (list: CharVoice[]) => list.filter((v) => hasClip(v, lang)).length
   const allCount = chipCount(flatVoices)
   const catChips = data.cats
     .map((c) => ({ k: c.k, n: c.n, count: chipCount(c.v) }))
@@ -112,11 +150,21 @@ export default function VoiceList({
     .map((g) => ({ g, count: chipCount(flatVoices.filter((v) => v.g === g)) }))
     .filter((c) => c.count > 0)
 
-  const clipOf = (v: CharVoice, l: 'zh' | 'ja'): Clip => {
-    if (l === 'zh' && data.fz && v.zs != null && v.ze != null) {
-      return { url: data.fz, s: v.zs, e: v.ze, zh: true }
+  const clipOf = (v: CharVoice, l: VoiceLang): Clip => {
+    if (l === 'zh') {
+      if (data.fz && v.zs != null && v.ze != null) {
+        return { url: data.fz, s: v.zs, e: v.ze, lang: 'zh' }
+      }
+      // 国服先行角色：主雪碧图 f 就是中文轨
+      if (zhOnly) return { url: data.f, s: v.s, e: v.e, lang: 'zh' }
     }
-    return { url: data.f, s: v.s, e: v.e, zh: false }
+    if (l === 'en' && data.fe && v.es != null && v.ee != null) {
+      return { url: data.fe, s: v.es, e: v.ee, lang: 'en' }
+    }
+    if (l === 'ko' && data.fk && v.ks != null && v.ke != null) {
+      return { url: data.fk, s: v.ks, e: v.ke, lang: 'ko' }
+    }
+    return { url: data.f, s: v.s, e: v.e, lang: l }
   }
 
   const stopSource = useCallback(() => {
@@ -238,20 +286,42 @@ export default function VoiceList({
     playFrom(v, clip.s, clip)
   }
 
-  const changeLang = (l: 'zh' | 'ja') => {
+  const changeLang = (l: VoiceLang) => {
     if (l === lang) return
     if (l === 'zh' && !hasZh) return
+    if (l === 'ja' && (zhOnly || jaTotal <= 0)) return
+    if (l === 'en' && !hasEn) return
+    if (l === 'ko' && !hasKo) return
     stop()
     setCat('all')
     setLang(l)
   }
 
+  // 顶部内容语言切换后，语音页签默认跟着切到同语言（不存在时留在原语言）
   useEffect(() => {
-    loadBuffer(lang === 'zh' && data.fz ? data.fz : data.f)
+    const pref: VoiceLang | null = contentLang === 'en' && hasEn ? 'en'
+      : contentLang === 'ko' && hasKo ? 'ko'
+        : contentLang === 'ja' && !zhOnly && jaTotal > 0 ? 'ja'
+          : contentLang === 'zh' && hasZh ? 'zh'
+            : null
+    if (!pref || pref === lang) return
+    stop()
+    setCat('all')
+    setLang(pref)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentLang])
+
+  useEffect(() => {
+    const url = lang === 'zh'
+      ? (data.fz || (zhOnly ? data.f : null))
+      : lang === 'en' ? data.fe
+        : lang === 'ko' ? data.fk
+          : data.f
+    if (url) loadBuffer(url)
     return () => {
       stopSource()
     }
-  }, [lang, data.f, data.fz, loadBuffer, stopSource])
+  }, [lang, data.f, data.fz, data.fe, data.fk, zhOnly, loadBuffer, stopSource])
 
   useEffect(() => {
     if (!playing || !active || !clipRef.current) return
@@ -273,7 +343,7 @@ export default function VoiceList({
             className={cat === 'all' && !skin ? 'on' : ''}
             onClick={() => { setCat('all'); setSkin(null); stop() }}
           >
-            全部 <b>{allCount}</b>
+            {t('voice_all')} <b>{allCount}</b>
           </button>
           {catChips.map((c) => (
             <button
@@ -281,7 +351,7 @@ export default function VoiceList({
               className={!skin && cat === c.k ? 'on' : ''}
               onClick={() => { setCat(c.k); setSkin(null); stop() }}
             >
-              {c.n} <b>{c.count}</b>
+              {catLabel(c.k, c.n)} <b>{c.count}</b>
             </button>
           ))}
           {skinChips.map((s) => (
@@ -300,50 +370,80 @@ export default function VoiceList({
               className={lang === 'zh' ? 'on' : ''}
               disabled={!hasZh}
               onClick={() => changeLang('zh')}
-              title={zhOnly ? '国服先行角色，仅中文配音' : hasZh ? `中文配音（${data.zc ?? 0}/${data.n} 条）` : '国服暂无该角色中文语音'}
+              title={zhOnly ? t('voice_hint_zhonly')
+                : hasZh ? fmt(t('voice_title_zh_count'), { n: zhTotal, t: data.n })
+                  : t('voice_title_no_zh')}
             >
-              中配 <b>{data.zc ?? 0}</b>
+              {VOICE_SHORT.zh} <b>{zhTotal}</b>
             </button>
-            <button
-              className={lang === 'ja' ? 'on' : ''}
-              onClick={() => changeLang('ja')}
-              title="日语配音"
-            >
-              日配 <b>{jaTotal}</b>
-            </button>
+            {!zhOnly && jaTotal > 0 && (
+              <button
+                className={lang === 'ja' ? 'on' : ''}
+                onClick={() => changeLang('ja')}
+                title={t('voice_title_ja')}
+              >
+                {VOICE_SHORT.ja} <b>{jaTotal}</b>
+              </button>
+            )}
+            {hasEn && (
+              <button
+                className={lang === 'en' ? 'on' : ''}
+                onClick={() => changeLang('en')}
+                title={t('voice_title_en')}
+              >
+                {VOICE_SHORT.en} <b>{enTotal}</b>
+              </button>
+            )}
+            {hasKo && (
+              <button
+                className={lang === 'ko' ? 'on' : ''}
+                onClick={() => changeLang('ko')}
+                title={t('voice_title_ko')}
+              >
+                {VOICE_SHORT.ko} <b>{koTotal}</b>
+              </button>
+            )}
           </div>
-          <button
-            className={`voice-ja ${showJa ? 'on' : ''}`}
-            onClick={() => setShowJa((v) => !v)}
-            title="显示日文原文"
-          >
-            日文
-          </button>
         </div>
       </div>
       {currentCv && (
         <div className="voice-cv">
-          {zhOnly ? '' : lang === 'zh' ? '中配' : '日配'} CV <b>{currentCv}</b>
+          {zhOnly ? '' : lang === 'zh' ? t('voice_zh')
+            : lang === 'ja' ? t('voice_ja') : lang === 'en' ? t('voice_en') : t('voice_ko')} CV <b>{currentCv}</b>
         </div>
       )}
-      {zhOnly && <div className="voice-hint">国服先行角色，语音为国服中文配音。</div>}
-      {!hasZh && !zhOnly && <div className="voice-hint">国服暂无该角色中文语音，仅提供日语。</div>}
+      {zhOnly && <div className="voice-hint">{t('voice_hint_zhonly')}</div>}
+      {!hasZh && !zhOnly && <div className="voice-hint">{t('voice_hint_no_zh')}</div>}
       {lang === 'zh' && missingVoices.length > 0 && (
         <div className="voice-hint">
-          国服缺少 {missingVoices.length} 条中文语音
-          {missingLove ? `（含好感度大厅 ${missingLove} 条）` : ''}，可切到日配查看。
+          {fmt(t('voice_hint_missing_zh'), {
+            n: missingVoices.length,
+            l: missingLove ? fmt(t('voice_hint_missing_love'), { n: missingLove }) : '',
+          })}
         </div>
+      )}
+      {lang === 'en' && hasEn && enTotal < data.n && (
+        <div className="voice-hint">{fmt(t('voice_hint_en_count'), { n: enTotal, t: data.n })}</div>
+      )}
+      {lang === 'ko' && hasKo && koTotal < data.n && (
+        <div className="voice-hint">{fmt(t('voice_hint_ko_count'), { n: koTotal, t: data.n })}</div>
       )}
       {(loading || error) && (
         <div className={`voice-hint ${error ? 'err' : ''}`}>
-          {error ? '语音加载失败，请刷新重试' : '音频解码中…'}
+          {error ? t('voice_err') : t('voice_decoding')}
         </div>
       )}
 
       <div className="voice-list">
         {voices.map((v) => {
           const on = active?.id === v.id
-          const dur = lang === 'zh' && v.zs != null && v.ze != null ? v.ze - v.zs : v.e - v.s
+          const clip = clipOf(v, lang)
+          const dur = clip.e - clip.s
+          const txt = lang === 'zh' ? (v.xz || v.x)
+            : lang === 'en' ? (v.xe || v.x)
+              : lang === 'ko' ? (v.xk || v.x)
+                : lang === 'ja' ? (v.j || v.x)
+                  : v.x
           return (
             <div
               key={v.id}
@@ -353,7 +453,7 @@ export default function VoiceList({
               <button
                 className="voice-play"
                 style={on ? { color: accent, borderColor: accent } : undefined}
-                aria-label={on && playing ? '暂停' : '播放'}
+                aria-label={on && playing ? t('voice_pause') : t('voice_play')}
               >
                 <PlayPauseIcon playing={on && playing} size="12" />
               </button>
@@ -363,9 +463,8 @@ export default function VoiceList({
                   {v.g && <span className="voice-skin">{v.g}</span>}
                 </div>
                 <div className="voice-text">
-                  {(lang === 'zh' && v.xz ? v.xz : v.x) || v.j || '（无台词文本）'}
+                  {txt || v.j || t('voice_no_text')}
                 </div>
-                {showJa && v.j && v.j !== v.x && <div className="voice-ja-text">{v.j}</div>}
               </div>
               <span className="voice-time">{dur.toFixed(1)}s</span>
               {on && <i className="voice-progress" style={{ width: `${pos * 100}%` }} />}

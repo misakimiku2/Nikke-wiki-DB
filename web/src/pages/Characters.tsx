@@ -2,29 +2,41 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   accentFor, charPortrait, loadCharImages, loadCharMeta, loadCharMi, loadCharSpine,
-  loadCharacters, mainBase, nf, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor,
-  type CharImages, type CharMeta, type CharMetaMap, type Character,
+  loadCharacters, loadSpecTexts, loadSquadNames, mainBase, nf, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON, tintFor,
+  type CharImages, type CharMeta, type CharMetaMap, type Character, type SpecTexts, type SquadNames,
 } from '../data'
+import { pickLang, useLang } from '../lang'
+import { useUI, type UIKey } from '../ui'
 
 type SortMode = 'name' | 'squad'
 type FilterKey = 'corp' | 'weapon' | 'burst' | 'cls' | 'element'
 type Filters = Record<FilterKey, string[]>
 
-/** 筛选类别：候选值按 order 顺序展示（只渲染站内实际存在的） */
+/** 筛选类别：候选值按 order 顺序展示（只渲染站内实际存在的）；label 是 UI 词典 key */
 const FILTER_GROUPS: Array<{
-  key: FilterKey; label: string; order: string[]; labelOf: (v: string) => string
+  key: FilterKey; label: UIKey; order: string[]
 }> = [
-  { key: 'corp', label: '企业', order: ['1', '2', '3', '4', '5', '101', '102', '103'],
-    labelOf: (v) => SPEC_CORP[Number(v)] ?? v },
-  { key: 'weapon', label: '武器', order: ['ar', 'sg', 'rl', 'smg', 'sr', 'mg'],
-    labelOf: (v) => SPEC_WEAPON[v] ?? v },
-  { key: 'burst', label: '爆裂', order: ['1', '2', '3', '5'],
-    labelOf: (v) => SPEC_BURST[Number(v)] ?? v },
-  { key: 'cls', label: '兵种', order: ['1', '2', '3'],
-    labelOf: (v) => SPEC_CLS[Number(v)] ?? v },
-  { key: 'element', label: '属性', order: ['fire', 'water', 'wind', 'electric', 'iron'],
-    labelOf: (v) => SPEC_ELEMENT[v] ?? v },
+  { key: 'corp', label: 'filter_corp', order: ['1', '2', '3', '4', '5', '101', '102', '103'] },
+  { key: 'weapon', label: 'filter_weapon', order: ['ar', 'sg', 'rl', 'smg', 'sr', 'mg'] },
+  { key: 'burst', label: 'filter_burst', order: ['1', '2', '3', '5'] },
+  { key: 'cls', label: 'filter_cls', order: ['1', '2', '3'] },
+  { key: 'element', label: 'filter_element', order: ['fire', 'water', 'wind', 'electric', 'iron'] },
 ]
+
+/** 各筛选值的游戏图标（public/metaicon/，白色 sprite 由 mask 染 currentColor）。
+ *  只覆盖有图标的取值：企业 101/102/103 无对应图标，故留空（不渲染）。 */
+const FILTER_ICONS: Record<FilterKey, Record<string, string>> = {
+  corp: { '1': 'corp_icn_1', '2': 'corp_icn_2', '3': 'corp_icn_3', '4': 'corp_icn_4', '5': 'corp_icn_5' },
+  weapon: { ar: 'weapon_ar', sg: 'weapon_sg', rl: 'weapon_rl', smg: 'weapon_smg', sr: 'weapon_sr', mg: 'weapon_mg' },
+  // 全爆裂（5）用游戏里的闪电徽章 icn_burst_04
+  burst: { '1': 'burst_1', '2': 'burst_2', '3': 'burst_3', '5': 'burst_4' },
+  cls: { '1': 'cls_attacker', '2': 'cls_defender', '3': 'cls_supporter' },
+  element: { fire: 'element_fire', water: 'element_water', wind: 'element_wind', electric: 'element_elect', iron: 'element_iron' },
+}
+
+function FilterIcon({ icn }: { icn: string }) {
+  return <i className="spec-icn filter-icn" style={{ ['--icn' as string]: `url(/metaicon/${icn}.webp)` }} aria-hidden />
+}
 
 /** 角色在某筛选类别下的取值（meta 缺失返回 null，参与筛选时视为不匹配） */
 function metaVal(m: CharMeta | undefined, key: FilterKey): string | null {
@@ -38,11 +50,17 @@ function metaVal(m: CharMeta | undefined, key: FilterKey): string | null {
 }
 
 export default function Characters() {
+  const { lang } = useLang()
+  const t = useUI()
   const [list, setList] = useState<Character[] | null>(null)
   const [imgs, setImgs] = useState<CharImages>({})
   const [mi, setMi] = useState<Set<string>>(new Set())
   const [spine, setSpine] = useState<Set<string>>(new Set())
   const [meta, setMeta] = useState<CharMetaMap>({})
+  /** 筛选值显示名的官方本地化（企业/武器/兵种/属性，spec_texts.json） */
+  const [specTexts, setSpecTexts] = useState<SpecTexts>({ weapon: {}, cls: {}, element: {}, corp: {}, squad: {} })
+  /** 部队名的其他语言（squad_names.json，缺失时回退中文） */
+  const [squadNames, setSquadNames] = useState<SquadNames>({ names: {}, lore: {} })
   // 搜索关键词同步进 URL（replace，不打历史）：从角色详情返回时恢复搜索现场
   const [params, setParams] = useSearchParams()
   const [q, setQ] = useState(() => params.get('q') || '')
@@ -56,6 +74,8 @@ export default function Characters() {
     loadCharMi().then(setMi).catch(() => {})
     loadCharSpine().then(setSpine).catch(() => {})
     loadCharMeta().then(setMeta).catch(() => {})
+    loadSpecTexts().then(setSpecTexts).catch(() => {})
+    loadSquadNames().then(setSquadNames).catch(() => {})
   }, [])
 
   // q 写回 URL（replace）：返回 / 刷新 / 分享链接都能带着搜索词
@@ -175,10 +195,32 @@ export default function Characters() {
     return [...[...map.entries()].filter(([s]) => s !== '暂无部队'), ...none]
   }, [shown, sort, meta])
 
+  /** 筛选值显示名：企业/武器/兵种/属性走 specTexts 本地化（specName 模式），爆裂用 UI 词典 */
+  const filterLabelOf = (key: FilterKey, v: string): string => {
+    if (key === 'burst') {
+      const b = Number(v)
+      return t(b === 1 ? 'burst_1' : b === 2 ? 'burst_2' : b === 3 ? 'burst_3' : 'burst_all')
+    }
+    const zh = key === 'corp' ? (SPEC_CORP[Number(v)] ?? v)
+      : key === 'weapon' ? (SPEC_WEAPON[v] ?? v)
+        : key === 'cls' ? (SPEC_CLS[Number(v)] ?? v)
+          : (SPEC_ELEMENT[v] ?? v)
+    const e = key === 'corp' ? specTexts.corp[v]
+      : key === 'weapon' ? specTexts.weapon[v]
+        : key === 'cls' ? specTexts.cls[v]
+          : specTexts.element[v]
+    return pickLang(lang, e?.name || zh, e?.nameEn, e?.nameKo, e?.nameJa)
+  }
+
+  /** 部队分组标题：部队名接 loadSquadNames 译名，查不到回退中文；无部队哨兵用 UI 词典 */
+  const squadLabel = (s: string): string => s === '暂无部队' ? t('squad_none')
+    : pickLang(lang, s, squadNames.names[s]?.en, squadNames.names[s]?.ko, squadNames.names[s]?.ja)
+
   const renderCard = (c: Character) => {
     const base = mainBase(imgs, c.id)
     const face = !!base && mi.has(base)
     const src = charPortrait(base, mi)
+    const title = pickLang(lang, c.name, c.names.en, c.names.ko, c.names.ja)
     return (
       <Link
         key={c.id}
@@ -190,13 +232,13 @@ export default function Characters() {
       >
         <div className={`visual ${face ? 'is-face' : 'is-full'}`}>
           {src ? (
-            <img src={src} alt={c.name} loading="lazy" />
+            <img src={src} alt={title} loading="lazy" />
           ) : (
-            <span className="fallback">{c.name.slice(0, 1)}</span>
+            <span className="fallback">{title.slice(0, 1)}</span>
           )}
         </div>
         <div className="meta">
-          <h3 title={c.name}>{c.name}</h3>
+          <h3 title={title}>{title}</h3>
           <div className="row">
             <span>{c.code}</span>
             <span className="lines" style={{ color: accentFor(c.id) }}>
@@ -217,7 +259,7 @@ export default function Characters() {
       <div className="sec-head">
         <div>
           <div className="idx">01 / CHARACTER</div>
-          <h2>角色图鉴</h2>
+          <h2>{t('char_title')}</h2>
         </div>
         <div className="meta">
           {activeCount > 0 ? `${nf(shown.length)} / ${nf(total)}` : nf(total)} ENTRIES
@@ -228,7 +270,7 @@ export default function Characters() {
         <div className="search-box">
           <input
             className="search"
-            placeholder="搜索角色名 / 介绍，例：拉毗、反击部队"
+            placeholder={t('char_search_ph')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -246,10 +288,10 @@ export default function Characters() {
         </div>
         <div className="tool-sort" role="group" aria-label="排序方式">
           <button className={`chip ${sort === 'name' ? 'on' : ''}`} onClick={() => setSort('name')}>
-            名称
+            {t('sort_name')}
           </button>
           <button className={`chip ${sort === 'squad' ? 'on' : ''}`} onClick={() => setSort('squad')}>
-            部队
+            {t('sort_squad')}
           </button>
         </div>
         <button
@@ -258,7 +300,7 @@ export default function Characters() {
           aria-expanded={panelOpen}
           title="按企业 / 武器 / 爆裂 / 兵种 / 属性筛选"
         >
-          筛选{activeCount > 0 ? ` · ${activeCount}` : ''}
+          {t('filter_btn')}{activeCount > 0 ? ` · ${activeCount}` : ''}
         </button>
       </div>
 
@@ -266,23 +308,24 @@ export default function Characters() {
         <div className="filter-panel">
           {FILTER_GROUPS.map((g) => (
             <div className="fp-group" key={g.key}>
-              <div className="fp-title">{g.label}</div>
+              <div className="fp-title">{t(g.label)}</div>
               <div className="fp-chips">
-                {options[g.key].length === 0 && <span className="fp-none">暂无数据</span>}
+                {options[g.key].length === 0 && <span className="fp-none">{t('filter_none')}</span>}
                 {options[g.key].map((v) => (
                   <button
                     key={v}
                     className={`chip fp-chip ${filters[g.key].includes(v) ? 'on' : ''}`}
                     onClick={() => toggleFilter(g.key, v)}
                   >
-                    {g.labelOf(v)}
+                    {FILTER_ICONS[g.key][v] && <FilterIcon icn={FILTER_ICONS[g.key][v]} />}
+                    {filterLabelOf(g.key, v)}
                   </button>
                 ))}
               </div>
             </div>
           ))}
           {activeCount > 0 && (
-            <button className="chip fp-clear" onClick={clearFilters}>清除全部筛选</button>
+            <button className="chip fp-clear" onClick={clearFilters}>{t('filter_clear')}</button>
           )}
         </div>
       )}
@@ -293,8 +336,8 @@ export default function Characters() {
         squadGroups.map(([squad, chars]) => (
           <section className="squad-sect" key={squad}>
             <div className="squad-head">
-              <h3>{squad}</h3>
-              <span className="cnt">{nf(chars.length)} 人</span>
+              <h3>{squadLabel(squad)}</h3>
+              <span className="cnt">{nf(chars.length)} {t('count_nikke')}</span>
             </div>
             <div className="char-grid">{chars.map(renderCard)}</div>
           </section>

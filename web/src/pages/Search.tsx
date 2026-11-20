@@ -2,38 +2,62 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Pager, pageParam } from '../components/Pager'
 import {
-  accentFor, charPortrait, loadCgIndex, loadCharImages, loadCharMeta, loadCharMi, loadCharacters,
+  CAT_ORDER, accentFor, charPortrait, loadCgIndex, loadCharImages, loadCharMeta, loadCharMi, loadCharacters,
   loadStoryIndex, mainBase, nf, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON,
   tintFor, visibleCgs, whereOf,
   type CgIndex, type CharImages, type CharMetaMap, type Character, type StoryUnit,
 } from '../data'
+import { pickLang, useLang, type ContentLang } from '../lang'
+import { fmt, useUI, type UIKey } from '../ui'
 
 /** 台词行：[文本, 剧情单元id, 说话人, 行号] */
 type Row = [string, number, string, number]
+
+/** manifest.json：v1（shards 为数组）只有 zh 分片；v2 按内容语言给各自的分片清单 */
+type ShardEntry = { file: string }
+type Manifest = { v?: number; shards: Partial<Record<ContentLang, ShardEntry[]>> | ShardEntry[] }
 
 /**
  * 台词索引的模块级缓存：其余数据 loader 在 data.ts 里都有缓存，只有这 9 MB 分片每次挂载都重拉。
  * 从结果页返回本页时组件会整个重挂载，没有这份缓存搜索页就会先空几秒。
  * in-flight 的 promise 也一并缓存，中途离开再回来不用从头拉。
+ * 分片按内容语言各有一份（build/export_search.py 独立切分），按语言分 key 缓存；
+ * 切换内容语言时若该语言还没拉过就重新拉。
  */
-let cachedRows: Row[] | null = null
-let rowsPromise: Promise<Row[]> | null = null
+const cachedRows = new Map<ContentLang, Row[]>()
+const rowsPromises = new Map<ContentLang, Promise<Row[]>>()
+let manifestPromise: Promise<Manifest> | null = null
 
-function loadLineIndex(): Promise<Row[]> {
-  if (cachedRows) return Promise.resolve(cachedRows)
-  if (!rowsPromise) {
-    rowsPromise = fetch('/data/search/manifest.json')
-      .then((r) => r.json())
-      .then((m: { shards: { file: string }[] }) =>
-        Promise.all(m.shards.map((s) => fetch(`/data/search/${s.file}`).then((r) => r.json()))),
-      )
-      .then((parts: Row[][]) => (cachedRows = parts.flat()))
+function loadManifest(): Promise<Manifest> {
+  if (!manifestPromise) {
+    manifestPromise = fetch('/data/search/manifest.json').then((r) => r.json())
+  }
+  return manifestPromise
+}
+
+function loadLineIndex(lang: ContentLang): Promise<Row[]> {
+  const hit = cachedRows.get(lang)
+  if (hit) return Promise.resolve(hit)
+  let p = rowsPromises.get(lang)
+  if (!p) {
+    p = loadManifest()
+      .then((m) => {
+        // 旧格式（v1，shards 为数组）只有 zh 分片，其他语言取不到就当空索引
+        const list = Array.isArray(m.shards) ? (lang === 'zh' ? m.shards : []) : m.shards[lang] || []
+        return Promise.all(list.map((s) => fetch(`/data/search/${s.file}`).then((r) => r.json())))
+      })
+      .then((parts: Row[][]) => {
+        const rows = parts.flat()
+        cachedRows.set(lang, rows)
+        return rows
+      })
       .catch((e) => {
-        rowsPromise = null // 失败允许下次重试
+        rowsPromises.delete(lang) // 失败允许下次重试
         throw e
       })
+    rowsPromises.set(lang, p)
   }
-  return rowsPromise
+  return p
 }
 
 /** 各分组分页大小（角色卡较大、剧情卡最高，页小一点；CG 与图鉴页一致用 60） */
@@ -43,6 +67,8 @@ const PAGE_UNITS = 24
 const PAGE_LINES = 50
 
 export default function Search() {
+  const { lang } = useLang()
+  const t = useUI()
   const [idx, setIdx] = useState<Row[] | null>(null)
   const [units, setUnits] = useState<StoryUnit[]>([])
   const [chars, setChars] = useState<Character[]>([])
@@ -67,10 +93,19 @@ export default function Search() {
     loadCharImages().then(setImgs).catch(() => {})
     loadCharMi().then(setMi).catch(() => {})
     loadCharMeta().then(setMeta).catch(() => {})
-    // 台词索引按连续 unit 区间拆成多个分片（见 build/export_search.py），进页面才拉。
-    // 分片序号顺序即全量顺序，按序拼接后与单文件时代逐行一致。
-    loadLineIndex().then(setIdx).catch(() => setIdx([]))
   }, [])
+
+  // 台词索引按内容语言加载（zh / en / ko / ja 各自的分片，见 build/export_search.py），
+  // 分片序号顺序即全量顺序，按序拼接后与单文件时代逐行一致；
+  // 切语言时重新拉（模块级缓存按语言分 key，拉过的语言即时返回）。
+  useEffect(() => {
+    let on = true
+    setIdx(null)
+    loadLineIndex(lang)
+      .then((rows) => { if (on) setIdx(rows) })
+      .catch(() => { if (on) setIdx([]) })
+    return () => { on = false }
+  }, [lang])
 
   useEffect(() => {
     if (timer.current) window.clearTimeout(timer.current)
@@ -120,17 +155,17 @@ export default function Search() {
 
   // 每张 CG 的检索文本：内部名 + 系列 + 关联剧情的中文名（内部名是英文，靠关联标题支持中文检索）
   const cgText = useMemo(() => {
-    const t: Record<string, string> = {}
-    if (!cg) return t
+    const hay: Record<string, string> = {}
+    if (!cg) return hay
     for (const it of cg.items) {
       let s = `${it.n} ${it.s || ''}`
       for (const lk of cg.links[it.n] || []) {
         const u = unitMap[lk.u]
         if (u) s += ` ${u.title} ${u.label}`
       }
-      t[it.n] = s.toLowerCase()
+      hay[it.n] = s.toLowerCase()
     }
-    return t
+    return hay
   }, [cg, unitMap])
 
   const charHits = useMemo(() => {
@@ -185,6 +220,23 @@ export default function Search() {
     return out
   }, [lowerLines, debounced])
 
+  // 说话人显示名：索引里存的是说话人中文名，用角色档案映射成当前语言的显示名
+  // （台词里的说话人不一定有角色档案，如旁白/特殊说话人，映射不到就原样展示）。
+  const speakerMap = useMemo(() => {
+    const m = new Map<string, Character>()
+    for (const c of chars) m.set(c.name, c)
+    return m
+  }, [chars])
+  const speakerLabel = (spk: string) => {
+    const c = speakerMap.get(spk)
+    return c ? pickLang(lang, spk, c.names.en, c.names.ko, c.names.ja) : spk
+  }
+
+  // 剧情分类显示名（ui 词典 cat_*；词典没有的分类回退索引里的原始 label）
+  const unitTitle = (u: StoryUnit) => pickLang(lang, u.title, u.titles?.en, u.titles?.ko, u.titles?.ja)
+  const catLabel = (u: StoryUnit) =>
+    CAT_ORDER.includes(u.cat) ? t(`cat_${u.cat}` as UIKey) : u.label
+
   const loading = !idx || !cg
   const total = charHits.length + cgHits.length + unitHits.length + lineHits.length
 
@@ -201,7 +253,7 @@ export default function Search() {
       <div className="sec-head">
         <div>
           <div className="idx">04 / SEARCH</div>
-          <h2>全站搜索</h2>
+          <h2>{t('home_search_all')}</h2>
         </div>
         <div className="meta">
           {loading
@@ -214,20 +266,20 @@ export default function Search() {
         <input
           className="search search-lg"
           autoFocus
-          placeholder="搜索角色、CG、剧情与台词，例：拉毗、EventScene、活下去"
+          placeholder={t('search_ph')}
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        {loading && <div className="search-hint">正在载入搜索索引（台词索引压缩后约 9 MB，之后会缓存）</div>}
+        {loading && <div className="search-hint">{t('search_loading')}</div>}
         {!loading && debounced && total > 0 && (
-          <div className="search-hint">共找到 {nf(total)} 条结果</div>
+          <div className="search-hint">{fmt(t('search_result_count'), { n: nf(total) })}</div>
         )}
       </div>
 
       {debounced && (
         <>
           {charHits.length > 0 && (
-            <Group kind="角色" id="grp-chars" cnt={charHits.length}>
+            <Group kind={t('search_group_chars')} id="grp-chars" cnt={charHits.length}>
               <div className="char-grid">
                 {charHits.slice(safeCharPage * PAGE_CHARS, (safeCharPage + 1) * PAGE_CHARS).map((c) => (
                   <CharCard key={c.id} c={c} imgs={imgs} mi={mi} />
@@ -257,7 +309,7 @@ export default function Search() {
           )}
 
           {unitHits.length > 0 && (
-            <Group kind="剧情" id="grp-units" cnt={unitHits.length}>
+            <Group kind={t('search_group_units')} id="grp-units" cnt={unitHits.length}>
               <div className="story-grid">
                 {unitHits.slice(safeUnitPage * PAGE_UNITS, (safeUnitPage + 1) * PAGE_UNITS).map((u) => (
                   <Link key={u.id} to={`/story/${u.id}`} className="story-card">
@@ -286,7 +338,7 @@ export default function Search() {
           )}
 
           {lineHits.length > 0 && (
-            <Group kind="台词" id="grp-lines" cnt={lineHits.length}>
+            <Group kind={t('search_group_lines')} id="grp-lines" cnt={lineHits.length}>
               <div className="result-list">
                 {lineHits.slice(safeLinePage * PAGE_LINES, (safeLinePage + 1) * PAGE_LINES).map((i) => {
                   const [text, uid, speaker, lineNo] = idx![i]
@@ -297,8 +349,10 @@ export default function Search() {
                         <Highlight text={text} keyword={debounced} />
                       </div>
                       <div className="result-meta">
-                        {speaker && <span className="result-spk">{speaker}</span>}
-                        <span className="result-where">{u ? `${u.label} · ${u.title}` : `单元 ${uid}`}</span>
+                        {speaker && <span className="result-spk">{speakerLabel(speaker)}</span>}
+                        <span className="result-where">
+                          {u ? `${catLabel(u)} · ${unitTitle(u)}` : fmt(t('search_unit'), { n: uid })}
+                        </span>
                         <span className="result-jump">→</span>
                       </div>
                     </Link>
@@ -309,7 +363,7 @@ export default function Search() {
             </Group>
           )}
 
-          {!loading && total === 0 && <div className="empty">没有找到与「{debounced}」相关的内容</div>}
+          {!loading && total === 0 && <div className="empty">{fmt(t('search_none'), { q: debounced })}</div>}
         </>
       )}
     </div>
@@ -318,20 +372,22 @@ export default function Search() {
 
 /** 搜索结果里的角色卡：与角色图鉴页同一套卡片样式（立绘 / 头像 + 名字 + 台词数） */
 function CharCard({ c, imgs, mi }: { c: Character; imgs: CharImages; mi: Set<string> }) {
+  const { lang } = useLang()
   const base = mainBase(imgs, c.id)
   const face = !!base && mi.has(base)
   const src = charPortrait(base, mi)
+  const title = pickLang(lang, c.name, c.names.en, c.names.ko, c.names.ja)
   return (
     <Link to={`/characters/${c.id}`} className="char-card" style={{ ['--tint' as string]: tintFor(c.id) }}>
       <div className={`visual ${face ? 'is-face' : 'is-full'}`}>
         {src ? (
-          <img src={src} alt={c.name} loading="lazy" />
+          <img src={src} alt={title} loading="lazy" />
         ) : (
-          <span className="fallback">{c.name.slice(0, 1)}</span>
+          <span className="fallback">{title.slice(0, 1)}</span>
         )}
       </div>
       <div className="meta">
-        <h3 title={c.name}>{c.name}</h3>
+        <h3 title={title}>{title}</h3>
         <div className="row">
           <span>{c.code}</span>
           <span className="lines" style={{ color: accentFor(c.id) }}>

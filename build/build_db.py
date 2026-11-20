@@ -64,7 +64,7 @@ def log(msg):
     print(msg, flush=True)
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 8
 
 
 FTS_TRIGGER_SQL = """
@@ -136,11 +136,16 @@ def iter_line_fields(raw):
         "text_zh": raw.get("zh-CN") or raw.get("zh_CN") or raw.get("text") or raw.get("content"),
         "text_en": raw.get("en"),
         "text_ja": raw.get("ja"),
+        "text_ko": raw.get("ko"),
     }
 
 
 def _load_main_section_names():
-    """group_key -> 游戏内真实小节名（export_main_section_names.py 产出）。"""
+    """group_key -> 游戏内真实小节名（export_main_section_names.py 产出）。
+
+    现格式为四语 {"zh","en","ko","ja"}；zh 之外的语言由 export_story.py /
+    前端按需读取，这里只消费 zh（兼容旧版纯字符串值）。
+    """
     try:
         with open(MAIN_SECTION_NAMES, encoding="utf-8") as f:
             return json.load(f)
@@ -158,6 +163,8 @@ def main_section_title(group_key):
     d_main_28af_02 -> 第28章·后记 02（后记无 quest 名）
     """
     real = MAIN_SECTION_NAMES_MAP.get(group_key)
+    if isinstance(real, dict):
+        real = real.get("zh")
     if real:
         return real
     m = re.match(r"^d_main_(\d+)(?:_?)(af|bf)_(\d+)$", group_key)
@@ -390,7 +397,8 @@ def import_story(con):
                 if not lk:
                     continue
                 rows.append((seg_id, unit_id, f["seq"], lk, f["speaker"], f["speaker_id"],
-                             f["portrait"], f["portrait_id"], f["text_zh"], f["text_en"], f["text_ja"]))
+                             f["portrait"], f["portrait_id"], f["text_zh"], f["text_en"],
+                             f["text_ja"], f["text_ko"]))
                 if f["speaker_id"]:
                     sp = speakers[f["speaker_id"]]
                     sp["count"] += 1
@@ -403,7 +411,8 @@ def import_story(con):
             if rows:
                 con.executemany(
                     "INSERT INTO story_lines(segment_id, unit_id, seq, line_key, speaker, speaker_id,"
-                    " portrait, portrait_id, text_zh, text_en, text_ja) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                    " portrait, portrait_id, text_zh, text_en, text_ja, text_ko)"
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                     rows,
                 )
                 u_lines += len(rows)
@@ -583,11 +592,12 @@ def import_locale_fill(con):
             filled_existing += 1
 
         payload = [(sid, uid,
-                    int(LINE_SUFFIX.match(k).group(2)), k, None, None, None, None, zh, en, ja)
+                    int(LINE_SUFFIX.match(k).group(2)), k, None, None, None, None, zh, en, ja, None)
                    for k, zh, en, ja in rows]
         con.executemany(
             "INSERT INTO story_lines(segment_id, unit_id, seq, line_key, speaker, speaker_id,"
-            " portrait, portrait_id, text_zh, text_en, text_ja) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            " portrait, portrait_id, text_zh, text_en, text_ja, text_ko)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
             payload,
         )
         added_lines += len(payload)
@@ -613,14 +623,80 @@ def import_locale_fill(con):
         f"新增段落 {len(new_seg):,} 个；UI 字符串 {len(strings):,} 条入库")
 
 
+def backfill_line_locale(con):
+    """按台词 key 从 Locale_*.lsc 回填 en / ko。
+
+    上游剧情 JSON 只导出 zh-CN（主线/部分活动带 en/ja），但本地化库本身是
+    十语并列的。这里不再重跑上游导出，直接把 48 万条台词按 key 补上
+    英文 / 韩文 / 日文；Locale_* 表之间 key 基本不重叠（实测仅 5 个），
+    先写入的非空值优先，不会被后面的表覆盖。已有值的列（如主线的 ja）
+    通过 COALESCE 保留，不会被覆盖。
+    """
+    log("[2.5/6] 回填英文 / 韩文 / 日文台词 …")
+    line_keys = {k for (k,) in con.execute("SELECT DISTINCT line_key FROM story_lines")}
+    str_keys = {k for (k,) in con.execute("SELECT key FROM locale_strings")}
+    if not line_keys and not str_keys:
+        return
+
+    found: dict[str, tuple[str | None, str | None, str | None]] = {}
+    dec_dir = os.path.join(SRC, "decrypted")
+    files = sorted(f for f in os.listdir(dec_dir) if f.endswith(".dec")) \
+        if os.path.isdir(dec_dir) else []
+    for fname in files:
+        path = os.path.join(dec_dir, fname).replace("\\", "/")
+        try:
+            loc = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        except Exception:
+            continue
+        try:
+            tables = [r[0] for r in loc.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'Locale_%'")]
+            for table in tables:
+                cols = {r[1] for r in loc.execute(f'PRAGMA table_info("{table}")')}
+                if not {"Key", "en", "ko", "ja"} <= cols:
+                    continue
+                for key, en, ko, ja in loc.execute(f'SELECT Key, en, ko, ja FROM "{table}"'):
+                    if key not in line_keys and key not in str_keys:
+                        continue
+                    old = found.get(key)
+                    if old is None:
+                        found[key] = (en or None, ko or None, ja or None)
+                    else:
+                        found[key] = (old[0] or en or None, old[1] or ko or None,
+                                      old[2] or ja or None)
+        except Exception as e:
+            log(f"  ! {fname}: {type(e).__name__} {e}")
+        finally:
+            loc.close()
+
+    line_updates = [(en, ko, ja, k) for k, (en, ko, ja) in found.items() if k in line_keys]
+    con.executemany(
+        "UPDATE story_lines SET"
+        " text_en = COALESCE(NULLIF(text_en, ''), NULLIF(?, '')),"
+        " text_ko = COALESCE(NULLIF(?, ''), text_ko),"
+        " text_ja = COALESCE(NULLIF(text_ja, ''), NULLIF(?, ''))"
+        " WHERE line_key = ?", line_updates,
+    )
+    str_updates = [(ko, k) for k, (_en, ko, _ja) in found.items() if k in str_keys and ko]
+    con.executemany("UPDATE locale_strings SET value_ko=? WHERE key=?", str_updates)
+    con.commit()
+    n_en = con.execute(
+        "SELECT COUNT(*) FROM story_lines WHERE text_en IS NOT NULL AND text_en != ''").fetchone()[0]
+    n_ko = con.execute(
+        "SELECT COUNT(*) FROM story_lines WHERE text_ko IS NOT NULL AND text_ko != ''").fetchone()[0]
+    n_ja = con.execute(
+        "SELECT COUNT(*) FROM story_lines WHERE text_ja IS NOT NULL AND text_ja != ''").fetchone()[0]
+    log(f"  命中 {len(found):,} 个 key；台词英文 {n_en:,} / 韩文 {n_ko:,} / 日文 {n_ja:,} 条")
+
+
 def import_characters(con, speakers):
     log("[3/6] 聚合角色 …")
     con.execute("DELETE FROM characters")
-    rows = [(sid, v["zh"] or sid, v["en"], v["ja"], v["count"], v["first"])
+    rows = [(sid, v["zh"] or sid, v["en"], v["ja"], None, v["count"], v["first"])
             for sid, v in speakers.items()]
     con.executemany(
-        "INSERT OR REPLACE INTO characters(speaker_id, name_zh, name_en, name_ja, line_count, first_seen)"
-        " VALUES(?,?,?,?,?,?)", rows,
+        "INSERT OR REPLACE INTO characters(speaker_id, name_zh, name_en, name_ja, name_ko,"
+        " line_count, first_seen) VALUES(?,?,?,?,?,?,?)", rows,
     )
     con.commit()
     log(f"  角色 {len(rows)} 个（有台词的）")
@@ -965,6 +1041,7 @@ def main():
     if args.only in (None, "story"):
         speakers = import_story(con)
         import_locale_fill(con)
+        backfill_line_locale(con)
         fts_rebuild(con)
         import_characters(con, speakers)
     if args.only in (None, "cg"):

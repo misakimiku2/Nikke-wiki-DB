@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS story_lines (
   portrait_id TEXT,
   text_zh    TEXT,
   text_en    TEXT,
-  text_ja    TEXT
+  text_ja    TEXT,
+  text_ko    TEXT
 );
 
 -- ============ 角色 ============
@@ -64,6 +65,7 @@ CREATE TABLE IF NOT EXISTS characters (
   name_zh      TEXT,
   name_en      TEXT,
   name_ja      TEXT,
+  name_ko      TEXT,
   line_count   INTEGER DEFAULT 0,
   first_seen   TEXT,                     -- 首次登场的 line_key
   avatar_path  TEXT                      -- 立绘（阶段 4 再填）
@@ -124,7 +126,11 @@ CREATE TABLE IF NOT EXISTS character_entries (
   desc_zh     TEXT,                  -- c010_description 角色介绍
   desc_en     TEXT,
   desc_ja     TEXT,
+  desc_ko     TEXT,
   intro_zh    TEXT,                  -- 10_intro 角色签名
+  intro_en    TEXT,
+  intro_ja    TEXT,
+  intro_ko    TEXT,
   cv          TEXT,                  -- 声优
   speaker_id  TEXT,                  -- 剧情说话人 id（marian），用于关联台词
   line_count  INTEGER DEFAULT 0,     -- 剧情台词数
@@ -148,7 +154,8 @@ CREATE TABLE IF NOT EXISTS locale_strings (
   table_name TEXT,
   value_zh   TEXT,
   value_en   TEXT,
-  value_ja   TEXT
+  value_ja   TEXT,
+  value_ko   TEXT
 );
 
 -- ============ 索引 ============

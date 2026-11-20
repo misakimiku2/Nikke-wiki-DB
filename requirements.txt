@@ -9,3 +9,4 @@
 Pillow>=10.0
 UnityPy>=1.20
 zstandard>=0.22
+numpy>=1.26
