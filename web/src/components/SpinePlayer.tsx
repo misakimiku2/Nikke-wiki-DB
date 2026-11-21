@@ -2101,7 +2101,21 @@ export default function SpinePlayer({
           if (pendingCapture) {
             const cb = pendingCapture
             pendingCapture = null
-            try { cb(canvas.toDataURL('image/png')) } catch { /* ignore */ }
+            // 预览 canvas 通常只有 300×400（dpr=1），直接抓再放大到 480×640 会糊。
+            // 临时把绘图缓冲提高到 3 倍，相机仍按容器 CSS 尺寸算 → 取景不变、分辨率变高。
+            const oldW = canvas.width
+            const oldH = canvas.height
+            try {
+              canvas.width = Math.round(oldW * 3)
+              canvas.height = Math.round(oldH * 3)
+              drawFrame()
+              cb(canvas.toDataURL('image/png'))
+            } catch { /* ignore */ }
+            finally {
+              canvas.width = oldW
+              canvas.height = oldH
+              drawFrame()
+            }
           }
           if (!ready) {
             ready = true

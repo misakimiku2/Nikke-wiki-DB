@@ -16,6 +16,8 @@
   python build/build_story_covers.py --report   # 只打印选图变化，不写回
   python build/build_story_covers.py --force    # 忽略 mtime 重生成全部封面（换裁剪参数后用）
   python build/build_story_covers.py --only 1,2 # 只处理指定单元 id
+  python build/build_story_covers.py --save-src a.png public/cover_src/ext_x.webp
+                                                # 外部上传：存原图并打印 "宽 高"
 
 手动指定封面：在 build/cg_cover_overrides.json 里写 {"单元id": "hash"}，
 优先级最高（hash 见 CG 图鉴灯箱 URL 或 public/img/l/ 文件名）。
@@ -42,16 +44,29 @@ CG_MERGES = os.path.join(ROOT, "public", "data", "cg_merges.json")
 OVERRIDES = os.path.join(ROOT, "build", "cg_cover_overrides.json")
 IMG = os.path.join(ROOT, "public", "img")
 OUT = os.path.join(ROOT, "public", "cover")
+# 外部上传的原图（网络 URL / 本地文件）：和 CG 原图一样参与 crop 现裁，不新增 CG 条目
+SRC_DIR = os.path.join(ROOT, "public", "cover_src")
 TW, TH = 480, 640          # 3:4
 ASPECT = TW / TH
 
 MAX_CANDS = 8              # 每个单元最多评分的候选数
 SCORE_W = 320              # 评分时缩到的宽度
+DEBUG = os.environ.get("NIKKE_COVER_DEBUG") == "1"   # 排查取景问题时设 1 打印源/目标/裁剪
 
 
 def source_path(h):
+    # 外部上传图优先：文件名带 ext_ 前缀，不会和 manifest 里的 CG hash 冲突
+    p = os.path.join(SRC_DIR, f"{h}.webp")
+    if os.path.exists(p):
+        return p
     for sub in ("l", "m", "s"):
         p = os.path.join(IMG, sub, f"{h}.webp")
+        if os.path.exists(p):
+            return p
+    # 活动主视觉 / 抓帧封面等没有原图的文件：用现成封面当源，仍可重新取景。
+    # 真正的 CG hash（16 位十六进制）不走这条路，避免把已裁好的 3:4 当原图二次裁剪。
+    if not re.fullmatch(r"[0-9a-f]{16}", h):
+        p = os.path.join(OUT, f"{h}.webp")
         if os.path.exists(p):
             return p
     return None
@@ -289,6 +304,22 @@ def make_cover(src, dst, crop=None):
 
 # ---------------------------------------------------------------- 主流程
 
+def save_source(src, dst):
+    """把外部上传的原图存成 webp（保留整幅，不裁剪），供后续按 crop 现裁封面。
+
+    由 vite 的 /api/cover-upload 调用；stdout 输出 "宽 高" 让后台写进
+    public/data/cover_sources.json，编辑器的裁剪预览据此知道原图尺寸。
+    """
+    img = Image.open(src)
+    img.load()
+    w, h = img.size
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    img.save(dst, "WEBP", quality=92, method=6)
+    print(f"{w} {h}")
+
+
 def frame_to_cover(src, dst):
     """把动态 CG 当前帧（后台抓的 PNG）转成 3:4 封面。
 
@@ -307,6 +338,12 @@ def frame_to_cover(src, dst):
 
 
 def main():
+    # 后台上传外部图专用：存原图并报尺寸后退出，不碰其它产物
+    if "--save-src" in sys.argv:
+        i = sys.argv.index("--save-src")
+        save_source(sys.argv[i + 1], sys.argv[i + 2])
+        return
+
     # 后台抓帧专用：把一张 PNG 转成 3:4 封面后退出，不碰其它产物
     if "--frame" in sys.argv:
         i = sys.argv.index("--frame")
@@ -476,9 +513,19 @@ def main():
             continue
         src = source_path(h)
         dst = os.path.join(OUT, f"{h}.webp")
+        if DEBUG:
+            print(f"[cover] {h}: src={src} dst={dst} crop={crop_of.get(h)} force={force}")
         if not src:
             missing += 1
             print(f"  缺源图: {h}")
+            continue
+        # 源就是成品（frame_* / xxx_cover 这类无原图的封面）：再跑一遍自动取景会
+        # 把刚抓好的 3:4 帧当方图二次 density_crop，构图被放大。没有人工裁剪参数
+        # 时直接保留文件；有 crop 参数时才用 manual_crop 现裁（此时 src==dst 安全，
+        # make_cover 会先 img.load() 再写盘）。
+        if os.path.abspath(src) == os.path.abspath(dst) and h not in crop_of:
+            if DEBUG:
+                print(f"[cover] {h}: 成品即源且无 crop，跳过自动取景")
             continue
         stale = (force or not os.path.exists(dst)
                  or os.path.getmtime(dst) < os.path.getmtime(src))

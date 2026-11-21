@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile } from 'node:child_process'
+import crypto from 'node:crypto'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const FLAGS = path.resolve(HERE, '../build/cg_flags.json')
@@ -15,11 +16,15 @@ const MERGES_DST = path.resolve(HERE, '../public/data/cg_merges.json')
 /** 剧情卡封面的人工指定（选 CG + 裁剪参数），封面编辑器直接读写 */
 const COVER_OVERRIDES_SRC = path.resolve(HERE, '../build/cg_cover_overrides.json')
 const COVER_DIR = path.resolve(HERE, '../public/cover')
+/** 外部上传的原图（网络 URL / 本地文件）与尺寸清单，按 ext_* 命名，不进 manifest */
+const COVER_SRC_DIR = path.resolve(HERE, '../public/cover_src')
+const COVER_SOURCES_MANIFEST = path.resolve(HERE, '../public/data/cover_sources.json')
 const PROJECT_ROOT = path.resolve(HERE, '..')
 const COVER_NOTE =
   '剧情卡封面手动指定：{"剧情单元id": "封面图hash"}，或 ' +
   '{"剧情单元id": {"h": "hash", "crop": {"cx": 0~1, "cy": 0~1, "zoom": ≥1}}}。' +
   'crop 只存参数，封面图由 build/build_story_covers.py 从 manifest 已有的原图按 3:4 现裁，不新增 CG 图。' +
+  '外部上传图以 ext_ 开头，原图在 public/cover_src/，尺寸在 public/data/cover_sources.json。' +
   '由 /story/covers 编辑后台（dev）写入。'
 const SITE_SRC = path.resolve(HERE, '../build/site')
 const SITE_DST = path.resolve(HERE, '../public')
@@ -361,6 +366,8 @@ function storyCoverEditsPlugin(): Plugin {
             try {
               const raw = JSON.parse(body || '{}')
               const id = Number(raw.id)
+              console.log('[cover-edits] POST', id,
+                raw.frame ? `frame=${raw.frame.name} t=${raw.frame.time}` : `h=${raw.h}`)
               if (!Number.isInteger(id) || id <= 0) throw new Error('invalid unit id')
               const edits = readEdits()
 
@@ -398,7 +405,8 @@ function storyCoverEditsPlugin(): Plugin {
                         res.end(JSON.stringify({ ok: false, edits: saved, error: out2.slice(-800) }))
                         return
                       }
-                      server.ws.send({ type: 'full-reload' })
+                      // 不在这里发 Vite full-reload：客户端保存成功后会自己 reload，
+                      // 且会暂时放行 beforeunload，避免在「刷新站点?」弹窗里卡住。
                       res.end(JSON.stringify({ ok: true, edits: saved, cover: key }))
                     })
                   },
@@ -431,7 +439,6 @@ function storyCoverEditsPlugin(): Plugin {
                   res.end(JSON.stringify({ ok: false, edits: saved, error: out.slice(-800) }))
                   return
                 }
-                server.ws.send({ type: 'full-reload' })
                 res.end(JSON.stringify({ ok: true, edits: saved }))
               })
             } catch (e) {
@@ -448,8 +455,140 @@ function storyCoverEditsPlugin(): Plugin {
   }
 }
 
+/**
+ * 开发期专用：给剧情卡封面编辑后台导入「外部图片」（网络 URL / 本地文件）。
+ * POST /api/cover-upload <- { url } 或 { dataUrl }，可带 { name }
+ *   -> { ok, h, w, h2, name, src }
+ * 原图存 public/cover_src/<h>.webp，尺寸写 public/data/cover_sources.json；
+ * 之后和普通 CG 一样：在编辑器里裁剪，保存 {h, crop} 到 cg_cover_overrides.json。
+ * 网络图由后端抓取，绕开浏览器跨域限制。生产构建不存在该接口。
+ */
+function coverUploadPlugin(): Plugin {
+  const ensure = () => {
+    fs.mkdirSync(COVER_SRC_DIR, { recursive: true })
+    fs.mkdirSync(path.dirname(COVER_SOURCES_MANIFEST), { recursive: true })
+    if (!fs.existsSync(COVER_SOURCES_MANIFEST)) {
+      fs.writeFileSync(COVER_SOURCES_MANIFEST, '{}\n', 'utf-8')
+    }
+  }
+  const readManifest = (): Record<string, { w: number; h: number; name: string }> => {
+    try {
+      return JSON.parse(fs.readFileSync(COVER_SOURCES_MANIFEST, 'utf-8'))
+    } catch {
+      return {}
+    }
+  }
+  return {
+    name: 'cover-upload',
+    configResolved() {
+      ensure()
+    },
+    configureServer(server) {
+      server.middlewares.use('/api/cover-upload', (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ ok: false, error: 'method not allowed' }))
+          return
+        }
+        let body = ''
+        let tooBig = false
+        req.on('data', (c: Buffer) => {
+          if (tooBig) return
+          body += c.toString('utf-8')
+          if (body.length > 32 * 1024 * 1024) {
+            tooBig = true
+            res.statusCode = 413
+            res.end(JSON.stringify({ ok: false, error: '图片数据过大（上限 32MB）' }))
+            req.destroy()
+          }
+        })
+        req.on('end', () => {
+          if (tooBig) return
+          void (async () => {
+            const raw = JSON.parse(body || '{}')
+            let buf: Buffer
+            const label = String(raw.name || '').trim() || '外部图片'
+            if (typeof raw.url === 'string' && raw.url.trim()) {
+              let u: URL
+              try {
+                u = new URL(raw.url.trim())
+              } catch {
+                throw new Error('URL 格式无效')
+              }
+              if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+                throw new Error('只支持 http/https 图片地址')
+              }
+              const r = await fetch(u, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (nikke-web cover studio)' },
+                signal: AbortSignal.timeout(20000),
+              })
+              if (!r.ok) throw new Error(`下载失败：HTTP ${r.status}`)
+              const ct = String(r.headers.get('content-type') || '')
+              if (!/^image\/(png|jpe?g|webp|gif|bmp|x-ms-bmp)/i.test(ct)) {
+                throw new Error(`地址返回的不是图片（Content-Type: ${ct || '未知'}）`)
+              }
+              buf = Buffer.from(await r.arrayBuffer())
+            } else if (typeof raw.dataUrl === 'string' && raw.dataUrl.trim()) {
+              const m = /^data:image\/(png|jpe?g|webp|gif|bmp|x-ms-bmp);base64,([\s\S]+)$/i
+                .exec(raw.dataUrl.trim())
+              if (!m) throw new Error('只支持 PNG / JPEG / WebP / GIF / BMP 图片')
+              buf = Buffer.from(m[2].replace(/\s/g, ''), 'base64')
+            } else {
+              throw new Error('请选择本地图片或填写网络图片地址')
+            }
+            if (!buf.length) throw new Error('图片内容为空')
+            if (buf.length > 20 * 1024 * 1024) throw new Error('图片超过 20MB')
+
+            const slug = label.toLowerCase().replace(/[^a-z0-9_-]+/g, '_')
+              .replace(/^_+|_+$/g, '').slice(0, 24) || 'external'
+            const key = `ext_${slug}_${crypto.createHash('sha256').update(buf).digest('hex').slice(0, 10)}`
+            const tmp = path.join(COVER_SRC_DIR, `_upload_${process.pid}_${Date.now()}.img`)
+            const dst = path.join(COVER_SRC_DIR, `${key}.webp`)
+            fs.mkdirSync(COVER_SRC_DIR, { recursive: true })
+            fs.writeFileSync(tmp, buf)
+            const run = (py: string) => execFile(
+              py, ['build/build_story_covers.py', '--save-src', tmp, dst],
+              { cwd: PROJECT_ROOT, timeout: 60000 },
+              (err, stdout, stderr) => {
+                try { fs.unlinkSync(tmp) } catch { /* ignore */ }
+                if (err && py === 'python') { run('python3'); return }
+                if (err) {
+                  res.statusCode = 500
+                  res.end(JSON.stringify({ ok: false, error: (stderr || String(err)).slice(-800) }))
+                  return
+                }
+                console.log('[cover-edits] frame converted ->', key, (stdout || '').trim())
+                const dims = /(?:^|\s)(\d+)\s+(\d+)(?:\s|$)/.exec(stdout || '')
+                if (!dims) {
+                  res.statusCode = 500
+                  res.end(JSON.stringify({ ok: false, error: `无法读取图片尺寸：${(stdout || '').slice(-300)}` }))
+                  return
+                }
+                const w = Number(dims[1])
+                const h = Number(dims[2])
+                const manifest = readManifest()
+                manifest[key] = { w, h, name: label }
+                fs.writeFileSync(COVER_SOURCES_MANIFEST,
+                  JSON.stringify(manifest, null, 2) + '\n', 'utf-8')
+                res.end(JSON.stringify({
+                  ok: true, h: key, w, h2: h, name: label, src: `/cover_src/${key}.webp`,
+                }))
+              },
+            )
+            run('python')
+          })().catch((e) => {
+            res.statusCode = 400
+            res.end(JSON.stringify({ ok: false, error: String(e) }))
+          })
+        })
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
+  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), coverUploadPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',

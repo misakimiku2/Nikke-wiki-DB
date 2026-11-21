@@ -4645,4 +4645,17 @@ body.immersive-mode .cv-shell .cv-main {
 }
 .sc-timeline input[type=range] { flex: 1; min-width: 0; accent-color: var(--red); }
 .sc-timeline span { opacity: .7; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sc-external { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 16px; }
+.sc-external-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.sc-external-head h3 { margin: 0; font-size: 15px; }
+.sc-external-head span { opacity: .62; font-size: 11px; line-height: 1.5; }
+.sc-external-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.sc-external-row .sc-search { width: min(360px, 100%); flex: 1 1 240px; }
+.sc-external-row .sc-ext-name { flex: 0 1 180px; }
+.sc-external-row button {
+  padding: 9px 13px; border: 1px solid var(--red); border-radius: 4px;
+  background: var(--red); color: #fff; font: 700 12px/1.3 inherit; cursor: pointer;
+}
+.sc-external-row button:disabled { opacity: .4; cursor: not-allowed; }
+.sc-external-row > span { opacity: .55; font-size: 11px; }
 .sc-toast.bad { background: #b3122f; color: #fff; }

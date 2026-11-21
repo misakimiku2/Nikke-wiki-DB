@@ -121,6 +121,10 @@ python build/build_story_covers.py --only 1,2 # 只重选指定单元
 # 动态 CG：候选列表里带 ▶ 的条目是实时 Spine 模型；选中后可用时间轴播放/拖动定位，
 #   保存时抓当前帧转成 3:4 封面（写 public/cover/frame_<模型>_<毫秒>.webp）。
 #   只存参数/帧文件，不改 CG 原图。
+#   ★ 外部图片：数据包里已无对应 CG 时（如 BULLET X CHAINSAW），在 /story/covers
+#     的「外部图片」区粘贴网络图片 URL 或上传本地图片。原图存 public/cover_src/ext_*.webp，
+#     尺寸记在 public/data/cover_sources.json；之后和 CG 一样拖动/缩放取景再保存，
+#     build_story_covers.py 会从这份原图现裁 public/cover/<key>.webp。网络图由后端抓取（无跨域问题）。
 
 # 5. 自检与前端构建
 python build/verify.py                    # 校验各产物是否齐备

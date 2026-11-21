@@ -1,4 +1,40 @@
 {
+  "2": "frame_EventScene_Main_01_03_0",
+  "3": {
+    "h": "940a102f6ab4b411",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "4": "frame_EventScene_Chap_04_05_1",
+  "5": "frame_EventScene_Chap_04_01_2",
+  "6": {
+    "h": "06ac18c0bf1c69d3",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "7": {
+    "h": "0225ebe9c4771b04",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "8": "frame_EventScene_Chap_07_02_0",
+  "9": {
+    "h": "044211ed3d85202f",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
   "10": {
     "h": "bfe3a8de4c837d87",
     "crop": {
@@ -7,12 +43,240 @@
       "zoom": 1
     }
   },
+  "13": "frame_EventScene_Chap_12_After_01_2",
+  "14": {
+    "h": "f8edc5f17cfb3087",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "15": {
+    "h": "9047ddd5181430c0",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "18": {
+    "h": "86cd31ad8a6cb6d9",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "19": {
+    "h": "53e2a234fc5965db",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "21": {
+    "h": "729f462fc4e15145",
+    "crop": {
+      "cx": 0.4565677521008405,
+      "cy": 0.5472952410130719,
+      "zoom": 2.1
+    }
+  },
+  "22": {
+    "h": "719e9f4cd4c0c513",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "23": {
+    "h": "1b3cd67aff61669e",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
   "26": "aa790782d28e5f1f",
-  "50": "1142f4d18c9f2073",
+  "27": {
+    "h": "321337ef02391d97",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "28": {
+    "h": "473ee9b8ccc110e8",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "29": {
+    "h": "d3b531b5eda2b012",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "31": {
+    "h": "c3426c1f3b1aaaf9",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "32": {
+    "h": "b9753624e34f040e",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "33": {
+    "h": "adec2140cf239fc6",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "35": {
+    "h": "43bb249bb4057224",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "37": {
+    "h": "b317f48671974821",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "39": {
+    "h": "8ee47e17d06a2d21",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "42": {
+    "h": "f2e1fa22984e80bc",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "43": {
+    "h": "dafd5ab6476a536a",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "44": {
+    "h": "dc2c518ae348525f",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "45": {
+    "h": "7a1cef7d6209f143",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "46": {
+    "h": "d709e8a1e8c6015a",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "47": {
+    "h": "36fa6cbdb5e9509c",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "48": {
+    "h": "64d5efe68d241f12",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "49": {
+    "h": "ef7c4a6902c85841",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "50": {
+    "h": "7425f2a17303b9bb",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "51": {
+    "h": "80782278c059bd09",
+    "crop": {
+      "cx": 0.5149705668571766,
+      "cy": 0.3767056819277215,
+      "zoom": 3
+    }
+  },
+  "52": "frame_EventScene_NoCallerID_01_1",
+  "53": "frame_EventScene_HightechToy_01_1",
+  "54": "frame_EventScene_MiracleSnow_01_1",
+  "55": {
+    "h": "2f3ef96b089df0d3",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "56": {
+    "h": "13e30659abdcd61f",
+    "crop": {
+      "cx": 0.49060355547874884,
+      "cy": 0.5458333333333334,
+      "zoom": 1.2
+    }
+  },
+  "57": "frame_EventScene_BrandNewYear_02_2",
   "126": "d56225f890aaa075",
   "145": "0693d3fa0a34e40c",
   "149": "e8ce50f95c406bc5",
   "152": "aab1184cf3e73047",
   "161": "skyontherock_cover",
-  "_note": "剧情卡封面手动指定：{\"剧情单元id\": \"封面图hash\"}，或 {\"剧情单元id\": {\"h\": \"hash\", \"crop\": {\"cx\": 0~1, \"cy\": 0~1, \"zoom\": ≥1}}}。crop 只存参数，封面图由 build/build_story_covers.py 从 manifest 已有的原图按 3:4 现裁，不新增 CG 图。由 /story/covers 编辑后台（dev）写入。"
+  "_note": "剧情卡封面手动指定：{\"剧情单元id\": \"封面图hash\"}，或 {\"剧情单元id\": {\"h\": \"hash\", \"crop\": {\"cx\": 0~1, \"cy\": 0~1, \"zoom\": ≥1}}}。crop 只存参数，封面图由 build/build_story_covers.py 从 manifest 已有的原图按 3:4 现裁，不新增 CG 图。外部上传图以 ext_ 开头，原图在 public/cover_src/，尺寸在 public/data/cover_sources.json。由 /story/covers 编辑后台（dev）写入。"
 }

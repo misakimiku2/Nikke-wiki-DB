@@ -10,9 +10,14 @@ type Crop = { cx: number; cy: number; zoom: number }
 type Edit = string | { h: string; crop?: Crop }
 type Picked = { h: string; crop: Crop | null }
 type Toast = { text: string; bad?: boolean }
+type CoverSource = { w: number; h: number; name: string }
 
 const ASPECT = 3 / 4
+const UI_STATE_KEY = 'nikke:story-covers:ui'
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+/** 统一「自动取景」的两种写法（纯 hash / {h}）再比较，避免刚选中就误判为未保存 */
+const canonEdit = (e: Edit | null | undefined) =>
+  !e ? null : typeof e === 'string' ? { h: e, crop: null } : { h: e.h, crop: e.crop || null }
 
 /** 与 build/build_story_covers.py 的 manual_crop 同款：3:4 的最小外接窗口 + 缩放 */
 function cropWindow(w: number, h: number, c: Crop) {
@@ -42,6 +47,16 @@ function cropWindow(w: number, h: number, c: Crop) {
 export default function StoryCovers() {
   const [idx, setIdx] = useState<StoryUnit[]>([])
   const [cg, setCg] = useState<CgIndex | null>(null)
+  const [sources, setSources] = useState<Record<string, CoverSource>>({})
+  const [extUrl, setExtUrl] = useState('')
+  const [extName, setExtName] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  // 不在 cg_index / 外部清单里的封面（frame_* / *_cover），尺寸从预览图本身读
+  const [loadedDims, setLoadedDims] = useState<{ h: string; w: number; h2: number } | null>(null)
+  // 只要动过封面（选图 / 上传 / 裁剪 / 取景模式 / 时间轴）就允许保存，
+  // 不能只靠 hash + crop 比较：动态 CG 换帧时 hash 根本不变。
+  const [touched, setTouched] = useState(false)
   const [spine, setSpine] = useState<Set<string>>(new Set())
   const [modelName, setModelName] = useState<string | null>(null)
   const [spineStatus, setSpineStatus] = useState<SpineStatus | null>(null)
@@ -56,8 +71,11 @@ export default function StoryCovers() {
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
+  // 保存成功后由我们主动 reload；此时要放行 beforeunload，否则会弹「重新加载站点?」
+  const suppressLeaveGuard = useRef(false)
   const dragRef = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null)
   const boxRef = useRef<HTMLDivElement | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
 
   const showToast = useCallback((text: string, bad = false) => {
     setToast({ text, bad })
@@ -65,19 +83,63 @@ export default function StoryCovers() {
     toastTimer.current = window.setTimeout(() => setToast(null), bad ? 6000 : 3400)
   }, [])
 
-  useEffect(() => {
-    loadStoryIndex().then(setIdx).catch(() => setIdx([]))
-    loadCgIndex().then(setCg).catch(() => setCg(null))
-    loadSpineModels().then(setSpine).catch(() => setSpine(new Set()))
-    fetch('/api/cover-edits')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no api'))))
-      .then((m: { edits?: Record<string, Edit> }) => {
-        const e = m.edits || {}
-        setEdits(e)
-        setApiOk(true)
-      })
-      .catch(() => setApiOk(false))
+  // 选中单元时把派生状态一并算好；显式传快照，供首次加载/保存后恢复时复用
+  const applyUnit = useCallback((
+    u: StoryUnit, editsSnap: Record<string, Edit>,
+  ) => {
+    setSelId(u.id)
+    setTouched(false)
+    const e = editsSnap[String(u.id)]
+    // 动态 CG 抓帧封面在这里按静态图展示：动画自带随时间变化的 autoZoom，
+    // 自动重播会让预览和已保存的那一帧对不上。要换帧再手动点 ▶ 模型。
+    setModelName(null)
+    if (typeof e === 'string') setPicked({ h: e, crop: null })
+    else if (e && typeof e === 'object' && e.h) setPicked({ h: e.h, crop: e.crop || null })
+    // 没有人工指定时，也把当前封面载入预览，方便直接对它重新裁剪
+    else if (u.cover) setPicked({ h: u.cover, crop: null })
+    else setPicked(null)
   }, [])
+
+  useEffect(() => {
+    let alive = true
+    let saved: {
+      scrollTop?: number; selId?: number; scope?: string; q?: string; unitQ?: string
+    } | null = null
+    try { saved = JSON.parse(sessionStorage.getItem(UI_STATE_KEY) || 'null') } catch { /* ignore */ }
+
+    Promise.all([
+      loadStoryIndex().catch(() => [] as StoryUnit[]),
+      loadCgIndex().catch(() => null),
+      loadSpineModels().catch(() => new Set<string>()),
+      fetch('/data/cover_sources.json')
+        .then((r) => (r.ok ? r.json() : {}))
+        .catch(() => ({} as Record<string, CoverSource>)),
+      fetch('/api/cover-edits')
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no api'))))
+        .then((m: { edits?: Record<string, Edit> }) => ({ edits: m.edits || {}, ok: true }))
+        .catch(() => ({ edits: {} as Record<string, Edit>, ok: false })),
+    ]).then(([units, c, s, srcs, api]) => {
+      if (!alive) return
+      setIdx(units)
+      setCg(c)
+      setSpine(s)
+      setSources(srcs || {})
+      if (api.ok) { setEdits(api.edits); setApiOk(true) }
+      if (!saved) return
+      setUnitQ(saved.unitQ || '')
+      if (saved.selId != null) {
+        const target = units.find((u) => u.id === saved.selId)
+        if (target) applyUnit(target, api.edits)
+      }
+      setScope(saved.scope === 'all' ? 'all' : 'linked')
+      setQ(saved.q || '')
+      // 列表渲染后再恢复滚动位置
+      window.setTimeout(() => {
+        if (listRef.current) listRef.current.scrollTop = saved?.scrollTop || 0
+      }, 0)
+    })
+    return () => { alive = false }
+  }, [applyUnit])
 
   const byHash = useMemo(() => {
     const m = new Map<string, CgItem>()
@@ -146,29 +208,24 @@ export default function StoryCovers() {
   const edit = selId != null ? edits[String(selId)] : undefined
   // 未保存 = 当前本地选图/裁剪与已落盘的人工指定不一致（而不是只看 edits 全局快照）
   const currentEdit = selId != null
-    ? (picked ? (picked.crop ? { h: picked.h, crop: picked.crop } : picked.h) : null)
+    ? (picked ? (picked.crop ? { h: picked.h, crop: picked.crop } : { h: picked.h }) : null)
     : null
+  // 没有人工指定时，预览里默认就是当前封面，这不算「未保存」
+  const savedEdit = edit ?? (unit?.cover ? unit.cover : null)
   const dirty = apiOk && selId != null
-    && JSON.stringify(currentEdit) !== JSON.stringify(edit ?? null)
+    && (touched || JSON.stringify(canonEdit(currentEdit)) !== JSON.stringify(canonEdit(savedEdit)))
 
   const chooseUnit = useCallback((u: StoryUnit) => {
-    setSelId(u.id)
+    applyUnit(u, edits)
     setScope('linked')
     setQ('')
-    const e = edits[String(u.id)]
-    // 抓帧生成的封面名里带模型名：frame_<模型>_<毫秒>
-    const frameModel = typeof e === 'string' && e.startsWith('frame_')
-      ? e.replace(/^frame_/, '').replace(/_\d+$/, '') : null
-    setModelName(frameModel && spine.has(frameModel) ? frameModel : null)
-    if (typeof e === 'string') setPicked({ h: e, crop: null })
-    else if (e && typeof e === 'object' && e.h) setPicked({ h: e.h, crop: e.crop || null })
-    else setPicked(null)
-  }, [edits, spine])
+  }, [applyUnit, edits, spine])
 
   const chooseCg = useCallback((it: CgItem) => {
     const isDyn = it.d === 1 || spine.has(it.n)
     setModelName(isDyn ? it.n : null)
     setSpineStatus(null)
+    setTouched(true)
     if (isDyn) {
       // 动态 CG 用时间轴抓帧，不走静态裁剪
       setPicked({ h: it.h, crop: null })
@@ -179,7 +236,53 @@ export default function StoryCovers() {
     setPicked({ h: it.h, crop })
   }, [edit, spine])
 
+  /** 外部图片（网络 URL / 本地文件）：上传到 dev 后端保存原图，再走同一套裁剪流程 */
+  const uploadExternal = useCallback(async (payload: { dataUrl?: string; url?: string; name?: string }) => {
+    if (uploading) return
+    setUploading(true)
+    try {
+      const r = await fetch('/api/cover-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const j: {
+        ok?: boolean; error?: string; h?: string; w?: number; h2?: number; name?: string
+      } = await r.json()
+      const w = Number(j.w)
+      const h2 = Number(j.h2)
+      if (!j.ok || !j.h || !w || !h2) throw new Error(j.error || '导入失败')
+      const key = j.h
+      setSources((s) => ({ ...s, [key]: { w, h: h2, name: j.name || '外部图片' } }))
+      setModelName(null)
+      setTouched(true)
+      setPicked({ h: key, crop: { cx: 0.5, cy: 0.5, zoom: 1 } })
+      showToast('外部图片已导入，可拖动 / 缩放取景后保存')
+    } catch (e) {
+      showToast(`导入失败：${String(e)}`, true)
+    } finally {
+      setUploading(false)
+    }
+  }, [uploading, showToast])
+
+  const onExternalFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    if (!f.type.startsWith('image/')) {
+      showToast('请选择图片文件', true)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      void uploadExternal({ dataUrl: String(reader.result || ''), name: f.name })
+    }
+    reader.onerror = () => showToast('读取本地图片失败', true)
+    reader.readAsDataURL(f)
+  }
+
   const setCropField = (patch: Partial<Crop>) => {
+    setTouched(true)
     setPicked((p) => (p ? { ...p, crop: { cx: 0.5, cy: 0.5, zoom: 1, ...(p.crop || {}), ...patch } } : p))
   }
 
@@ -192,13 +295,26 @@ export default function StoryCovers() {
     const j: { ok?: boolean; edits?: Record<string, Edit>; error?: string } = await r.json()
     if (!j.ok) throw new Error(j.error || '保存失败')
     setEdits(j.edits || {})
+    setTouched(false)
     showToast(msg)
-    window.setTimeout(() => window.location.reload(), 1200)
-  }, [showToast])
+    window.setTimeout(() => {
+      // 记住左侧列表滚动位置与当前选中单元，刷新后原样恢复
+      try {
+        sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({
+          scrollTop: listRef.current?.scrollTop || 0,
+          selId, scope, q, unitQ,
+        }))
+      } catch { /* ignore */ }
+      suppressLeaveGuard.current = true
+      window.location.reload()
+    }, 1200)
+  }, [showToast, selId, scope, q, unitQ])
 
   const save = useCallback(async (remove = false) => {
     if (!apiOk || selId == null || saving) return
     if (!remove && !picked) return
+    // 从保存开始就放行 beforeunload：写盘时 Vite 也可能因 public/ 变化触发 full-reload
+    suppressLeaveGuard.current = true
     setSaving(true)
     try {
       if (remove) {
@@ -215,6 +331,7 @@ export default function StoryCovers() {
               '已保存动态 CG 当前帧作为封面，刷新中…',
             )
           } catch (e) {
+            suppressLeaveGuard.current = false
             showToast(`保存失败：${String(e)}`, true)
             setSaving(false)
           }
@@ -226,6 +343,7 @@ export default function StoryCovers() {
         : { id: selId, h: picked!.h }
       await finishSave(body, '已写入 build/cg_cover_overrides.json，封面重新生成中…')
     } catch (e) {
+      suppressLeaveGuard.current = false
       showToast(`保存失败：${String(e)}`, true)
       setSaving(false)
     }
@@ -244,13 +362,26 @@ export default function StoryCovers() {
 
   useEffect(() => {
     if (!dirty) return
-    const onLeave = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (suppressLeaveGuard.current) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
     window.addEventListener('beforeunload', onLeave)
     return () => window.removeEventListener('beforeunload', onLeave)
   }, [dirty])
 
   const pickedItem = picked ? byHash.get(picked.h) : undefined
-  const dims = pickedItem ? { w: pickedItem.w || 1024, h: pickedItem.h2 || 1024 } : null
+  const extSource = picked ? sources[picked.h] : undefined
+  const dims = pickedItem
+    ? { w: pickedItem.w || 1024, h: pickedItem.h2 || 1024 }
+    : extSource ? { w: extSource.w, h: extSource.h }
+    : loadedDims && picked && loadedDims.h === picked.h
+      ? { w: loadedDims.w, h: loadedDims.h2 } : null
+  const previewSrc = picked
+    ? (extSource ? `/cover_src/${picked.h}.webp`
+      : pickedItem ? `/img/l/${picked.h}.webp` : `/cover/${picked.h}.webp`)
+    : ''
   const win = dims && picked?.crop
     ? cropWindow(dims.w, dims.h, picked.crop)
     : null
@@ -333,7 +464,7 @@ export default function StoryCovers() {
             className="sc-search" placeholder="搜索单元 / bucket / 标题"
             value={unitQ} onChange={(e) => setUnitQ(e.target.value)}
           />
-          <div className="sc-list">
+          <div className="sc-list" ref={listRef}>
             {filteredUnits.map((u) => (
               <button
                 key={u.id}
@@ -380,8 +511,11 @@ export default function StoryCovers() {
                       </div>
                       <div className="sc-timeline">
                         <button
-                          onClick={() => spineStatus?.playing
-                            ? spineRef.current?.pause() : spineRef.current?.play()}
+                          onClick={() => {
+                            setTouched(true)
+                            if (spineStatus?.playing) spineRef.current?.pause()
+                            else spineRef.current?.play()
+                          }}
                         >{spineStatus?.playing ? '暂停' : '播放'}</button>
                         <span>{spineStatus?.time.toFixed(2) ?? '0.00'}s</span>
                         <input
@@ -391,6 +525,7 @@ export default function StoryCovers() {
                             const t = Number(e.target.value)
                             spineRef.current?.seek(t)
                             setSpineStatus((s) => (s ? { ...s, time: t } : s))
+                            setTouched(true)
                           }}
                         />
                         <span>{(spineStatus?.duration ?? 0).toFixed(2)}s</span>
@@ -411,14 +546,20 @@ export default function StoryCovers() {
                       >
                         {picked && (
                           <img
-                            src={`/img/l/${picked.h}.webp`}
+                            src={previewSrc}
                             alt=""
                             draggable={false}
+                            onLoad={(e) => {
+                              const im = e.currentTarget
+                              if (im.naturalWidth && im.naturalHeight && picked) {
+                                setLoadedDims({ h: picked.h, w: im.naturalWidth, h2: im.naturalHeight })
+                              }
+                            }}
                             style={win && dims ? {
                               width: `${(dims.w / win.cw) * 100}%`,
                               left: `${-(win.x / win.cw) * 100}%`,
                               top: `${-(win.y / win.ch) * 100}%`,
-                            } : { width: '100%', left: 0, top: 0 }}
+                            } : { width: '100%', height: '100%', objectFit: 'cover', left: 0, top: 0 }}
                           />
                         )}
                         {!picked && <span className="sc-preview-empty">未选择 CG</span>}
@@ -440,14 +581,20 @@ export default function StoryCovers() {
                       <button
                         className={picked?.crop ? '' : 'on'}
                         disabled={!picked}
-                        onClick={() => setPicked((p) => (p ? { ...p, crop: null } : p))}
+                        onClick={() => {
+                          setTouched(true)
+                          setPicked((p) => (p ? { ...p, crop: null } : p))
+                        }}
                       >自动取景</button>
                       <button
                         className={picked?.crop ? 'on' : ''}
                         disabled={!picked}
-                        onClick={() => setPicked((p) => (
-                          p ? { ...p, crop: p.crop || { cx: 0.5, cy: 0.5, zoom: 1 } } : p
-                        ))}
+                        onClick={() => {
+                          setTouched(true)
+                          setPicked((p) => (
+                            p ? { ...p, crop: p.crop || { cx: 0.5, cy: 0.5, zoom: 1 } } : p
+                          ))
+                        }}
                       >手动裁剪</button>
                     </div>
                   </div>
@@ -469,12 +616,49 @@ export default function StoryCovers() {
                     <label>当前封面</label>
                     <code>{picked?.h || unit.cover || '（文字兜底卡）'}</code>
                     {pickedItem && <small>{pickedItem.n} · {pickedItem.w}×{pickedItem.h2}</small>}
+                    {extSource && <small>外部图片 · {extSource.name} · {extSource.w}×{extSource.h}</small>}
                   </div>
                   <div className="sc-field sc-row">
                     <button className="sc-clear" disabled={!edit} onClick={() => void save(true)}>
                       清除人工指定
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <div className="sc-external">
+                <div className="sc-external-head">
+                  <h3>外部图片</h3>
+                  <span>数据包里已没有对应 CG 时，可粘贴网络图片地址或上传本地图片，同样按 3:4 取景。</span>
+                </div>
+                <div className="sc-external-row">
+                  <input
+                    className="sc-search" placeholder="网络图片地址（http/https）"
+                    value={extUrl} onChange={(e) => setExtUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && extUrl.trim() && !uploading) {
+                        void uploadExternal({ url: extUrl.trim(), name: extName.trim() || '网络图片' })
+                      }
+                    }}
+                  />
+                  <input
+                    className="sc-search sc-ext-name" placeholder="备注名（可选）"
+                    value={extName} onChange={(e) => setExtName(e.target.value)}
+                  />
+                  <button
+                    type="button" disabled={uploading || !extUrl.trim()}
+                    onClick={() => void uploadExternal({ url: extUrl.trim(), name: extName.trim() || '网络图片' })}
+                  >网络图片</button>
+                </div>
+                <div className="sc-external-row">
+                  <input
+                    ref={fileRef} type="file" accept="image/*" hidden
+                    onChange={onExternalFile}
+                  />
+                  <button type="button" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                    {uploading ? '导入中…' : '上传本地图片'}
+                  </button>
+                  <span>支持 PNG / JPEG / WebP / GIF / BMP，最大 20MB；图片存到 public/cover_src/。</span>
                 </div>
               </div>
 
