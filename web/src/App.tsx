@@ -10,6 +10,7 @@ import Search from './pages/Search'
 import Notice, { NoticeDetail } from './pages/Notice'
 import CgGallery from './pages/CgGallery'
 import CgView from './pages/CgView'
+import CgAlbums from './pages/CgAlbums'
 import { applyTheme, getInitialTheme, type Theme } from './theme'
 import { LANGS, useLang } from './lang'
 import { useUI, type UIKey } from './ui'
@@ -191,6 +192,9 @@ export default function App() {
         <Route path="/notice/:slug" element={<NoticeDetail />} />
         <Route path="/cg" element={<CgGallery />} />
         <Route path="/cg/:name" element={<CgView />} />
+        {/* 图集整理后台只存在于 dev：import.meta.env.DEV 在生产构建里被静态替换成
+            false，这条路由（连同未用到的导入）会被整体摇掉，正式站点没有入口 */}
+        {import.meta.env.DEV && <Route path="/cg/albums" element={<CgAlbums />} />}
         <Route path="*" element={<Stub code="404" title="页面不存在" note="回到首页" />} />
       </Routes>
     </>

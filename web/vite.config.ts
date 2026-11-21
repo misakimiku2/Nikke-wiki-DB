@@ -18,6 +18,117 @@ const NOTE =
   '只影响 CG 图鉴的展示标签，不影响剧情阅读器的 CG 关联。' +
   '名字直接照 CG 图鉴灯箱里显示的写，例如 EventScene_XXX_01。'
 
+/** 与 gen_cg_merges.mjs 的 NOTE 保持一致（两边都写同一份文件） */
+const MERGES_NOTE =
+  '主 CG（封面）→ 随它收录的条目（图集贴图页 / 动态背景帧 / 连图集的其它帧）。这些条目不再作为独立作品出现在图鉴、目录、搜索与上一张/下一张里，直接 URL 仍可访问；剧情阅读器按原始条目名取图，不受影响。由 build/gen_cg_merges.mjs 生成并合并保留人工条目（人工分类表直接写进本文件即可，重跑不会丢）。'
+
+/**
+ * gen_cg_merges.mjs 里写死的人工规则（保持同步）：这些组重跑生成器会被还原，
+ * 图集编辑器（/cg/albums）把它们当作只读展示。
+ */
+const GEN_MANUAL_MERGES: string[] = ['EventScene_Chap_04_01']
+
+/** 扫 public/spine 的 CG 模型图集贴图页，返回自动合并组的主 CG 名（gen_cg_merges.mjs 的自动规则同款） */
+function autoMergeCovers(): string[] {
+  let cgNames: Set<string>
+  try {
+    const idx = JSON.parse(fs.readFileSync(path.resolve(HERE, '../public/data/cg_index.json'), 'utf-8'))
+    cgNames = new Set(idx.items.map((x: { n: string }) => x.n))
+  } catch {
+    return []
+  }
+  const spineDir = path.resolve(HERE, '../public/spine')
+  const out: string[] = []
+  try {
+    for (const dir of fs.readdirSync(spineDir)) {
+      const atlasPath = path.join(spineDir, dir, `${dir}.atlas`)
+      if (!fs.existsSync(atlasPath)) continue
+      const pages = [...fs.readFileSync(atlasPath, 'utf-8').matchAll(/^(\S+)\.(?:webp|png)$/gm)]
+        .map((m) => m[1])
+        .filter((n) => n !== dir && cgNames.has(n))
+      if (pages.length) out.push(dir)
+    }
+  } catch {
+    /* spine 目录不存在等情况：按没有自动组处理 */
+  }
+  return out
+}
+
+function readMerges(): Record<string, string[]> {
+  try {
+    const d = JSON.parse(fs.readFileSync(MERGES_SRC, 'utf-8'))
+    const out: Record<string, string[]> = {}
+    for (const [k, v] of Object.entries(d)) {
+      if (k.startsWith('_') || !Array.isArray(v)) continue
+      const list = [...new Set(v.filter((x) => typeof x === 'string' && x))]
+      if (list.length) out[k] = list
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/**
+ * 开发期专用：图集整理页（/cg/albums）直接读写 build/cg_merges.json。
+ * GET  /api/cg-merges  -> { groups: {封面: [成员]}, auto: [自动组封面] }
+ * POST /api/cg-merges  <- { groups }（全量；清洗后按封面名排序写回，
+ *                         返回 { ok, groups } 让页面以落盘内容为准）
+ * 写入后 spineOverridesPlugin 的 watcher 会同步到 public/data 并触发整页刷新，
+ * 图鉴 / 查看器随即按新分组展示。生产构建不存在该接口。
+ */
+function cgMergesPlugin(): Plugin {
+  return {
+    name: 'cg-merges',
+    configureServer(server) {
+      server.middlewares.use('/api/cg-merges', (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method === 'GET') {
+          // auto = 生成器自动规则（图集贴图页）+ 生成器写死的人工规则；
+          // 这些组重跑 gen_cg_merges.mjs 会被还原，编辑器里只读
+          res.end(JSON.stringify({
+            groups: readMerges(),
+            auto: [...autoMergeCovers(), ...GEN_MANUAL_MERGES],
+          }))
+          return
+        }
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (c) => { body += c })
+          req.on('end', () => {
+            try {
+              const raw = JSON.parse(body || '{}').groups
+              const covers = new Set<string>()
+              for (const [k, v] of Object.entries(raw || {})) {
+                if (typeof k === 'string' && k && !k.startsWith('_') && Array.isArray(v)) covers.add(k)
+              }
+              // 清洗：封面永远保留；成员不能是任何组的封面、不能与封面同名、全局去重
+              const clean: Record<string, string[]> = {}
+              const seen = new Set<string>()
+              for (const cover of [...covers].sort()) {
+                const v = raw[cover]
+                const list = [...new Set(v.filter(
+                  (x: unknown): x is string => typeof x === 'string' && x && x !== cover && !covers.has(x),
+                ))].filter((n) => (seen.has(n) ? false : (seen.add(n), true)))
+                if (list.length) clean[cover] = list
+              }
+              const sorted = Object.fromEntries(Object.keys(clean).sort().map((k) => [k, clean[k]]))
+              fs.writeFileSync(MERGES_SRC, JSON.stringify({ _note: MERGES_NOTE, ...sorted }, null, 2) + '\n', 'utf-8')
+              res.end(JSON.stringify({ ok: true, groups: sorted }))
+            } catch (e) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ ok: false, error: String(e) }))
+            }
+          })
+          return
+        }
+        res.statusCode = 405
+        res.end(JSON.stringify({ ok: false }))
+      })
+    },
+  }
+}
+
 /**
  * 开发期专用：CG 图鉴的「标注模式」直接读写 build/cg_flags.json。
  * GET  /api/cg-flags  -> { cover: [...] }
@@ -186,7 +297,7 @@ function siteFilesPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
+  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',
