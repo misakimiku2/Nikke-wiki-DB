@@ -72,6 +72,8 @@ export type SpineController = {
   /** 场景图层开关（多镜大招的独立背景板 bg..bg4）：关=只剩人物层，透明底 */
   setSceneBgVisible?(on: boolean): void
   saveFrame(filename?: string): void
+  /** 抓当前帧为 PNG dataURL（与绘制同帧，避免 WebGL buffer 被清空）；后台封面编辑用 */
+  captureFrame(cb: (dataUrl: string) => void): void
   getStatus(): SpineStatus
   /** 校准模式专用：当前帧的骨架矩阵 + 基础矩形（未含用户微调） */
   calibSnapshot?(): CalibSnapshot | null
@@ -391,6 +393,7 @@ export default function SpinePlayer({
     let ready = false
     let fitFn: (() => void) | null = null
     let pendingSave: string | null = null
+    let pendingCapture: ((dataUrl: string) => void) | null = null
     let lastTick = 0
     /** 一次性过渡动画播完后要切到的目标动画；null 表示当前不是过渡播放 */
     let pendingFollow: string | null = null
@@ -2022,6 +2025,7 @@ export default function SpinePlayer({
             emit(true)
           },
           saveFrame(filename) { pendingSave = filename || `${name}.png` },
+          captureFrame(cb) { pendingCapture = cb },
           getStatus() { return status() },
           calibSnapshot() {
             if (!calibBase) return null
@@ -2093,6 +2097,11 @@ export default function SpinePlayer({
               download(url, pendingSave)
             } catch { /* ignore */ }
             pendingSave = null
+          }
+          if (pendingCapture) {
+            const cb = pendingCapture
+            pendingCapture = null
+            try { cb(canvas.toDataURL('image/png')) } catch { /* ignore */ }
           }
           if (!ready) {
             ready = true

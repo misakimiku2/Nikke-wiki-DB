@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { loadStoryIndex, nf, type StoryUnit } from '../data'
 import { pickLang, useLang } from '../lang'
 import { useUI, type UIKey } from '../ui'
 
 export default function Story() {
   const [units, setUnits] = useState<StoryUnit[] | null>(null)
+  const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { lang } = useLang()
   const t = useUI()
@@ -54,7 +55,15 @@ export default function Story() {
           <div className="idx">02 / STORY</div>
           <h2>{t('story_title')}</h2>
         </div>
-        <div className="meta">{nf(units.length)} EPISODES · {nf(units.reduce((a, b) => a + b.lines, 0))} LINES</div>
+        <div className="meta">
+          {import.meta.env.DEV && (
+            <button className="chip" style={{ marginRight: 12 }}
+              onClick={() => navigate('/story/covers')} title="剧情卡封面编辑后台（dev）">
+              封面编辑
+            </button>
+          )}
+          {nf(units.length)} EPISODES · {nf(units.reduce((a, b) => a + b.lines, 0))} LINES
+        </div>
       </div>
 
       <div className="cat-row">

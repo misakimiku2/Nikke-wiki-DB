@@ -38,6 +38,10 @@ OUT = os.path.join(ROOT, "public", "spine")
 META = os.path.join(ROOT, "public", "data", "spine_models.json")
 QUALITY = 92
 
+# 源数据损坏的模型：atlas 缺少序列帧/附件（EventScene_Main_01_02 缺 ac_b2 等），
+# SpinePlayer 加载会报错。等上游补齐图集页后再从这里移除。
+BROKEN_MODELS = {"EventScene_Main_01_02"}
+
 
 def page_line(atlas_text):
     """atlas 第一行是图集贴图文件名"""
@@ -149,6 +153,8 @@ def main():
             if not fn.endswith(".atlas"):
                 continue
             name = fn[:-len(".atlas")]
+            if name in BROKEN_MODELS:
+                continue
             skel = os.path.join(dirpath, name + ".skel")
             page = os.path.join(dirpath, name + ".spine.png")
             if not (os.path.exists(skel) and os.path.exists(page)):

@@ -1,10 +1,18 @@
 {
-  "_note": "剧情卡封面手动指定：{\"剧情单元id\": \"封面图hash\"}。优先级高于自动选图。hash 是 public/img/l/<hash>.webp 的文件名，可在 CG 图鉴灯箱地址 /cg/<CG名> 里查，或看 public/cover/ 目录。值也可以是 public/cover/ 下现成的文件名（不带 .webp），用于没有 CG 的活动——例如分层合成的活动主视觉。像这样带下划线开头的键会被忽略，可以写备注。",
-  "161": "skyontherock_cover",
+  "10": {
+    "h": "bfe3a8de4c837d87",
+    "crop": {
+      "cx": 0.5,
+      "cy": 0.5,
+      "zoom": 1
+    }
+  },
+  "26": "aa790782d28e5f1f",
   "50": "1142f4d18c9f2073",
   "126": "d56225f890aaa075",
   "145": "0693d3fa0a34e40c",
   "149": "e8ce50f95c406bc5",
   "152": "aab1184cf3e73047",
-  "26": "aa790782d28e5f1f"
+  "161": "skyontherock_cover",
+  "_note": "剧情卡封面手动指定：{\"剧情单元id\": \"封面图hash\"}，或 {\"剧情单元id\": {\"h\": \"hash\", \"crop\": {\"cx\": 0~1, \"cy\": 0~1, \"zoom\": ≥1}}}。crop 只存参数，封面图由 build/build_story_covers.py 从 manifest 已有的原图按 3:4 现裁，不新增 CG 图。由 /story/covers 编辑后台（dev）写入。"
 }

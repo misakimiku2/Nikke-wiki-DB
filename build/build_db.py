@@ -26,6 +26,8 @@ import sys
 import time
 from collections import Counter, defaultdict
 
+import cg_alias
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -737,6 +739,16 @@ def import_cg_assets(con):
                 cur["has_art"] = 1
             else:
                 cur["atlas"] = 1
+
+    # 台词 CG 名与导出文件名不一致的别名（大小写差异 / 差分后缀回退，见
+    # build/cg_alias.py）：上游索引已把这类 token 指向真实图片，web 端补同名
+    # 资产行，链接/图鉴/阅读器才能按台词名查到图。共用真实图的源文件与分类。
+    aliases = cg_alias.load_cg_aliases(SRC)
+    for alias_name, real_name in aliases.items():
+        if alias_name in merged and real_name in merged:
+            continue
+        if alias_name not in merged and real_name in merged:
+            merged[alias_name] = dict(merged[real_name])
 
     payload = []
     for name, v in merged.items():

@@ -148,6 +148,13 @@
     "EventScene_Chap_50_02_1",
     "EventScene_Chap_50_02_3"
   ],
+  "EventScene_Chap_50_33": [
+    "EventScene_Chap_50_31",
+    "EventScene_Chap_50_32"
+  ],
+  "EventScene_Chap_50_38_1": [
+    "EventScene_Chap_50_38_2"
+  ],
   "EventScene_CherryBlossom_01": [
     "EventScene_CherryBlossom_01_2"
   ],
@@ -163,6 +170,16 @@
   "EventScene_Main_02_02": [
     "EventScene_Main_02_01"
   ],
+  "EventScene_Marian_03_2": [
+    "EventScene_Marian_03_3"
+  ],
+  "EventScene_Marian_15_1": [
+    "EventScene_Marian_15_2",
+    "EventScene_Marian_15_3",
+    "EventScene_Marian_15_4",
+    "EventScene_Marian_15_5",
+    "EventScene_Marian_15_6"
+  ],
   "EventScene_MiracleSnow_03": [
     "EventScene_MiracleSnow_02"
   ],
@@ -173,14 +190,22 @@
     "EventScene_NoCallerID_01_ash"
   ],
   "EventScene_OverZone_03": [
-    "EventScene_OverZone_04",
-    "EventScene_OverZone_opening02_cut01"
+    "EventScene_OverZone_opening02_cut01",
+    "EventScene_OverZone_03_1"
+  ],
+  "EventScene_OverZone_08": [
+    "EventScene_OverZone_08_1",
+    "EventScene_OverZone_08_2",
+    "EventScene_OverZone_opening02_cut05"
   ],
   "EventScene_ProjectMatis_05_2": [
     "EventScene_ProjectMatis_05_3"
   ],
   "EventScene_SeaYouAgain_01_2": [
     "EventScene_SeaYouAgain_01_1"
+  ],
+  "EventScene_SeaYouAgain_02_2": [
+    "EventScene_SeaYouAgain_02_3"
   ],
   "EventScene_SeaYouAgain_03_4": [
     "EventScene_SeaYouAgain_03_1",
@@ -200,6 +225,12 @@
     "EventScene_Side_03_02_3",
     "EventScene_Side_03_02_5"
   ],
+  "EventScene_Side_03_04_1": [
+    "EventScene_Side_03_04_2",
+    "EventScene_Side_03_04_3",
+    "EventScene_Side_03_04_4",
+    "EventScene_Side_03_04_5"
+  ],
   "EventScene_Side_04_01_2": [
     "EventScene_Side_04_01_3",
     "EventScene_Side_04_01_4",
@@ -210,6 +241,9 @@
     "EventScene_Side_06_03_2",
     "EventScene_Side_06_03_3",
     "EventScene_Side_06_03_4"
+  ],
+  "EventScene_Side_06_04_1": [
+    "EventScene_Side_06_04_2"
   ],
   "EventScene_absolute_02_2": [
     "EventScene_absolute_02_1"
@@ -242,5 +276,207 @@
   ],
   "EventScene_arkranger_12_1": [
     "EventScene_arkranger_12_2"
+  ],
+  "EventScene_boomtheghost_02_1": [
+    "EventScene_boomtheghost_02_2"
+  ],
+  "EventScene_boomtheghost_03_1": [
+    "EventScene_boomtheghost_03_2"
+  ],
+  "EventScene_boomtheghost_05_1": [
+    "EventScene_boomtheghost_05_2"
+  ],
+  "EventScene_ce005_01_3": [
+    "EventScene_ce005_01_1",
+    "EventScene_ce005_01_2",
+    "EventScene_ce005_01_4",
+    "EventScene_ce005_01_6"
+  ],
+  "EventScene_ce005_02_3": [
+    "EventScene_ce005_02_1",
+    "EventScene_ce005_02_2"
+  ],
+  "EventScene_ce005_06_1": [
+    "EventScene_ce005_06_2",
+    "EventScene_ce005_06_3",
+    "EventScene_ce005_06_4",
+    "EventScene_ce005_06_5"
+  ],
+  "EventScene_coinrushshowdown_03_1": [
+    "EventScene_coinrushshowdown_03_2",
+    "EventScene_coinrushshowdown_03_3"
+  ],
+  "EventScene_coinsinrush_01_1": [
+    "EventScene_coinsinrush_01_2"
+  ],
+  "EventScene_coinsinrush_04_1": [
+    "EventScene_coinsinrush_04_2",
+    "EventScene_coinsinrush_04_3"
+  ],
+  "EventScene_foolburstday_01": [
+    "EventScene_foolburstday_02"
+  ],
+  "EventScene_foolmetalpanic_01": [
+    "EventScene_foolmetalpanic_02"
+  ],
+  "EventScene_footstepwalkrun_02_1": [
+    "EventScene_footstepwalkrun_02_2",
+    "EventScene_footstepwalkrun_02_3"
+  ],
+  "EventScene_goddessfall_06_1": [
+    "EventScene_goddessfall_06_2",
+    "EventScene_goddessfall_06_3"
+  ],
+  "EventScene_icedragonsaga_09_1": [
+    "EventScene_icedragonsaga_09_2"
+  ],
+  "EventScene_lastkingdom_04_1": [
+    "EventScene_lastkingdom_04_2"
+  ],
+  "EventScene_lastkingdom_12_1": [
+    "EventScene_lastkingdom_12_2"
+  ],
+  "EventScene_lastkingdom_13_1": [
+    "EventScene_lastkingdom_13_2"
+  ],
+  "EventScene_lastkingdom_15_1": [
+    "EventScene_lastkingdom_15_2"
+  ],
+  "EventScene_liecauserecoil_01_2": [
+    "EventScene_liecauserecoil_01_3"
+  ],
+  "EventScene_liecauserecoil_02_1": [
+    "EventScene_liecauserecoil_02_2"
+  ],
+  "EventScene_oldtales_03_1": [
+    "EventScene_oldtales_03_2",
+    "EventScene_oldtales_03_3",
+    "EventScene_oldtales_03_4"
+  ],
+  "EventScene_oldtales_06_1": [
+    "EventScene_oldtales_06_2",
+    "EventScene_oldtales_06_3",
+    "EventScene_oldtales_06_4"
+  ],
+  "EventScene_oldtales_07_1": [
+    "EventScene_oldtales_07_2"
+  ],
+  "EventScene_oldtales_08_1": [
+    "EventScene_oldtales_08_2",
+    "EventScene_oldtales_08_3",
+    "EventScene_oldtales_08_4",
+    "EventScene_oldtales_08_5",
+    "EventScene_oldtales_08_6"
+  ],
+  "EventScene_oldtales_11_1": [
+    "EventScene_oldtales_11_2",
+    "EventScene_oldtales_11_4"
+  ],
+  "EventScene_oldtales_12_1": [
+    "EventScene_oldtales_12_2",
+    "EventScene_oldtales_12_3",
+    "EventScene_oldtales_12_4",
+    "EventScene_oldtales_12_5"
+  ],
+  "EventScene_oldtales_13_1": [
+    "EventScene_oldtales_13_2"
+  ],
+  "EventScene_oldtales_17_3": [
+    "EventScene_oldtales_17_1",
+    "EventScene_oldtales_17_2"
+  ],
+  "EventScene_redash_02_1": [
+    "EventScene_redash_02_2"
+  ],
+  "EventScene_redash_03_1": [
+    "EventScene_redash_03_2",
+    "EventScene_redash_03_3"
+  ],
+  "EventScene_redash_05_1": [
+    "EventScene_redash_05_2"
+  ],
+  "EventScene_redash_09_1": [
+    "EventScene_redash_09_2"
+  ],
+  "EventScene_redash_12_1": [
+    "EventScene_redash_12_2"
+  ],
+  "EventScene_snowfalloasis_02_1": [
+    "EventScene_snowfalloasis_02_2",
+    "EventScene_snowfalloasis_02_3"
+  ],
+  "EventScene_snowfalloasis_04_2": [
+    "EventScene_snowfalloasis_04_1",
+    "EventScene_snowfalloasis_04_3"
+  ],
+  "EventScene_snowfalloasis_06_1": [
+    "EventScene_snowfalloasis_06_2"
+  ],
+  "EventScene_staranis_01_1": [
+    "EventScene_staranis_01_2",
+    "EventScene_staranis_01_3"
+  ],
+  "EventScene_staranis_02": [
+    "EventScene_staranis_03_1",
+    "EventScene_staranis_03_2",
+    "EventScene_staranis_03_3",
+    "EventScene_staranis_03_4"
+  ],
+  "EventScene_terminusticket_05_1": [
+    "EventScene_terminusticket_05_2",
+    "EventScene_terminusticket_05_3"
+  ],
+  "EventScene_terminusticket_06_1": [
+    "EventScene_terminusticket_06_2"
+  ],
+  "EventScene_terminusticket_09_1": [
+    "EventScene_terminusticket_09_2",
+    "EventScene_terminusticket_09_3",
+    "EventScene_terminusticket_09_4"
+  ],
+  "EventScene_twoxtwolove1_as_02_1": [
+    "EventScene_twoxtwolove1_as_02_2",
+    "EventScene_twoxtwolove1_as_02_3",
+    "EventScene_twoxtwolove1_as_02_4"
+  ],
+  "EventScene_twoxtwolove1_as_03_1": [
+    "EventScene_twoxtwolove1_as_03_3"
+  ],
+  "EventScene_twoxtwolove1_at_02_2": [
+    "EventScene_twoxtwolove1_at_02_1"
+  ],
+  "EventScene_twoxtwolove1_ps_01_2": [
+    "EventScene_twoxtwolove1_ps_01_3"
+  ],
+  "EventScene_twoxtwolove1_ps_bad_01_1": [
+    "EventScene_twoxtwolove1_ps_bad_01_2"
+  ],
+  "EventScene_twoxtwolove1_pt_03_1": [
+    "EventScene_twoxtwolove1_pt_03_2"
+  ],
+  "EventScene_twoxtwolove2_as_03_1": [
+    "EventScene_twoxtwolove2_as_03_2"
+  ],
+  "EventScene_twoxtwolove2_at_01_3": [
+    "EventScene_twoxtwolove2_at_01_4"
+  ],
+  "EventScene_twoxtwolove2_pt_02_1": [
+    "EventScene_twoxtwolove2_pt_02_2"
+  ],
+  "EventScene_unbreakablesphere_01_1": [
+    "EventScene_unbreakablesphere_01_2"
+  ],
+  "EventScene_unbreakablesphere_02_3": [
+    "EventScene_unbreakablesphere_02_1",
+    "EventScene_unbreakablesphere_02_2"
+  ],
+  "EventScene_unbreakablesphere_07_1": [
+    "EventScene_unbreakablesphere_07_2"
+  ],
+  "EventScene_wavetoyou_04_01": [
+    "EventScene_wavetoyou_04_02"
+  ],
+  "EventScene_wavetoyou_05_01": [
+    "EventScene_wavetoyou_05_02"
   ]
 }

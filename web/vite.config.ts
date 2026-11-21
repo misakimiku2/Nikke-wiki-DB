@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFile } from 'node:child_process'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const FLAGS = path.resolve(HERE, '../build/cg_flags.json')
@@ -11,6 +12,15 @@ const OVERRIDES_DST = path.resolve(HERE, '../public/data/spine_overrides.json')
 /** CG 合并收录表（build/gen_cg_merges.mjs 生成，人工条目也在其中），同样从 build/ 同步 */
 const MERGES_SRC = path.resolve(HERE, '../build/cg_merges.json')
 const MERGES_DST = path.resolve(HERE, '../public/data/cg_merges.json')
+/** 剧情卡封面的人工指定（选 CG + 裁剪参数），封面编辑器直接读写 */
+const COVER_OVERRIDES_SRC = path.resolve(HERE, '../build/cg_cover_overrides.json')
+const COVER_DIR = path.resolve(HERE, '../public/cover')
+const PROJECT_ROOT = path.resolve(HERE, '..')
+const COVER_NOTE =
+  '剧情卡封面手动指定：{"剧情单元id": "封面图hash"}，或 ' +
+  '{"剧情单元id": {"h": "hash", "crop": {"cx": 0~1, "cy": 0~1, "zoom": ≥1}}}。' +
+  'crop 只存参数，封面图由 build/build_story_covers.py 从 manifest 已有的原图按 3:4 现裁，不新增 CG 图。' +
+  '由 /story/covers 编辑后台（dev）写入。'
 const SITE_SRC = path.resolve(HERE, '../build/site')
 const SITE_DST = path.resolve(HERE, '../public')
 const NOTE =
@@ -296,8 +306,150 @@ function siteFilesPlugin(): Plugin {
   }
 }
 
+/**
+ * 开发期专用：剧情卡封面编辑后台（/story/covers）读写 build/cg_cover_overrides.json。
+ * GET  /api/cover-edits -> { edits: { [单元id]: hash | {h, crop} } }
+ * POST /api/cover-edits <- { id, h, crop } | { id, remove: true }
+ *  写入后调用 build_story_covers.py --only <id> --force 重新生成该单元的 3:4 封面
+ *  （从已有原图现裁，不复制/新增 CG 图），并刷新页面。生产构建不存在该接口。
+ */
+function storyCoverEditsPlugin(): Plugin {
+  const readEdits = (): Record<string, unknown> => {
+    try {
+      const d = JSON.parse(fs.readFileSync(COVER_OVERRIDES_SRC, 'utf-8'))
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(d)) {
+        if (!k.startsWith('_') && k.trim()) out[k] = v
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+  const writeEdits = (edits: Record<string, unknown>) => {
+    const sorted = Object.fromEntries(Object.keys(edits).sort((a, b) => Number(a) - Number(b))
+      .map((k) => [k, edits[k]]))
+    fs.writeFileSync(COVER_OVERRIDES_SRC,
+      JSON.stringify({ _note: COVER_NOTE, ...sorted }, null, 2) + '\n', 'utf-8')
+    return sorted
+  }
+  const regenerate = (id: number, done: (ok: boolean, out: string) => void) => {
+    const args = ['build/build_story_covers.py', '--only', String(id), '--force']
+    const run = (py: string) => execFile(py, args, { cwd: PROJECT_ROOT, timeout: 120000 },
+      (err, stdout, stderr) => {
+        if (err && py === 'python') {
+          run('python3')                       // 有些机器只有 python3
+          return
+        }
+        done(!err, (stdout || '') + (stderr || ''))
+      })
+    run('python')
+  }
+  return {
+    name: 'story-cover-edits',
+    configureServer(server) {
+      server.middlewares.use('/api/cover-edits', (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method === 'GET') {
+          res.end(JSON.stringify({ edits: readEdits() }))
+          return
+        }
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (c) => { body += c })
+          req.on('end', () => {
+            try {
+              const raw = JSON.parse(body || '{}')
+              const id = Number(raw.id)
+              if (!Number.isInteger(id) || id <= 0) throw new Error('invalid unit id')
+              const edits = readEdits()
+
+              // 动态 CG 抓帧：把 PNG dataURL 转成 3:4 封面（复用 build_story_covers.py
+              // 的裁剪逻辑），写入 public/cover/，并把该封面文件名作为人工指定值。
+              if (raw.frame) {
+                const { dataUrl, name, time } = raw.frame
+                if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
+                  throw new Error('invalid frame data')
+                }
+                const safe = String(name || 'spine').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 60)
+                const ms = Math.max(0, Math.round(Number(time) || 0))
+                const key = `frame_${safe}_${ms}`
+                const tmp = path.join(COVER_DIR, `_incoming_${id}.png`)
+                const dst = path.join(COVER_DIR, `${key}.webp`)
+                fs.mkdirSync(COVER_DIR, { recursive: true })
+                fs.writeFileSync(tmp, Buffer.from(dataUrl.split(',')[1], 'base64'))
+                const convert = (py: string) => execFile(
+                  py, ['build/build_story_covers.py', '--frame', tmp, dst],
+                  { cwd: PROJECT_ROOT, timeout: 60000 },
+                  (err, stdout, stderr) => {
+                    try { fs.unlinkSync(tmp) } catch { /* ignore */ }
+                    if (err && py === 'python') { convert('python3'); return }
+                    if (err) {
+                      res.statusCode = 500
+                      res.end(JSON.stringify({ ok: false, error: (stderr || String(err)).slice(-800) }))
+                      return
+                    }
+                    edits[String(id)] = key
+                    const saved = writeEdits(edits)
+                    // 让 build_story_covers.py 把该单元的 cover 字段指向新封面
+                    regenerate(id, (ok2, out2) => {
+                      if (!ok2) {
+                        res.statusCode = 500
+                        res.end(JSON.stringify({ ok: false, edits: saved, error: out2.slice(-800) }))
+                        return
+                      }
+                      server.ws.send({ type: 'full-reload' })
+                      res.end(JSON.stringify({ ok: true, edits: saved, cover: key }))
+                    })
+                  },
+                )
+                convert('python')
+                return
+              }
+
+              if (raw.remove) {
+                delete edits[String(id)]
+              } else {
+                const h = String(raw.h || '')
+                if (!/^[0-9a-f]{16}$/i.test(h) && !/^[\w.-]+$/.test(h)) {
+                  throw new Error('invalid cover hash')
+                }
+                const c = raw.crop
+                const crop = c && typeof c === 'object'
+                  ? {
+                      cx: Math.min(1, Math.max(0, Number(c.cx ?? 0.5))),
+                      cy: Math.min(1, Math.max(0, Number(c.cy ?? 0.5))),
+                      zoom: Math.min(4, Math.max(1, Number(c.zoom ?? 1))),
+                    }
+                  : null
+                edits[String(id)] = crop ? { h, crop } : h
+              }
+              const saved = writeEdits(edits)
+              regenerate(id, (ok, out) => {
+                if (!ok) {
+                  res.statusCode = 500
+                  res.end(JSON.stringify({ ok: false, edits: saved, error: out.slice(-800) }))
+                  return
+                }
+                server.ws.send({ type: 'full-reload' })
+                res.end(JSON.stringify({ ok: true, edits: saved }))
+              })
+            } catch (e) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ ok: false, error: String(e) }))
+            }
+          })
+          return
+        }
+        res.statusCode = 405
+        res.end(JSON.stringify({ ok: false }))
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
+  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',

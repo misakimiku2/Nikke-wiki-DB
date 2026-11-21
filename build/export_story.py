@@ -105,6 +105,27 @@ def main():
         with open(spine_path, encoding="utf-8") as f:
             spine_models = set(json.load(f).get("items", []))
 
+    # 合并收录表：动态封面 CG（cover 在 spine_models 里）名下的成员条目
+    # （独立导出的背景板 / 背景帧，如 Chap_04_02/03 之于 Chap_04_01）。
+    # 上游剧情 JSON 对这些行只给 cg=[成员 token] 不带 cgd，导出时把成员帧
+    # 挂上封面的实时模型，阅读器才能播出动态 CG 而不是一块静止背景板。
+    member_model: dict[str, str] = {}
+    for merges_path in (
+        os.path.join(ROOT, "build", "cg_merges.json"),
+        os.path.join(ROOT, "public", "data", "cg_merges.json"),
+    ):
+        if not os.path.exists(merges_path):
+            continue
+        with open(merges_path, encoding="utf-8") as f:
+            raw_merges = json.load(f)
+        for cover, members in raw_merges.items():
+            if cover.startswith("_") or cover not in spine_models or not isinstance(members, list):
+                continue
+            for m in members:
+                if isinstance(m, str) and m not in spine_models:
+                    member_model.setdefault(m, cover)
+        break
+
     def cg_ref(name, cgd="", cgb=""):
         """CG 名 -> 前端引用；同名的 bg/前景两层都会各自成项，由阅读器合帧。
 
@@ -129,7 +150,26 @@ def main():
         item = {"h": h, "n": name}
         if name in spine_models:
             item["d"] = name      # 有实时 Spine 模型，阅读器背景直接播模型
+        elif name in member_model:
+            item["d"] = member_model[name]  # 动态合集成员帧：播封面模型
         return item
+
+    def pin_cover_ref(refs):
+        """成员帧前插封面主帧：refs 里出现 d≠n 的成员引用时，把封面
+        {合成图, d=模型} 提到最前（阅读器取首个非 bg 项当主帧），成员图
+        排在其后充当独立背景板，按位置配对进 bg 层。封面已在 refs 里
+        （上游同帧给了两个 token）时只调整顺序，没有合成图 hash 时不补。"""
+        for r in refs:
+            cover = r.get("d")
+            if not cover or cover == r["n"] or member_model.get(r["n"]) != cover:
+                continue
+            j = next((k for k, x in enumerate(refs) if x["n"] == cover), -1)
+            if j >= 0:
+                if j > 0:
+                    refs.insert(0, refs.pop(j))
+            elif cg_hash.get(cover):
+                refs.insert(0, {"h": cg_hash[cover], "n": cover, "d": cover})
+            break
 
     # 好感剧情/咨询的友好标题：char_stories.json（export_char_stories.py 产出）
     # 里有 unit → 角色条目映射；没有它就退回原始 bucket（不影响其他分类）。
@@ -276,6 +316,8 @@ def main():
                 # 去重：动态行的 X_bg（上游 token）与配对补的 X 会变换成同一个
                 # 「背景+模型」引用
                 refs = list({(r["h"], r["n"], r.get("d", "")): r for r in refs}.values())
+                # 动态合集成员帧：主帧（封面合成图+模型）提到最前，成员板垫底
+                pin_cover_ref(refs)
                 if not refs:
                     continue
                 refs.sort(key=lambda x: x["n"].endswith("_bg"))

@@ -19,6 +19,8 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import cg_alias
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -71,6 +73,19 @@ def collect():
             "category": category,
             "sub": sub,
         })
+
+    # 台词 CG 名与导出文件名不一致的别名（大小写 / 差分后缀回退）：
+    # 共用真实图的 hash 与转码产物，只多一个 manifest 名称条目。
+    aliases = cg_alias.load_cg_aliases(SRC)
+    by_name = {it["name"]: it for it in items}
+    for alias_name, real_name in aliases.items():
+        if alias_name in by_name or real_name not in by_name:
+            continue
+        it = dict(by_name[real_name])
+        it["name"] = alias_name
+        it["alias_of"] = real_name
+        items.append(it)
+        by_name[alias_name] = it
     return items
 
 
@@ -87,6 +102,8 @@ def process_one(item, force=False):
         "src": item["rel"],
         "variants": {},
     }
+    if item.get("alias_of"):
+        entry["alias_of"] = item["alias_of"]
 
     tier_paths = [os.path.join(OUT, t[0], h + ".webp") for t in TIERS]
     src_mtime = os.path.getmtime(item["src"])

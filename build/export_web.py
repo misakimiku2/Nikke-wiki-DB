@@ -199,7 +199,30 @@ def main():
         skills.append({"key": key, "kind": kind, "zh": zh, "en": en, "ja": ja, "ko": ko})
     dump("skills.json", {"total": len(skills), "items": skills})
 
-    # ---- 剧情卡封面：取该剧情里第一张静态 CG（跳过封面/纯背景图） ----
+    # ---- 剧情卡封面 ----
+    # 保留已经选好的封面：export_web 重跑不能把 build_story_covers.py 的评分
+    # 结果（以及 cg_cover_overrides.json 的手动指定）冲掉。只有封面文件确实
+    # 还在时才沿用，避免把失效的 hash 一直带下去。
+    prev_cover = {}
+    idx_path = os.path.join(OUT, "story_index.json")
+    if os.path.exists(idx_path):
+        try:
+            with open(idx_path, encoding="utf-8") as f:
+                prev = json.load(f)
+            cover_dir = os.path.join(ROOT, "public", "cover")
+            img_dir = os.path.join(ROOT, "public", "img")
+            for u in prev.get("items", []):
+                h = u.get("cover")
+                if not h:
+                    continue
+                if (os.path.exists(os.path.join(cover_dir, h + ".webp"))
+                        or any(os.path.exists(os.path.join(img_dir, sub, h + ".webp"))
+                               for sub in ("l", "m", "s"))):
+                    prev_cover[u["id"]] = h
+        except Exception:
+            prev_cover = {}
+
+    # 兜底：取该剧情里第一张静态 CG（跳过封面/纯背景图）
     cover_of = {}
     cg_items = []
     cg_path = os.path.join(OUT, "cg_index.json")
@@ -383,7 +406,7 @@ def main():
         # 没有任何章节/台词的空单元（补充文本里的一批占位）不进目录
         if not segs or not lines:
             continue
-        cover = cover_of.get(uid) or match_cover(bucket, title)
+        cover = prev_cover.get(uid) or cover_of.get(uid) or match_cover(bucket, title)
         unit = {
             "id": uid, "cat": cat, "label": label, "bucket": bucket,
             "title": title, "chapter": ch, "segments": segs,

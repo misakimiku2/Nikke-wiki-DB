@@ -104,6 +104,7 @@ def main():
                and not os.path.exists(os.path.join(ROOT, "public", "cover", u["cover"] + ".webp"))]
         if bad:
             issues.append(f"剧情封面文件缺失（漏跑 build_story_covers.py？）：{bad[:8]}")
+            fail += 1   # 裂图是实打实的故障，不能只当警告
         main_covers = Counter(u.get("cover") for u in index_units
                               if u.get("cat") == "main" and u.get("cover"))
         dups = {k: v for k, v in main_covers.items() if v > 1}

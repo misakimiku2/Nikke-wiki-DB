@@ -50,6 +50,9 @@ function resolveCg(list: StoryCgRef[]): Frame {
   const fgItem = list.find((x) => !x.n.endsWith('_bg') && x.n !== 'black')
   if (fgItem) {
     const base = fgItem.n.replace(/_bg$/, '')
+    // 动态合集成员帧（上游只给背景板 token，导出端前插了封面主帧）：尾随的
+    // 成员图只是原 token 记录，不进 bg 层——封面模型自带完整背景，垫板会
+    // 与模型的背景错位重影
     const pair = list.find((x) => x.n === base + '_bg')
     return {
       fg: fgItem.h,

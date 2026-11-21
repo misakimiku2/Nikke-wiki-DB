@@ -231,9 +231,38 @@ def density_crop(img):
     return (round(x), round(y), round(x + cw), round(y + ch))
 
 
-def make_cover(src, dst):
+def manual_crop(img, crop):
+    """按人工裁剪参数取 3:4 窗口。
+
+    crop = {cx, cy, zoom}：cx/cy 是裁剪中心在原图里的归一化坐标（0~1），
+    zoom=1 表示「最小裁切到 3:4」（cover），>1 表示继续放大。
+    只存参数、不存图：渲染时从 manifest 里已有的原图现裁，不新增 CG 文件。
+    返回 (x0, y0, x1, y1)。
+    """
+    w, h = img.size
+    cx = max(0.0, min(1.0, float(crop.get("cx", 0.5))))
+    cy = max(0.0, min(1.0, float(crop.get("cy", 0.5))))
+    zoom = max(1.0, float(crop.get("zoom", 1.0)))
+    cw, ch = w, w / ASPECT
+    if cw > w:
+        cw, ch = w, w / ASPECT
+    if ch > h:
+        ch, cw = h, h * ASPECT
+    cw /= zoom
+    ch /= zoom
+    x = min(max(cx * w - cw / 2, 0), max(0, w - cw))
+    y = min(max(cy * h - ch / 2, 0), max(0, h - ch))
+    return (round(x), round(y), round(x + cw), round(y + ch))
+
+
+def make_cover(src, dst, crop=None):
     img = Image.open(src)
     img.load()
+    if crop:
+        out = img.crop(manual_crop(img, crop)).resize(
+            (TW, TH), Image.Resampling.LANCZOS).convert("RGB")
+        out.save(dst, "WEBP", quality=84, method=6)
+        return
     if has_alpha(img):
         # 透明 CG（游戏里的分层立绘 / 贴纸式画面）：
         # 1) 先按 alpha 包围盒去掉四周空白；
@@ -260,7 +289,31 @@ def make_cover(src, dst):
 
 # ---------------------------------------------------------------- 主流程
 
+def frame_to_cover(src, dst):
+    """把动态 CG 当前帧（后台抓的 PNG）转成 3:4 封面。
+
+    只做取景与转码，不写 cg_links / story_index；文件名由调用方决定。
+    """
+    img = Image.open(src)
+    img.load()
+    if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+        img = img.convert("RGBA")
+        flat = Image.new("RGBA", img.size, (22, 22, 26, 255))
+        flat.alpha_composite(img)
+        img = flat
+    box = manual_crop(img, {"cx": 0.5, "cy": 0.5, "zoom": 1.0})
+    img.crop(box).resize((TW, TH), Image.Resampling.LANCZOS).convert("RGB").save(
+        dst, "WEBP", quality=84, method=6)
+
+
 def main():
+    # 后台抓帧专用：把一张 PNG 转成 3:4 封面后退出，不碰其它产物
+    if "--frame" in sys.argv:
+        i = sys.argv.index("--frame")
+        frame_to_cover(sys.argv[i + 1], sys.argv[i + 2])
+        print("frame cover ->", sys.argv[i + 2])
+        return
+
     report_only = "--report" in sys.argv
     force = "--force" in sys.argv
     only_ids = None
@@ -269,13 +322,25 @@ def main():
                     sys.argv[sys.argv.index("--only") + 1].split(",") if x.strip()}
 
     idx, cand = load_candidates()
+    # 人工指定：值既可以是纯 hash（旧格式，自动取景），也可以是
+    # {h, crop:{cx,cy,zoom}}（封面编辑器写入，按参数取景）。
     overrides = {}
+    crop_of = {}     # hash -> crop 参数（同名封面共用一份参数）
     if os.path.exists(OVERRIDES):
         with open(OVERRIDES, encoding="utf-8") as f:
             raw = json.load(f)
-        # 允许 "_note" 之类的说明键混在里面
-        overrides = {int(k): v for k, v in raw.items()
-                     if not k.startswith("_") and k.strip().isdigit()}
+        for k, v in raw.items():
+            if k.startswith("_") or not str(k).strip().isdigit():
+                continue
+            uid = int(k)
+            if isinstance(v, dict):
+                h = v.get("h")
+                overrides[uid] = h
+                c = v.get("crop")
+                if h and isinstance(c, dict) and c:
+                    crop_of[h] = c
+            elif isinstance(v, str):
+                overrides[uid] = v
 
     os.makedirs(OUT, exist_ok=True)
     changed = []
@@ -355,7 +420,13 @@ def main():
 
         # 按单元 id 排序处理，保证「留谁」结果稳定
         used = {}   # hash -> 章节号
+        # 人工指定的封面优先：先把它们占住，再让自动选图避开；人工项自身不参与去重改判
+        for uid, h in overrides.items():
+            if h:
+                used[h] = chapter_of(h)
         for uid in sorted(picked):
+            if uid in overrides:
+                continue
             h, is_own = picked[uid]
             if not h:
                 continue
@@ -409,10 +480,17 @@ def main():
             missing += 1
             print(f"  缺源图: {h}")
             continue
-        if (force or not os.path.exists(dst)
-                or os.path.getmtime(dst) < os.path.getmtime(src)):
+        stale = (force or not os.path.exists(dst)
+                 or os.path.getmtime(dst) < os.path.getmtime(src))
+        # 人工裁剪参数变化时 mtime 不一定变，记录参数指纹并一并参与陈旧判断
+        fp = os.path.join(OUT, f"{h}.crop.json")
+        want_fp = json.dumps(crop_of[h], sort_keys=True) if h in crop_of else ""
+        has_fp = os.path.exists(fp) and open(fp, encoding="utf-8").read() == want_fp
+        if stale or not has_fp:
             if not report_only:
-                make_cover(src, dst)
+                make_cover(src, dst, crop_of.get(h))
+                with open(fp, "w", encoding="utf-8") as f:
+                    f.write(want_fp)
             done += 1
     total = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT)
                 if f.endswith(".webp"))

@@ -111,6 +111,17 @@ python build/build_story_covers.py            # 评分选图 + 生成 public/cov
 python build/build_story_covers.py --report   # 只看选图会怎么变，不写文件
 python build/build_story_covers.py --only 1,2 # 只重选指定单元
 
+# 手动指定封面（两个途径，都写进 build/cg_cover_overrides.json，优先级高于自动选图）：
+#   1) 编辑后台：npm run dev 后打开 /story/covers（剧情全文页也有「封面编辑」入口）。
+#      选该单元已链接的 CG 或全库搜索；3:4 预览里拖动平移、滚轮/滑块缩放。
+#      只保存 {单元id: {h, crop:{cx,cy,zoom}}}，封面由 build_story_covers.py 从
+#      manifest 已有的原图现裁，不新增任何尺寸的 CG 图片；保存即重新生成该封面。
+#   2) 直接改 JSON：{"单元id": "hash"} 沿用自动取景；值也可以是 public/cover/ 下
+#      现成的文件名（如 skyontherock_cover），用于没有 CG 的活动主视觉。
+# 动态 CG：候选列表里带 ▶ 的条目是实时 Spine 模型；选中后可用时间轴播放/拖动定位，
+#   保存时抓当前帧转成 3:4 封面（写 public/cover/frame_<模型>_<毫秒>.webp）。
+#   只存参数/帧文件，不改 CG 原图。
+
 # 5. 自检与前端构建
 python build/verify.py                    # 校验各产物是否齐备
 cd web && npm run build                   # → dist/
