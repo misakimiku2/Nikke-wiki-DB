@@ -21,10 +21,14 @@ type Frame = {
   fg: string | null
   /** 有实时模型的 CG 名；阅读背景直接播模型，不再用离线合成动图 */
   fgSpine: string | null
+  /** 背景图 hash；null = 空（清空/黑屏转场命令帧不渲染，舞台保持空） */
   bg: string | null
   /** 点击背景时打开二级查看页所用的 CG 名 */
   n: string | null
 }
+
+/** 纯色板命令帧的名字（black/none 转场）：没有对应 CG 页面，点击层不得以它们为目标 */
+const CG_CMD_NAMES = new Set(['black', 'none'])
 
 /** 正文渲染序列：普通台词行，或一组选项（数字为段内 0-based 行下标） */
 type SeqItem = { t: 'line'; i: number } | { t: 'choice'; lines: number[] }
@@ -43,7 +47,7 @@ const CHAPTER_CATS = new Set(['main', 'event', 'nikke', 'gaiden', 'sub', 'side_s
 /** 解析一组 CG → 前景帧 + 配对背景层（游戏中动态 CG = bg 层 + Spine 前景层） */
 function resolveCg(list: StoryCgRef[]): Frame {
   if (!list.length) return { fg: null, fgSpine: null, bg: null, n: null }
-  const fgItem = list.find((x) => !x.n.endsWith('_bg'))
+  const fgItem = list.find((x) => !x.n.endsWith('_bg') && x.n !== 'black')
   if (fgItem) {
     const base = fgItem.n.replace(/_bg$/, '')
     const pair = list.find((x) => x.n === base + '_bg')
@@ -54,6 +58,10 @@ function resolveCg(list: StoryCgRef[]): Frame {
       n: fgItem.n,
     }
   }
+  // 黑屏转场命令帧（bg 列表末值 black，空 hash 纯色板）：不再渲染纯黑——
+  // 纯色转场在阅读器里观感奇怪，black 与 none 一样保持空舞台；
+  // 数据里的 black 标记仅保留场景切换语义（分片/审计用），前端不画。
+  if (list[0].n === 'black') return { fg: null, fgSpine: null, bg: null, n: 'black' }
   // 只有一块背景板（token 是 X_bg 或 cgb 场景板）：d 带模型名时照样播模型，
   // 旧版这里丢掉 d，X_bg 行只剩背景板不动
   return { fg: null, fgSpine: list[0].d || null, bg: list[0].h, n: list[0].n }
@@ -208,14 +216,18 @@ function StoryCgBg({
         const cover = hasSpine && spineReady.current ? 0 : 1
         if (img) {
           img.style.opacity = hash ? String(cover) : '0'
-          if (name) img.dataset.cg = name
+          // 命令帧（black/none）没有 CG 页面；隐藏时清掉旧目标，
+          // 否则透明层被点穿会跳到失效的 /cg/<名字>
+          if (name && !CG_CMD_NAMES.has(name) && hash) img.dataset.cg = name
+          else delete img.dataset.cg
         }
         if (btn) {
           const show = !!hash && bestCov > 0.01 && (btnGate?.current ?? true)
           btn.style.opacity = show ? String(Math.min(1, bestCov)) : '0'
           // 淡出状态下别再吃点击（移动端按钮浮在正文之上，透明时不能挡操作）
           btn.style.pointerEvents = show ? 'auto' : 'none'
-          if (name) btn.dataset.cg = name
+          if (name && !CG_CMD_NAMES.has(name) && hash) btn.dataset.cg = name
+          else delete btn.dataset.cg
         }
         if (!hash) curFg.current = null
       }
@@ -227,7 +239,8 @@ function StoryCgBg({
         const img = bgSlots[bgActive.current].current
         if (img) {
           img.style.opacity = hash ? '1' : '0'
-          if (name) img.dataset.cg = name
+          if (name && !CG_CMD_NAMES.has(name) && hash) img.dataset.cg = name
+          else delete img.dataset.cg
         }
       }
 
@@ -268,11 +281,11 @@ function StoryCgBg({
         <div className="reader-bg-layers" ref={layersRef} style={{ '--cov': 0 } as React.CSSProperties}>
           {[0, 1].map((i) => (
             <img key={`b${i}`} ref={bgSlots[i]} alt="" className="slot slot-bg"
-              onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg) onOpen(cg) }} />
+              onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg && !CG_CMD_NAMES.has(cg)) onOpen(cg) }} />
           ))}
           {[0, 1].map((i) => (
             <img key={`f${i}`} ref={fgSlots[i]} alt="" className="slot slot-fg"
-              onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg) onOpen(cg) }} />
+              onClick={(e) => { const cg = e.currentTarget.dataset.cg; if (cg && !CG_CMD_NAMES.has(cg)) onOpen(cg) }} />
           ))}
           {spineName && (
             <div key={spineKey} ref={spineLayerRef} className="slot-spine" style={{ opacity: 0 }}>
@@ -290,7 +303,7 @@ function StoryCgBg({
         style={{ opacity: 0 }}
         onClick={(e) => {
           const cg = e.currentTarget.dataset.cg
-          if (cg) onOpen(cg)
+          if (cg && !CG_CMD_NAMES.has(cg)) onOpen(cg)
         }}
         title={t('reader_open_cg')}
       >
@@ -593,11 +606,13 @@ export default function StoryReader() {
 
   // 给每行编号，和搜索索引的 lineIdx 对齐，用于跳转定位；
   // 同时把段内 CG 事件摊平成全局 run 列表（每个 run = 一张图从某行开始显示）
+  const jumpLine = params.get('line') != null ? Number(params.get('line')) : null
   const { blocks, frames } = useMemo(() => {
     const frames: Frame[] = []
     let n = 0
     if (!detail) return { blocks: [] as Block[], frames }
     const blocks: Block[] = detail.segments.map((seg) => {
+      const segStart = n
       const lines = seg.l.map(([sp, spid, zh, en, ko, ja]) => {
         const c = speakerMap[spid] || nameMap[sp]
         const isCommander = spid === 'Self' || spid === 'Choice' || sp === '指挥官'
@@ -615,10 +630,14 @@ export default function StoryReader() {
         runs.set(idx, frames.push(resolveCg(refs)) - 1)
       }
       // 有选项分支时按 next 指针游走渲染：到选项组停下，选了才继续、只走选中分支。
+      // 例外：带 ?line= 跳转的段落（从 CG 查看器/搜索深链进来）线性渲染全部台词
+      // ——未选择的选项会把后面的台词和 CG 锚点一起藏掉，深链目标正好落在选项
+      // 之后时整段「空白」。跳转段落里选项组不再拦路。
       const K = lines.length
       const flow = flowMap[seg.g]
+      const isJumpSeg = jumpLine != null && jumpLine >= segStart && jumpLine < n
       let seq: SeqItem[] = lines.map((_, i) => ({ t: 'line', i }))
-      if (flow && flow.choices.length) {
+      if (flow && flow.choices.length && !isJumpSeg) {
         const nextMap = flow.next
         const startMap = new Map(flow.choices.map((c) => [c[0] - 1, c.map((x) => x - 1)]))
         const step = (x: number): number | null => nextMap[x + 1] != null ? nextMap[x + 1] - 1 : (x < K - 1 ? x + 1 : null)
@@ -643,7 +662,7 @@ export default function StoryReader() {
       return { t: seg.t, g: seg.g, lines, runs, seq }
     })
     return { blocks, frames }
-  }, [detail, flowMap, picks, lang, speakerMap, nameMap])
+  }, [detail, flowMap, picks, lang, speakerMap, nameMap, jumpLine])
 
   const hasCg = frames.length > 0
 

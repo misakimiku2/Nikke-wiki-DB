@@ -149,8 +149,8 @@ def main():
                 if not (0 <= at < max(1, nlines)):
                     bad_idx.append((uid, at, nlines))
                 for r in refs:
-                    if r.get("n") == "none" and not r.get("h"):
-                        clears += 1   # 清空背景标记：h 为空是设计使然，不算坏 hash
+                    if r.get("n") in ("none", "black") and not r.get("h"):
+                        clears += 1   # 清空背景/黑屏转场命令帧：h 为空是设计使然，不算坏 hash
                         continue
                     if r.get("h") not in man_hashes:
                         bad_hash.append((uid, r.get("h")))
@@ -239,13 +239,21 @@ def main():
     p()
 
     # ---- 9. 角色过场分类 ----
-    p("## 9. `04_角色过场` 分类被当作剧情 CG")
+    p("## 9. `04_角色过场` 分类构成")
+    skill_models = set(loadj(os.path.join(ROOT, "public", "data", "char_spine_skillcut.json"),
+                             {}).get("items", []))
+    cat04 = [it for it in man if it.get("category") == "04_角色过场"]
+    cutins = [it for it in cat04 if it["name"].startswith("EventScene_")
+              and it["name"][len("EventScene_"):] in skill_models]
+    p(f"- 共 {len(cat04)} 条：角色大招 cut-in {len(cutins)} 条"
+      f"（实时模型直播 + 定格帧重渲，2026-11 重建；查看器按 EventScene_<模型> 映射"
+      f" spine_skillcut 播放），其余 {len(cat04) - len(cutins)} 条为联动活动插画")
+    p("- 说明：带剧情关联的 04 条目是联动活动（EVA / RE0 / Nier / Persona 等）插画，")
     cut = list(con.execute("""
         SELECT c.cg_name, u.bucket FROM cg_links c JOIN story_units u ON u.id=c.unit_id
         JOIN cg_assets a ON a.name=c.cg_name WHERE a.category='04_角色过场'"""))
-    p(f"- {len(set(r[0] for r in cut))} 个 CG、{len(cut)} 条链接")
-    p("- 分布：" + "、".join(f"`{b}`×{n}" for b, n in Counter(r[1] for r in cut).most_common()))
-    p("- 说明：这些主要是联动活动（EVA / RE0 / Nier / Persona 等）CG，多数为正常插画，需逐张目视确认是否混有模型切片。")
+    p(f"  共 {len(set(r[0] for r in cut))} 个 CG、{len(cut)} 条链接：")
+    p("  " + "、".join(f"`{b}`×{n}" for b, n in Counter(r[1] for r in cut).most_common()))
     p()
 
     con.close()

@@ -243,7 +243,15 @@ def main():
             " WHERE code IS NOT NULL AND name_zh IS NOT NULL")}
     except Exception:
         pass
-    cutin_re = re.compile(r"^EventScene_(c\d+)_\d+_skillcut$")
+    # 大招 cut-in：CG 名剥 EventScene_ 前缀后命中实时模型清单（char_spine_skillcut
+    # items，与 spine_skillcut/ 模型目录一一对应）。比旧正则宽松——c840_skillcut_00
+    # 这类反序名与 c017_00_slillcut 这类上游拼写错误名也能拿到角色中文名。
+    sc_path = os.path.join(ROOT, "public", "data", "char_spine_skillcut.json")
+    skillcut_models: set[str] = set()
+    if os.path.exists(sc_path):
+        with open(sc_path, encoding="utf-8") as f:
+            skillcut_models = set(json.load(f).get("items", []))
+    cutin_code_re = re.compile(r"^EventScene_(c\d+)")
     # Spine 图集的附加层（_atlas_add/_atlas_blen…）是零件贴图，不是能看的图
     junk_re = re.compile(r"_atlas(_(add|blen|mul|screen|mask|shot))?$", re.I)
     items = []
@@ -252,7 +260,9 @@ def main():
             continue
         if junk_re.search(it["name"]):
             continue
-        m = cutin_re.match(it["name"])
+        is_cutin = it["name"].startswith("EventScene_") \
+            and it["name"][len("EventScene_"):] in skillcut_models
+        m = cutin_code_re.match(it["name"]) if is_cutin else None
         sub = code2name.get(m.group(1), "") if m else it["sub"]
         item = {
             "h": it["hash"],

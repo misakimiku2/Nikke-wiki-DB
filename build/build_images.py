@@ -88,7 +88,12 @@ def process_one(item, force=False):
         "variants": {},
     }
 
-    done = all(os.path.exists(os.path.join(OUT, t[0], h + ".webp")) for t in TIERS)
+    tier_paths = [os.path.join(OUT, t[0], h + ".webp") for t in TIERS]
+    src_mtime = os.path.getmtime(item["src"])
+    # 已转过的仍算缓存，仅当三档都在且不比源图旧（留 2s 容差，与 audit 的陈旧判定
+    # 同一约定）。源图被上游重渲覆盖后（rerender_spine/rerender_skillcut），mtime
+    # 变新会自动重转三档，不用再手动 --force。
+    done = all(os.path.exists(p) and os.path.getmtime(p) >= src_mtime - 2 for p in tier_paths)
     if done and not force:
         try:
             with Image.open(item["src"]) as im:

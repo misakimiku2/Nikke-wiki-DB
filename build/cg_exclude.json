@@ -1,6 +1,11 @@
 {
-  "_note": "不该当剧情 CG 显示的素材：游戏里只有裸贴图、没有渲染插画，也没有可播放的 Spine 模型。build_images.py / build_db.py 都会跳过这里的名字。",
+  "_note": "不该当剧情 CG 显示的素材：游戏里只有裸贴图、没有渲染插画，也没有可播放的 Spine 模型。build_images.py / build_db.py 都会跳过这里的名字。black/none/red/White/Opacity_60 是转场与调层的纯色板（黑屏/清空/红闪/白闪/60% 压暗），阅读器按命令语义渲染，不作为图片资产。",
   "names": [
-    "EventScene_Main_01_02"
+    "EventScene_Main_01_02",
+    "Opacity_60",
+    "black",
+    "none",
+    "red",
+    "White"
   ]
 }

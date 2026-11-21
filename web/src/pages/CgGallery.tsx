@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  CG_BG_CAT, CG_CATS, catRank, loadCgIndex, loadSpineModels, loadStoryIndex, nf, setLinks, visibleCgs,
+  CG_BG_CAT, CG_CATS, catRank, loadCgIndex, loadSkillcutCgs, loadSpineModels, loadStoryIndex, nf,
+  setLinks, visibleCgs,
   type CgIndex, type CgItem, type StoryUnit,
 } from '../data'
 import { pickLang, useLang } from '../lang'
@@ -45,6 +46,8 @@ export default function CgGallery() {
   const [q, setQ] = useState('')
   const [limit, setLimit] = useState(PAGE)
   const [spine, setSpine] = useState<Set<string>>(new Set())
+  /** 大招 cut-in 条目（04_角色过场的 skillcut 家族）：查看器里直播实时模型 */
+  const [skillcutCgs, setSkillcutCgs] = useState<Set<string>>(new Set())
   const openedFromUrl = useRef(false)
   const sentinel = useRef<HTMLDivElement | null>(null)
 
@@ -71,16 +74,22 @@ export default function CgGallery() {
       })
       .catch(() => setData({ total: 0, items: [], links: {} }))
     loadSpineModels().then(setSpine).catch(() => {})
+    loadSkillcutCgs().then(setSkillcutCgs).catch(() => {})
     loadStoryIndex().then(setUnits).catch(() => setUnits([]))
 
-    fetch('/api/cg-flags')
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no api'))))
-      .then((d: { cover?: string[] }) => {
-        if (!Array.isArray(d.cover)) return
-        writable.current = true
-        applyFlags(new Set(d.cover))
-      })
-      .catch(() => setSaveState('readonly'))
+    // 标注模式是给维护者打封面标用的开发期功能：只在 dev 请求保存接口。
+    // 生产构建没有 /api/cg-flags（configureServer 不跑），这里不再发无谓的 404，
+    // 入口按钮也不会出现。
+    if (import.meta.env.DEV) {
+      fetch('/api/cg-flags')
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('no api'))))
+        .then((d: { cover?: string[] }) => {
+          if (!Array.isArray(d.cover)) return
+          writable.current = true
+          applyFlags(new Set(d.cover))
+        })
+        .catch(() => setSaveState('readonly'))
+    }
   }, [applyFlags])
 
   const flush = useCallback(async () => {
@@ -149,28 +158,9 @@ export default function CgGallery() {
     [setInfo],
   )
 
-  /** CG 名 → 主剧情单元 id：按单元的剧情段落条数取最多者（并列取先出现者）。
+  /** CG 名 → 出现过的全部剧情单元（按段落条数降序）：分组与剧情筛选都用它
+   *  ——多剧情引用的 CG 在每个引用它的分组都出现，不按「主单元」单选归类。
    *  封面合集按整集并集统计——封面帧自己常常不在剧情里。 */
-  const primaryStory = useMemo(() => {
-    const m = new Map<string, number>()
-    if (!data) return m
-    for (const it of pool) {
-      const lks = data.merges?.[it.n] ? setLinks(data, it.n) : data.links[it.n] || []
-      if (!lks.length) continue
-      const cnt = new Map<number, number>()
-      let best = -1
-      for (const lk of lks) {
-        const c = (cnt.get(lk.u) || 0) + 1
-        cnt.set(lk.u, c)
-        if (best < 0 || c > (cnt.get(best) || 0)) best = lk.u
-      }
-      if (best >= 0) m.set(it.n, best)
-    }
-    return m
-  }, [data, pool])
-
-  /** CG 名 → 出现过的全部剧情单元（按段落条数降序）：卡片提示里全部列出，
-   *  分组用的主单元只是其中段落最多的一家 */
   const allStory = useMemo(() => {
     const m = new Map<string, number[]>()
     if (!data) return m
@@ -203,12 +193,11 @@ export default function CgGallery() {
     return [...units].sort((a, b) => catRank(a.cat) - catRank(b.cat))
   }, [units])
 
-  /** 剧情筛选候选：站内 CG 实际关联到的单元（带张数），按展示顺序排 */
+  /** 剧情筛选候选：站内 CG 实际关联到的单元（带张数，多剧情引用各计一次），按展示顺序排 */
   const storyOpts = useMemo(() => {
     const cnt = new Map<number, number>()
     for (const it of pool) {
-      const uid = primaryStory.get(it.n)
-      if (uid != null) cnt.set(uid, (cnt.get(uid) || 0) + 1)
+      for (const uid of allStory.get(it.n) || []) cnt.set(uid, (cnt.get(uid) || 0) + 1)
     }
     const out: { uid: number; title: string; cat: string; n: number }[] = []
     for (const u of orderedUnits) {
@@ -216,7 +205,7 @@ export default function CgGallery() {
       if (n) out.push({ uid: u.id, title: storyTitleOf(u) || u.label, cat: u.cat, n })
     }
     return out
-  }, [pool, primaryStory, orderedUnits, storyTitleOf])
+  }, [pool, allStory, orderedUnits, storyTitleOf])
 
   const toggleStory = (uid: number) => {
     setStorySel((s) => {
@@ -250,30 +239,39 @@ export default function CgGallery() {
     return base.filter((it) => {
       if (catSel.size > 0 && !catSel.has(it.c)) return false
       if (storySel.size > 0) {
-        const uid = primaryStory.get(it.n)
-        if (uid == null || !storySel.has(uid)) return false
+        // 多剧情引用的 CG：任一被选中的剧情引用它即命中
+        const uids = allStory.get(it.n)
+        if (!uids?.some((uid) => storySel.has(uid))) return false
       }
       if (k && !(it.n.toLowerCase().includes(k) || it.s.toLowerCase().includes(k)
         || (tagHit && flags.has(it.n)))) return false
       return true
     })
-  }, [base, catSel, storySel, q, flags, primaryStory])
+  }, [base, catSel, storySel, q, flags, allStory])
 
   // 分组视图的分节：主线章节 → 活动 → 个人剧情 → 未关联剧情（兜底组在最后）。
-  // 节内沿用原始顺序；单元不在 story_index（异常数据）时也并入兜底组。
+  // 一个 CG 被多个剧情引用时在**每个**引用它的分组都出现（如 OverZone 的 CG
+  // 同时属于主线章与活动剧情）；节内沿用原始顺序；单元不在 story_index
+  // （异常数据）时也并入兜底组。
   const sections = useMemo<CgSection[]>(() => {
     const byUnit = new Map<number, CgItem[]>()
     const none: CgItem[] = []
     for (const it of filtered) {
-      const uid = primaryStory.get(it.n)
-      const u = uid != null ? unitMap.get(uid) : undefined
-      if (!u) {
+      const uids = allStory.get(it.n)
+      if (!uids?.length) {
         none.push(it)
         continue
       }
-      const arr = byUnit.get(u.id)
-      if (arr) arr.push(it)
-      else byUnit.set(u.id, [it])
+      let placed = false
+      for (const uid of uids) {
+        const u = unitMap.get(uid)
+        if (!u) continue
+        placed = true
+        const arr = byUnit.get(u.id)
+        if (arr) arr.push(it)
+        else byUnit.set(u.id, [it])
+      }
+      if (!placed) none.push(it)
     }
     const out: CgSection[] = []
     for (const u of orderedUnits) {
@@ -290,7 +288,7 @@ export default function CgGallery() {
       out.push({ key: 'none', head: t('cg_group_none'), sub: '', items: none })
     }
     return out
-  }, [filtered, primaryStory, unitMap, orderedUnits, storyTitleOf, t])
+  }, [filtered, allStory, unitMap, orderedUnits, storyTitleOf, t])
 
   useEffect(() => {
     if (skipLimitReset.current) {
@@ -447,7 +445,9 @@ export default function CgGallery() {
       >
         <img src={`/img/s/${it.h}.webp`} alt={it.n} loading="lazy" />
         {marked && <span className="cg-tag">{t('cg_badge_cover')}</span>}
-        {(it.d === 1 || spine.has(it.n)) && <span className="cg-dyn">{t('cg_badge_anim')}</span>}
+        {(it.d === 1 || spine.has(it.n) || skillcutCgs.has(it.n)) && (
+          <span className="cg-dyn">{t('cg_badge_anim')}</span>
+        )}
         {setInfo.get(it.n) && (
           <span className="cg-set">{fmt(t('cg_set_n'), { n: setInfo.get(it.n)!.size + 1 })}</span>
         )}
@@ -512,10 +512,16 @@ export default function CgGallery() {
         >
           {t('filter_btn')}{activeCount > 0 ? ` · ${activeCount}` : ''}
         </button>
-        {writable.current && (
-          <button className={`chip ${editMode ? 'on' : ''}`} onClick={enterEdit}>
-            {editMode ? t('cg_annotate_exit') : t('cg_annotate')}
-          </button>
+        {/* 开发期后台入口：标注模式（封面打标）与图集整理，生产构建不渲染 */}
+        {import.meta.env.DEV && writable.current && (
+          <>
+            <button className={`chip ${editMode ? 'on' : ''}`} onClick={enterEdit}>
+              {editMode ? t('cg_annotate_exit') : t('cg_annotate')}
+            </button>
+            <button className="chip" onClick={() => navigate('/cg/albums')} title="差分 CG 图集整理后台（dev）">
+              {t('cg_albums_tools')}
+            </button>
+          </>
         )}
       </div>
 

@@ -6,11 +6,12 @@ import { useImmersive, ExpandIcon, ImmersiveExitButton } from '../components/Imm
 import { usePageTitle } from '../usePageTitle'
 import SpinePlayer, { type SpineController, type SpineStatus } from '../components/SpinePlayer'
 import {
-  coverOf, loadCgIndex, loadCharacters, loadSpineModels, loadSpineOverrides, loadStoryIndex,
-  loadStoryUnit, mergedBgOf, nf,
+  burstBgSegment, CG_CATS, coverOf, loadCgIndex, loadCharSkillcut, loadCharacters, loadSkillcutCgs,
+  loadSpineModels, loadSpineOverrides, loadStoryIndex, loadStoryUnit, mergedBgOf, nf,
+  pickBurstAnim,
   setLinks, setMembersOf, visibleCgs,
-  type CgIndex, type CgItem, type Character, type SpineOverride, type StoryDetail, type StoryLine,
-  type StoryUnit, type ViewTransform,
+  type CgIndex, type CgItem, type Character, type SkillcutIndex, type SpineOverride,
+  type StoryDetail, type StoryLine, type StoryUnit, type ViewTransform,
 } from '../data'
 import { commanderName, pickLang, useLang } from '../lang'
 import { fmt, useUI, type UIKey } from '../ui'
@@ -73,14 +74,22 @@ export default function CgView() {
   const [index, setIndex] = useState<CgIndex | null>(null)
   const [units, setUnits] = useState<StoryUnit[]>([])
   const [spine, setSpine] = useState<Set<string>>(new Set())
+  const [skillcut, setSkillcut] = useState<SkillcutIndex | null>(null)
+  const [skillcutCgs, setSkillcutCgs] = useState<Set<string>>(new Set())
   const [overrides, setOverrides] = useState<Record<string, SpineOverride>>({})
   const [q, setQ] = useState('')
+  /** 左侧目录的分类筛选（多选并集，空集 = 全部）与筛选面板开合 */
+  const [dirCats, setDirCats] = useState<Set<string>>(new Set())
+  const [dirFilterOpen, setDirFilterOpen] = useState(false)
   const [limit, setLimit] = useState(160)
   const [modelReady, setModelReady] = useState(false)
   const [modelError, setModelError] = useState<string | null>(null)
   const [status, setStatus] = useState<SpineStatus>(EMPTY)
   const [stillScale, setStillScale] = useState(1)
   const [toast, setToast] = useState<string | null>(null)
+  /** 右侧「演出」开关：运镜跟拍 / 场景背景图层（仅实时大招条目，换图重置） */
+  const [camFollow, setCamFollow] = useState(true)
+  const [sceneOn, setSceneOn] = useState(true)
   /** 段落原文：展开的链接下标；剧情单元全文按需加载（loadStoryUnit 有缓存，同一章节只拉一次）；
    *  角色表用于说话人名本地化，同样懒加载 */
   const [openLinks, setOpenLinks] = useState<Set<number>>(new Set())
@@ -124,6 +133,8 @@ export default function CgView() {
     loadCgIndex().then(setIndex).catch(() => setIndex({ total: 0, items: [], links: {} }))
     loadStoryIndex().then(setUnits).catch(() => {})
     loadSpineModels().then(setSpine).catch(() => {})
+    loadCharSkillcut().then(setSkillcut).catch(() => {})
+    loadSkillcutCgs().then(setSkillcutCgs).catch(() => {})
     loadSpineOverrides().then(setOverrides).catch(() => {})
   }, [])
 
@@ -134,6 +145,8 @@ export default function CgView() {
     setStatus(EMPTY)
     setStillScale(1)
     setToast(null)
+    setCamFollow(true)
+    setSceneOn(true)
     seeking.current = false
     // 窄屏抽屉：切 CG 后自动收起，让新 CG 直接可见
     if (window.matchMedia(NARROW).matches) {
@@ -157,7 +170,15 @@ export default function CgView() {
   const cur = useMemo(() => index?.items.find((x) => x.n === name) || null, [index, name])
   usePageTitle(cur?.n)
   const isSpine = spine.has(name)
-  const useModel = isSpine && modelReady
+  /**
+   * 大招 cut-in（04_角色过场 的 skillcut 条目）：CG 名剥掉 EventScene_ 前缀就是
+   * spine_skillcut 里的实时模型（上游拼写错误名也一样成对存在），直接复用角色
+   * 详情页的整套大招演出（镜头跟拍 / sceneBg 场景图 / 双实例背景段），
+   * 静态图只作模型加载前的占位。没有实时模型的条目维持静态图。
+   */
+  const burstModel = skillcutCgs.has(name) ? name.slice('EventScene_'.length) : null
+  const isBurst = burstModel != null
+  const useModel = (isSpine || isBurst) && modelReady
   const canAnimate = useModel && status.duration > 0
   /** 剧情段落：封面按整集（自身 + 成员）取并集，连图集的封面常常不是剧情里出现的那一帧 */
   const links = useMemo(() => (index ? setLinks(index, name) : []), [index, name])
@@ -221,7 +242,9 @@ export default function CgView() {
    * 写图片 URL）→ 合并收录的独立背景 CG（X 与 X_bg 拆成两条的那种，自动垫底）。
    */
   const bgSrc = useMemo(() => {
-    if (!index) return null
+    // 大招条目的场景图由 SpinePlayer 的 sceneBg 层负责（跟随镜头运镜），
+    // 不走这里的独立背景层，避免叠两层
+    if (!index || isBurst) return null
     const spec = overrides[name]?.background
     if (spec) {
       if (spec.startsWith('/')) return spec
@@ -230,7 +253,7 @@ export default function CgView() {
     }
     const bg = mergedBgOf(index.items, name)
     return bg ? `/img/l/${bg.h}.webp` : null
-  }, [overrides, name, index])
+  }, [overrides, name, index, isBurst])
 
   const unitMap = useMemo(() => {
     const m: Record<number, StoryUnit> = {}
@@ -272,63 +295,66 @@ export default function CgView() {
 
   const list = useMemo(() => {
     const k = q.trim().toLowerCase()
-    if (!k) return pool
-    return pool.filter((it) => it.n.toLowerCase().includes(k) || it.s.toLowerCase().includes(k))
-  }, [pool, q])
+    return pool.filter((it) => {
+      if (dirCats.size > 0 && !dirCats.has(it.c)) return false
+      if (k && !(it.n.toLowerCase().includes(k) || it.s.toLowerCase().includes(k))) return false
+      return true
+    })
+  }, [pool, q, dirCats])
+
+  /** 目录筛选面板的分类计数 */
+  const dirCatCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const it of pool) m[it.c] = (m[it.c] || 0) + 1
+    return m
+  }, [pool])
 
   const visible = useMemo(() => list.slice(0, limit), [list, limit])
-  useEffect(() => setLimit(160), [q])
+  /** 已居中过的 CG 名：换图/筛选变化后重新居中，其余渲染不抢用户的滚动 */
+  const centeredName = useRef('')
+  useEffect(() => {
+    setLimit(160)
+    centeredName.current = '' // 筛选变了之后重新居中（若当前条目还在列表里）
+  }, [q, dirCats])
 
   /**
-   * 把目录滚到当前 CG：只在被遮住时补“最少”的滚动距离，已可见就完全不动。
-   * 之前写成「取能容纳整组的偏移量」，效果是把选中项底边对齐到面板底部——
-   * 用户手动滚过列表后再点条目，选中项会突然掉到最下方。
-   * 所在集整组放得下时以整组为目标（让展开的成员一起可见），
-   * 整组比视口还高时只保证当前项本身可见。
+   * 把当前 CG 条目滚动到目录视口中央（对齐条目中心与面板中心）。
+   * 点条目/上一张下一张/从图鉴进来都会走到这里；条目比视口高时钳到范围内。
    */
-  const scrollDirToCurrent = useCallback(() => {
+  const centerDirToCurrent = useCallback((smooth = true) => {
     const box = listRef.current
     const on = box?.querySelector<HTMLElement>('.cv-dir-item.on')
     if (!box || !on) return
-    const sub = on.closest('.cv-dir-sub') as HTMLElement | null
-    // 当前项是封面时，展开的成员组是它的下一个兄弟节点
-    const next = on.nextElementSibling as HTMLElement | null
-    const group = sub ?? (next?.classList.contains('cv-dir-sub') ? next : null)
-    const cover = (sub ? (sub.previousElementSibling as HTMLElement | null) : null) ?? on
-    const last = (group?.lastElementChild as HTMLElement | null) ?? on
     const boxRect = box.getBoundingClientRect()
-    const rel = (el: HTMLElement) => {
-      const r = el.getBoundingClientRect()
-      return {
-        top: r.top - boxRect.top + box.scrollTop,
-        bottom: r.bottom - boxRect.top + box.scrollTop,
-      }
-    }
-    const g = rel(cover)
-    const gBottom = rel(last).bottom
-    const PAD = 8
-    const fits = gBottom - g.top <= box.clientHeight - PAD * 2
-    const targetTop = fits ? g.top : rel(on).top
-    const targetBottom = fits ? gBottom : rel(on).bottom
-    const viewTop = box.scrollTop
-    const viewBottom = viewTop + box.clientHeight
-    if (targetTop < viewTop + PAD) {
-      box.scrollTop = Math.max(0, targetTop - PAD)
-    } else if (targetBottom > viewBottom - PAD) {
-      box.scrollTop = targetBottom - box.clientHeight + PAD
-    }
+    const r = on.getBoundingClientRect()
+    let target = box.scrollTop + (r.top + r.height / 2 - boxRect.top - box.clientHeight / 2)
+    target = Math.max(0, Math.min(target, box.scrollHeight - box.clientHeight))
+    box.scrollTo({ top: target, behavior: smooth ? 'smooth' : 'auto' })
   }, [])
 
-  // 切换 CG 后把目录里的当前项（含所在集）滚进可视区
+  // 换 CG 后把当前条目居中到目录；它超出已渲染条数（目录懒加载）时先扩容，
+  // 渲染出来后下一轮再居中。每次渲染都跑一遍，靠 centeredName 防重复。
   useEffect(() => {
-    scrollDirToCurrent()
-  }, [name, visible, scrollDirToCurrent])
+    if (centeredName.current === name) return
+    const idx = list.findIndex((x) => x.n === anchorName)
+    if (idx < 0) {
+      // 列表还没数据（首次加载）等下一轮；确实被搜索/分类筛掉才标记为已处理
+      if (list.length > 0) centeredName.current = name
+      return
+    }
+    if (idx >= limit) {
+      setLimit(Math.min(list.length, idx + 80))
+      return
+    }
+    centeredName.current = name
+    centerDirToCurrent()
+  })
 
-  // 窄屏抽屉是滑入的：打开时目录刚从屏幕外回来，需要重新定位
+  // 窄屏抽屉是滑入的：打开时目录刚从屏幕外回来，重新居中
   useEffect(() => {
     if (!leftOpen) return
-    scrollDirToCurrent()
-  }, [leftOpen, scrollDirToCurrent])
+    centerDirToCurrent()
+  }, [leftOpen, centerDirToCurrent])
 
   const go = useCallback((delta: number) => {
     const i = pool.findIndex((x) => x.n === anchorName)
@@ -337,9 +363,9 @@ export default function CgView() {
   }, [pool, anchorName, navigate])
 
   const togglePlay = useCallback(() => {
-    if (!isSpine || !modelReady) return
+    if ((!isSpine && !isBurst) || !modelReady) return
     spineRef.current?.toggle()
-  }, [isSpine, modelReady])
+  }, [isSpine, isBurst, modelReady])
 
   const resetView = useCallback(() => {
     if (useModel) spineRef.current?.resetView()
@@ -452,14 +478,57 @@ export default function CgView() {
           >×</button>
         </div>
         <div className="cv-search-wrap">
-          <input
-            className="cv-search"
-            placeholder={t('cg_search_ph')}
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          {q && <button className="cv-search-x" onClick={() => setQ('')} aria-label={t('common_clear')}>×</button>}
+          <div className="cv-search-box">
+            <input
+              className="cv-search"
+              placeholder={t('cg_search_ph')}
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {q && <button className="cv-search-x" onClick={() => setQ('')} aria-label={t('common_clear')}>×</button>}
+          </div>
+          <button
+            className={`cv-dir-filter-btn ${dirFilterOpen ? 'on' : ''} ${dirCats.size ? 'has-active' : ''}`}
+            onClick={() => setDirFilterOpen((o) => !o)}
+            aria-expanded={dirFilterOpen}
+            title={t('filter_btn')}
+          >
+            {t('filter_btn')}{dirCats.size ? ` · ${dirCats.size}` : ''}
+          </button>
         </div>
+        {dirFilterOpen && (
+          <div className="cv-dir-filter">
+            <div className="fp-chips">
+              <button
+                className={`chip fp-chip ${dirCats.size === 0 ? 'on' : ''}`}
+                onClick={() => setDirCats(new Set())}
+              >
+                {t('cg_all')}
+              </button>
+              {CG_CATS.map((c) => (
+                <button
+                  key={c.key}
+                  className={`chip fp-chip ${dirCats.has(c.key) ? 'on' : ''}`}
+                  onClick={() => setDirCats((s) => {
+                    const n = new Set(s)
+                    if (n.has(c.key)) n.delete(c.key)
+                    else n.add(c.key)
+                    return n
+                  })}
+                  title={CV_CAT_KEY[c.key] ? t(CV_CAT_KEY[c.key]) : c.label}
+                >
+                  {CV_CAT_KEY[c.key] ? t(CV_CAT_KEY[c.key]) : c.label.replace(/^\d+_/, '')}
+                  <span className="fp-cnt">{nf(dirCatCounts[c.key] || 0)}</span>
+                </button>
+              ))}
+              {dirCats.size > 0 && (
+                <button className="chip fp-chip fp-clear" onClick={() => setDirCats(new Set())}>
+                  {t('filter_clear')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         <div className="cv-dir-list" ref={listRef}>
           {visible.map((it) => {
             // 当前所在的集在目录里展开：封面行下面列出成员，点哪个就在集内切到哪张，
@@ -524,12 +593,23 @@ export default function CgView() {
             />
           </div>
 
-          {isSpine && (
+          {(isSpine || isBurst) && (
             <div className={`cv-layer cv-model ${useModel ? 'on' : ''}`}>
               <SpinePlayer
-                name={name}
+                name={isBurst && burstModel ? burstModel : name}
+                dir={isBurst ? 'spine_skillcut' : 'spine'}
                 controls={false}
-                backgroundSrc={bgSrc || undefined}
+                backgroundSrc={isBurst ? undefined : bgSrc || undefined}
+                pickDefaultAnim={isBurst ? pickBurstAnim : undefined}
+                bgSegment={isBurst && burstModel ? burstBgSegment(burstModel) : undefined}
+                sceneBg={isBurst && burstModel && skillcut?.bg.has(burstModel)
+                  ? `/spine_skillcut/${burstModel}/bg.webp` : undefined}
+                sceneBg2={isBurst && burstModel && skillcut?.bg2.has(burstModel)
+                  ? `/spine_skillcut/${burstModel}/bg2.webp` : undefined}
+                sceneBg3={isBurst && burstModel && skillcut?.bg3.has(burstModel)
+                  ? `/spine_skillcut/${burstModel}/bg3.webp` : undefined}
+                sceneBg4={isBurst && burstModel && skillcut?.bg4.has(burstModel)
+                  ? `/spine_skillcut/${burstModel}/bg4.webp` : undefined}
                 controllerRef={spineRef}
                 onReady={() => setModelReady(true)}
                 onTick={setStatus}
@@ -549,7 +629,8 @@ export default function CgView() {
                 {leftOpen ? '‹' : '›'} {t('reader_toc')}
               </button>
               <span className={`cv-badge ${useModel ? 'live' : ''}`}>
-                {useModel ? `◉ ${t('cg_live_model')}` : isSpine ? t('cg_static_composite') : t('cg_static')}
+                {useModel ? `◉ ${t('cg_live_model')}`
+                  : isSpine || isBurst ? t('cg_static_composite') : t('cg_static')}
               </span>
             </div>
             <div className="cv-top-group">
@@ -564,7 +645,7 @@ export default function CgView() {
             </div>
           </div>
 
-          {isSpine && !modelReady && !modelError && (
+          {(isSpine || isBurst) && !modelReady && !modelError && (
             <div className="cv-loading"><span className="cv-spin" />{t('cgview_loading')}</div>
           )}
           {modelError && (
@@ -579,7 +660,7 @@ export default function CgView() {
             <button
               className="cv-play"
               onClick={togglePlay}
-              disabled={!isSpine || !modelReady}
+              disabled={(!isSpine && !isBurst) || !modelReady}
               title={t('voice_play_pause')}
             >
               <PlayPauseIcon playing={canAnimate && status.playing} size="15" />
@@ -655,8 +736,8 @@ export default function CgView() {
             {subS ? `${subS} · ` : ''}{cur.w}×{cur.h2}
           </div>
           <div className="cv-tags">
-            <span className={`cv-tag ${isSpine ? 'live' : ''}`}>
-              {isSpine ? t('cg_live_model') : t('cg_static_illust')}
+            <span className={`cv-tag ${isSpine || isBurst ? 'live' : ''}`}>
+              {isSpine || isBurst ? t('cg_live_model') : t('cg_static_illust')}
             </span>
             <span className="cv-tag">{fmt(t('cg_links_n'), { n: links.length })}</span>
             <span className="cv-tag">{fmt(t('cg_text_lines'), { m: totalLines })}</span>
@@ -673,6 +754,38 @@ export default function CgView() {
           <button disabled={i <= 0} onClick={() => go(-1)}>{t('cg_prev')}</button>
           <button disabled={i < 0 || i >= pool.length - 1} onClick={() => go(1)}>{t('cgview_next')}</button>
         </div>
+
+        {/* 演出开关（实时大招条目）：运镜关掉后舞台可像静态图一样拖拽缩放；
+            场景图层只对带独立场景板的模型显示 */}
+        {isBurst && (
+          <section className="cv-live-ctrl">
+            <h2>{t('cv_live_ctrl')}</h2>
+            <label className="cv-switch" title={t('cv_ctrl_camera_hint')}>
+              <input
+                type="checkbox"
+                checked={camFollow}
+                onChange={(e) => {
+                  setCamFollow(e.target.checked)
+                  spineRef.current?.setCameraFollow?.(e.target.checked)
+                }}
+              />
+              <span>{t('cv_ctrl_camera')}</span>
+            </label>
+            {burstModel != null && skillcut?.bg.has(burstModel) && (
+              <label className="cv-switch" title={t('cv_ctrl_scenebg_hint')}>
+                <input
+                  type="checkbox"
+                  checked={sceneOn}
+                  onChange={(e) => {
+                    setSceneOn(e.target.checked)
+                    spineRef.current?.setSceneBgVisible?.(e.target.checked)
+                  }}
+                />
+                <span>{t('cv_ctrl_scenebg')}</span>
+              </label>
+            )}
+          </section>
+        )}
 
         {/* 相似画集：连图/分层拆成的多条 CG 已并入同一集，封面与成员都在这里，
             点任意一张在集内切换（左侧目录保持展开，回封面点标着「封面」的那张） */}

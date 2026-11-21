@@ -69,6 +69,8 @@ export type SpineController = {
   resetView(): void
   /** 镜头运镜开关：开=自动跟拍且禁用拖拽/缩放，关=固定/手动取景 */
   setCameraFollow?(on: boolean): void
+  /** 场景图层开关（多镜大招的独立背景板 bg..bg4）：关=只剩人物层，透明底 */
+  setSceneBgVisible?(on: boolean): void
   saveFrame(filename?: string): void
   getStatus(): SpineStatus
   /** 校准模式专用：当前帧的骨架矩阵 + 基础矩形（未含用户微调） */
@@ -1178,6 +1180,8 @@ export default function SpinePlayer({
         let scissorPx: [number, number, number, number] | null = null
         /** 相机跟拍开关：大招默认开启，用户拖拽/滚轮接管后关闭，复位恢复 */
         let follow = dir === 'spine_skillcut' && framed
+        /** 场景背景板显示开关（setSceneBgVisible 控制，placeBg 每帧尊重它） */
+        let sceneBgOn = true
 
         const apply = () => {
           const el = boxRef.current
@@ -1241,7 +1245,7 @@ export default function SpinePlayer({
             el.style.height = `${side}px`
             el.style.transformOrigin = '50% 50%'
             el.style.transform = rect.rot ? `rotate(${rect.rot.toFixed(3)}deg)` : ''
-            el.style.visibility = on ? 'visible' : 'hidden'
+            el.style.visibility = sceneBgOn && on ? 'visible' : 'hidden'
           }
           placeBg(sb, sceneRect, active === 0)
           placeBg(sb2, sceneRect2, active === 1)
@@ -2008,6 +2012,14 @@ export default function SpinePlayer({
               follow = false
               emit(true)
             }
+          },
+          setSceneBgVisible(on) {
+            sceneBgOn = on
+            // 立即生效（暂停时也响应）；后续每帧 placeBg 按开关保持
+            for (const el of [sceneBgRef.current, sceneBg2Ref.current, sceneBg3Ref.current, sceneBg4Ref.current]) {
+              if (el) el.style.visibility = on ? 'visible' : 'hidden'
+            }
+            emit(true)
           },
           saveFrame(filename) { pendingSave = filename || `${name}.png` },
           getStatus() { return status() },

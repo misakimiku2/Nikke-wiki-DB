@@ -112,12 +112,17 @@ def main():
         {h: 背景 hash, n: 背景名, d: 模型名} —— 阅读器据此铺背景图并播
         spine 模型（旧版 token 是 X_bg 时查不到模型，只显示背景板）。
         cgb 缺 manifest hash 时回退 token 自身的图。
+        背景板 token 是纯色板（black/none 等，cg_exclude 已剔除）时没有
+        独立 hash：只出模型本身，黑屏/清空背景由 bg 命令帧负责。
         """
         if cgd and name in (cgd, cgd + "_bg", cgb):
             h = cg_hash.get(cgb or name) or cg_hash.get(name)
             if not h:
                 return None
-            return {"h": h, "n": cgb or name, "d": cgd}
+            n = cgb or name
+            if not cg_hash.get(n):
+                n = name
+            return {"h": h, "n": n, "d": cgd}
         h = cg_hash.get(name)
         if not h:
             return None
@@ -256,11 +261,16 @@ def main():
                 # 场景背景切换（bg 字段，black=黑屏转场、none=清空背景、其余为
                 # 06_剧情背景 场景板）：列表末位 = 该行结束时的背景状态。阅读器
                 # 的场景背景层由此驱动——CG 挂屏期间的黑屏/换景也能如实呈现。
+                # black/none/red/White/Opacity_60 是纯色板（已从图库剔除，见
+                # cg_exclude.json）：black/none 输出空 hash 的命令帧由前端按语义
+                # 渲染；红闪/白闪/压暗是瞬时叠加特效，直接不引用（保持原背景）。
                 bg_list = asset.get("bg") or []
                 if bg_list:
                     last = bg_list[-1]
                     if last == "none":
                         refs.append({"h": "", "n": "none"})   # 清空背景：h 留空，前端按空帧处理
+                    elif last == "black":
+                        refs.append({"h": "", "n": "black"})  # 黑屏转场：命令帧，前端渲染纯黑
                     elif cg_hash.get(last):
                         refs.append({"h": cg_hash[last], "n": last})
                 # 去重：动态行的 X_bg（上游 token）与配对补的 X 会变换成同一个

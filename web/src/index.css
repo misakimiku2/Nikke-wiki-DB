@@ -3043,6 +3043,138 @@ img { display: block; }
   letter-spacing: .16em; color: var(--dim-2);
 }
 
+/* ============ 图集整理（dev 后台 /cg/albums，正式站点无入口） ============ */
+.alb-intro { margin: 0 0 18px; font-size: 12px; color: var(--dim); line-height: 1.8; }
+.alb-toolbar-right { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; }
+.alb-dirty { font-size: 11px; letter-spacing: .05em; color: var(--amber); }
+.alb-save:disabled { opacity: .45; cursor: default; }
+.alb-cats { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 30px; }
+.alb-cats .fp-clear { border-style: dashed; }
+.alb-sect { margin-bottom: 44px; }
+.alb-list { display: flex; flex-direction: column; gap: 12px; }
+.alb-card {
+  display: flex; gap: 14px; padding: 12px;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.alb-card.is-auto { opacity: .66; border-style: dashed; }
+.alb-cover {
+  position: relative; flex: 0 0 148px; aspect-ratio: 4/3; overflow: hidden;
+  background: var(--bg-2); border: 1px solid var(--line-2);
+}
+.alb-cover img { width: 100%; height: 100%; object-fit: cover; }
+.alb-cover-tag {
+  position: absolute; left: 6px; top: 6px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9px;
+  letter-spacing: .08em; padding: 2px 6px;
+  background: rgba(255,45,85,.88); color: #fff; border: 1px solid rgba(255,255,255,.35);
+}
+.is-auto .alb-cover-tag { background: rgba(46,230,255,.18); color: #2ee6ff; border-color: rgba(46,230,255,.55); }
+.alb-body { flex: 1; min-width: 0; }
+.alb-title-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.alb-name {
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 12px;
+  letter-spacing: .02em; color: var(--text); text-decoration: none;
+}
+.alb-name:hover { color: var(--red); }
+.alb-size { font-size: 11px; color: var(--dim); }
+.alb-btn {
+  margin-left: auto; padding: 5px 12px; font-size: 11px; cursor: pointer;
+  background: transparent; color: var(--dim); border: 1px solid var(--line-2);
+  transition: all .15s;
+}
+.alb-btn:hover { color: var(--text); border-color: var(--text); }
+.alb-btn.danger:hover { color: var(--red); border-color: var(--red); }
+.alb-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+.alb-thumb {
+  position: relative; width: 116px; aspect-ratio: 4/3; overflow: hidden;
+  background: var(--bg-2); border: 1px solid var(--line);
+}
+.alb-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.alb-thumb.missing { opacity: .5; }
+.alb-thumb-none {
+  display: flex; width: 100%; height: 100%;
+  align-items: center; justify-content: center;
+  font-size: 10px; color: var(--dim);
+}
+.alb-x {
+  position: absolute; right: 3px; top: 3px; width: 20px; height: 20px; padding: 0;
+  font-size: 13px; line-height: 1; cursor: pointer; color: #fff;
+  background: rgba(7,7,10,.72); border: 1px solid rgba(255,255,255,.3);
+}
+.alb-x:hover { background: var(--red); border-color: var(--red); }
+.alb-promote {
+  position: absolute; left: 3px; top: 3px; padding: 3px 7px; font-size: 9px;
+  letter-spacing: .06em; cursor: pointer; opacity: 0; transition: opacity .15s;
+  color: #2ee6ff; background: rgba(7,7,10,.78); border: 1px solid rgba(46,230,255,.5);
+}
+.alb-thumb:hover .alb-promote { opacity: 1; }
+.alb-thumb-name {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 5px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 8px;
+  color: #e8e6df; background: linear-gradient(transparent, rgba(7,7,10,.85));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+}
+[data-theme="light"] .alb-thumb-name {
+  color: #17160f; background: linear-gradient(transparent, rgba(244,241,232,.88));
+}
+.alb-auto-note { margin-top: 10px; font-size: 11px; color: var(--dim-2); }
+/* CG 池里的选中态：青色描边区别于标注模式的红色 */
+.cg-cell.sel { outline: 2px solid var(--cyan); outline-offset: -2px; }
+.alb-sel-tag {
+  position: absolute; left: 7px; top: 7px;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9px;
+  letter-spacing: .08em; padding: 2px 6px;
+  background: rgba(46,230,255,.9); color: #06131a; border: 1px solid rgba(255,255,255,.4);
+}
+/* 悬浮在网格上方，必须用实底背景，否则下面的图会透出来 */
+.alb-pickbar {
+  position: sticky; bottom: 14px; z-index: 40;
+  background: var(--bg); box-shadow: var(--card-shadow);
+}
+.alb-act {
+  padding: 8px 16px; font-size: 11px; letter-spacing: .08em; cursor: pointer;
+  background: transparent; color: var(--red); border: 1px solid var(--red);
+}
+.alb-act.primary { background: var(--red); color: #fff; }
+.alb-act.ghost { color: var(--dim); border-color: var(--line-2); }
+.alb-act.ghost:hover { color: var(--text); border-color: var(--text); }
+.alb-act:disabled { opacity: .4; cursor: default; }
+.alb-modal {
+  position: fixed; inset: 0; z-index: 90; padding: 20px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--scrim), .66);
+}
+.alb-modal-in {
+  width: min(560px, 100%); max-height: 72vh; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line-2); box-shadow: var(--card-shadow);
+}
+.alb-modal-head { padding: 14px 16px; font-size: 12px; color: var(--text-2); border-bottom: 1px solid var(--line); }
+.alb-modal-list { overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.alb-modal-row {
+  display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+  background: transparent; border: 1px solid transparent; cursor: pointer; text-align: left;
+}
+.alb-modal-row:hover { background: var(--surface-2); border-color: var(--line); }
+.alb-modal-row img { width: 64px; aspect-ratio: 4/3; object-fit: cover; border: 1px solid var(--line); }
+.alb-modal-name {
+  flex: 1; min-width: 0;
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 11px;
+  color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.alb-modal-cnt { font-size: 10px; color: var(--dim); }
+.alb-modal-foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; }
+.alb-toast {
+  position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%); z-index: 120;
+  max-width: min(680px, 92vw); padding: 11px 18px; font-size: 12px; line-height: 1.6;
+  color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--line-2); box-shadow: var(--card-shadow);
+}
+.alb-toast.bad { color: var(--red); border-color: var(--red-soft); }
+@media (max-width: 760px) {
+  .alb-card { flex-direction: column; }
+  .alb-cover { flex-basis: auto; width: 240px; }
+}
+
 /* ================= 灯箱 ================= */
 .lightbox {
   position: fixed; inset: 0; z-index: 200;
@@ -3239,15 +3371,19 @@ img { display: block; }
   /* 合成画面整体不透明度上限：桌面 .55；移动端/浅色主题在各媒体查询里覆盖 */
   --rb-max: .55;
 }
-/* 透明度由滚动进度逐帧驱动（JS 写 style.opacity），不加定时动画 */
+/* 整体淡入淡出由滚动进度逐帧驱动（JS 写容器 --cov）；
+   换图/显隐是 0/1 突变，配一条短过渡做叠化——纯色板移除后没有黑色转场垫底，
+   空舞台直接硬切会太跳。槽位透明度平时只有等值重写，不会重触发动画。 */
 .reader-bg .slot {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; object-position: center 32%;
   opacity: 0;
   pointer-events: auto; cursor: zoom-in;
+  transition: opacity .45s ease;
 }
 /* 不再用 brightness 压暗：浅色模式下那层压暗正是「黑色遮罩」观感的来源。
-   现在靠容器整体不透明度（JS 里上限 0.55）+ 四边渐隐 mask 融入页面。 */
+   现在靠容器整体不透明度（JS 里上限 0.55）+ 四边渐隐 mask 融入页面。
+   纯色板（black/none 等命令帧）不渲染任何层，舞台保持空。 */
 .reader-bg .slot-bg { filter: saturate(.92); }
 .reader-bg .slot-fg { filter: none; }
 
@@ -3468,7 +3604,8 @@ img { display: block; }
   font-family: ui-monospace, "Microsoft YaHei", monospace;
   font-size: 10px; color: var(--dim-2); white-space: nowrap;
 }
-.cv-search-wrap { flex: none; position: relative; padding: 0 12px 10px; }
+.cv-search-wrap { flex: none; display: flex; gap: 6px; align-items: stretch; padding: 0 12px 10px; }
+.cv-search-box { flex: 1; min-width: 0; position: relative; }
 .cv-search {
   width: 100%; padding: 9px 30px 9px 11px;
   background: var(--bg-2); border: 1px solid var(--line);
@@ -3477,11 +3614,24 @@ img { display: block; }
 .cv-search:focus { border-color: var(--red); }
 .cv-search::placeholder { color: var(--dim-2); }
 .cv-search-x {
-  position: absolute; right: 18px; top: 6px;
+  position: absolute; right: 6px; top: 6px;
   width: 24px; height: 26px; border: 0; background: transparent;
   color: var(--dim); cursor: pointer; font-size: 17px;
 }
 .cv-search-x:hover { color: var(--red); }
+/* 目录筛选：搜索行右侧的开关按钮 + 展开的分类 chips */
+.cv-dir-filter-btn {
+  flex: none; padding: 0 10px; font-size: 11px; cursor: pointer;
+  background: var(--bg-2); border: 1px solid var(--line); color: var(--dim);
+  transition: color .12s, border-color .12s, background .12s;
+}
+.cv-dir-filter-btn:hover { color: var(--text); border-color: var(--line-2); }
+.cv-dir-filter-btn.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.cv-dir-filter-btn.has-active:not(.on) { border-color: var(--red); color: var(--red); }
+.cv-dir-filter { flex: none; padding: 0 12px 10px; }
+.cv-dir-filter .fp-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cv-dir-filter .fp-chip { padding: 5px 9px; font-size: 10.5px; }
+.cv-dir-filter .fp-clear { padding: 5px 9px; font-size: 10.5px; }
 .cv-dir-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 16px; }
 .cv-dir-item {
   width: 100%; display: flex; align-items: center; gap: 9px;
@@ -3728,6 +3878,18 @@ img { display: block; }
 .cv-nav-btns button:disabled { opacity: .3; cursor: default; }
 /* 同作品集：封面页列出被并入的连图/分层条目，点缩略图直达单张查看 */
 .cv-set { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+/* 查看器右侧「演出」开关（实时大招条目）：运镜 / 场景图层 */
+.cv-live-ctrl { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.cv-live-ctrl h2 {
+  font: 700 10.5px/1 ui-monospace, "Microsoft YaHei", monospace;
+  letter-spacing: .14em; color: var(--dim); margin-bottom: 10px;
+}
+.cv-switch {
+  display: flex; align-items: center; gap: 9px;
+  padding: 4px 0; font-size: 12px; color: var(--text-2); cursor: pointer;
+}
+.cv-switch:hover { color: var(--text); }
+.cv-switch input { width: 14px; height: 14px; margin: 0; accent-color: var(--red); cursor: pointer; }
 .cv-set h2 {
   font: 700 10.5px/1 ui-monospace, "Microsoft YaHei", monospace;
   letter-spacing: .14em; color: var(--dim); margin-bottom: 10px;

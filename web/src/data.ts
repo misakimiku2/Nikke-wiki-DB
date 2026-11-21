@@ -924,6 +924,8 @@ export function combatModelName(current: string, pose: 'aim' | 'cover', have: Se
    bg = 有独立手绘背景贴图的模型（网页里铺在大招画布底下） */
 
 export type SkillcutIndex = {
+  /** 全部实时大招模型名（c010_00_skillcut 这类；CG 条目名 = EventScene_ + 此名） */
+  items: string[]
   bySkin: Record<string, string>
   byChar: Record<string, string>
   bg: Set<string>
@@ -940,9 +942,10 @@ let cacheSkillcut: SkillcutIndex | null = null
 export async function loadCharSkillcut(): Promise<SkillcutIndex> {
   if (cacheSkillcut) return cacheSkillcut
   try {
-    const d = await getJSON<{ bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[]; bg2s?: string[]; bg3s?: string[]; bg4s?: string[] }>(
+    const d = await getJSON<{ items?: string[]; bySkin?: Record<string, string>; byChar?: Record<string, string>; bgs?: string[]; bg2s?: string[]; bg3s?: string[]; bg4s?: string[] }>(
       '/data/char_spine_skillcut.json')
     cacheSkillcut = {
+      items: d.items || [],
       bySkin: d.bySkin || {},
       byChar: d.byChar || {},
       bg: new Set(d.bgs || []),
@@ -951,9 +954,21 @@ export async function loadCharSkillcut(): Promise<SkillcutIndex> {
       bg4: new Set(d.bg4s || []),
     }
   } catch {
-    cacheSkillcut = { bySkin: {}, byChar: {}, bg: new Set(), bg2: new Set(), bg3: new Set(), bg4: new Set() }
+    cacheSkillcut = { items: [], bySkin: {}, byChar: {}, bg: new Set(), bg2: new Set(), bg3: new Set(), bg4: new Set() }
   }
   return cacheSkillcut
+}
+
+/** 大招 cut-in 的 CG 条目名集合（EventScene_cXXX_YY_skillcut，含反序名与上游拼写
+ *  错误名——它们与 spine_skillcut 模型目录一一对应）。CgGallery 的「动」徽标与
+ *  CgView 的直播大招判定都用它。 */
+let cacheSkillcutCgs: Set<string> | null = null
+
+export async function loadSkillcutCgs(): Promise<Set<string>> {
+  if (cacheSkillcutCgs) return cacheSkillcutCgs
+  const idx = await loadCharSkillcut()
+  cacheSkillcutCgs = new Set(idx.items.map((n) => `EventScene_${n}`))
+  return cacheSkillcutCgs
 }
 
 /** 皮肤 c010_00 → 大招模型；先查皮肤级，再查角色级（c093_skillcut 这类无皮肤段） */
