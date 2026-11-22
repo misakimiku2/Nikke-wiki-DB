@@ -1,7 +1,15 @@
 /** FADING AFFECTION 活动小游戏的分支数据（由 nikke_extract/scripts/export_fadingaffection.py 导出） */
 
+export type UnlockReq = {
+  kind: 'memory' | 'ending'
+  page: number
+  memory?: string
+  name: string
+}
+
 export type FadingRoute = {
   no: number
+  unlockRequirement: UnlockReq | null
   name: string
   nameKey: string
   desc: string
@@ -45,6 +53,7 @@ export type FadingFirst = {
   text: string
   dest: number | null
   candidates: number[]
+  unlock: UnlockReq | null
 }
 
 export type FadingMemory = {
@@ -63,6 +72,7 @@ export type FadingData = {
   status: { init: FadingStatus; max: FadingStatus }
   backgrounds: Record<string, string>
   memories: FadingMemory[]
+  memoryByPage: Record<string, FadingMemory>
   routes: FadingRoute[]
   pages: Record<string, FadingPage>
   choices: Record<string, FadingChoice>

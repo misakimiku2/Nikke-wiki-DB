@@ -12,10 +12,7 @@ type HistoryEntry = { id: number; text: string; title?: string }
 
 const LS_ENDINGS = 'nikke_fading_endings_v1'
 const LS_CHECKED = 'nikke_fading_checked_v1'
-
-const LOCATION_BG: Record<string, string> = {
-  '旧市区': 'DestroyedStreet', '湖': 'Lake', '新市区': 'City_d',
-}
+const LS_SEEN = 'nikke_fading_seen_v1'
 
 const STATUS_LABEL: Record<keyof FadingStatus, string> = { hp: '体力', food: '粮食', erosion: '侵蚀' }
 
@@ -35,11 +32,10 @@ function costText(cost: FadingCost): string {
   return parts.join(' · ')
 }
 
-/** 路线解锁：路线1常开；路线2需看过路线1任一结局；路线3需看过路线2任一结局 */
-function routeUnlocked(routeNo: number, found: number[]): boolean {
-  if (routeNo === 1) return true
-  const need = routeNo - 1
-  return found.some((id) => Math.floor(id / 100) - 60 === need)
+/** 路线解锁：按数据里的 unlockRequirement（TrueEnd 结局）判断 */
+function routeUnlocked(route: FadingRoute, found: number[]): boolean {
+  const req = route.unlockRequirement
+  return !req || (req.kind === 'ending' && found.includes(req.page))
 }
 
 export default function FadingAffection() {
@@ -54,6 +50,7 @@ export default function FadingAffection() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [found, setFound] = useState<number[]>(() => loadArr(LS_ENDINGS))
   const [checked, setChecked] = useState<number[]>(() => loadArr(LS_CHECKED))
+  const [seen, setSeen] = useState<number[]>(() => loadArr(LS_SEEN))
   const [observe, setObserve] = useState<number | null>(null)
   const [menu, setMenu] = useState(false)
 
@@ -63,6 +60,7 @@ export default function FadingAffection() {
   }, [])
   useEffect(() => { try { localStorage.setItem(LS_ENDINGS, JSON.stringify(found)) } catch { /* ignore */ } }, [found])
   useEffect(() => { try { localStorage.setItem(LS_CHECKED, JSON.stringify(checked)) } catch { /* ignore */ } }, [checked])
+  useEffect(() => { try { localStorage.setItem(LS_SEEN, JSON.stringify(seen)) } catch { /* ignore */ } }, [seen])
 
   const endings = useMemo(() => (data ? endingsOf(data) : []), [data])
   const page: FadingPage | null = node != null && data ? data.pages[String(node)] ?? null : null
@@ -77,12 +75,20 @@ export default function FadingAffection() {
     if (!data) return new Set<string>()
     const s = new Set<string>()
     for (const id of found) { const m = memoryOfEnding(data, id); if (m) s.add(`${m.route}-${m.index}`) }
+    // 记忆由「抵达对应页面」获得（LootItemTable: page -> saveitem）
+    for (const id of seen) { const m = data.memoryByPage[String(id)]; if (m) s.add(`${m.route}-${m.index}`) }
     return s
-  }, [data, found])
+  }, [data, found, seen])
+
+  function markSeen(id: number | null) {
+    if (id == null) return
+    setSeen((s) => (s.includes(id) ? s : [...s, id]))
+  }
 
   function start(r: FadingRoute) {
-    if (!routeUnlocked(r.no, found)) return
+    if (!routeUnlocked(r, found)) return
     setRoute(r); setNode(r.start); setLastCg(null)
+    markSeen(r.start)
     setStatus(data ? { ...data.status.init } : { hp: 10, food: 10, erosion: 0 })
     setHistory([]); setObserve(null); setView('game'); setMenu(false)
   }
@@ -114,7 +120,7 @@ export default function FadingAffection() {
     if (next == null || !data) return
     const st = applyCost(cost); setStatus(st)
     const target = forcedEnding(st) ?? next
-    setNode(target); setObserve(null)
+    setNode(target); setObserve(null); markSeen(target)
     const p = data.pages[String(target)]
     if (p?.cg) setLastCg(p.cg)
     setHistory((h) => [...h, {
@@ -162,12 +168,13 @@ export default function FadingAffection() {
           <h2 className="fad-section-title">选择路线</h2>
           <div className="fad-routes">
             {data.routes.map((r) => {
-              const ok = routeUnlocked(r.no, found)
+              const ok = routeUnlocked(r, found)
+              const req = r.unlockRequirement
               return (
                 <button key={r.no} className={`fad-route ${ok ? '' : 'locked'}`} disabled={!ok} onClick={() => start(r)}>
                   <div className="fad-route-no">RECORD {String(r.no).padStart(2, '0')}</div>
                   <div className="fad-route-name">{ok ? r.name : 'NO SIGNAL'}</div>
-                  <div className="fad-route-desc">{ok ? r.desc : `观看【${data.routes[r.no - 2]?.name ?? '前一条记录'}】的结局后解锁`}</div>
+                  <div className="fad-route-desc">{ok ? r.desc : `观看【${req?.name ?? '前一条记录的结局'}】后解锁`}</div>
                   <div className="fad-route-foot">
                     <span>{ok ? (r.unlock ? `开放于 ${r.unlock.slice(0, 10)}` : '活动首日开放') : 'LOCKED'}</span>
                     <span className="fad-route-go">{ok ? '开始 →' : '🔒'}</span>
@@ -290,12 +297,18 @@ export default function FadingAffection() {
             {isIntro ? (
               <div className="fad-choices">
                 {firsts.map((c) => {
-                  const locBg = LOCATION_BG[c.text]
-                  const locked = (c.text === '湖' && !learned) || (c.text === '新市区' && !found.includes(7205))
+                  const req = c.unlock
+                  const locked = !!req && !(
+                    req.kind === 'memory'
+                      ? unlockedMemories.has(req.memory ?? '')
+                      : found.includes(req.page)
+                  )
                   return (
                     <button key={c.key} className={`fad-choice ${locked ? 'locked' : ''}`} disabled={locked} onClick={() => go(c.dest)}>
                       <span className="fad-choice-main">{locked ? '???' : c.text}</span>
-                      {locked && <span className="fad-choice-req">{c.text === '新市区' ? '观看【结局 7205】后解锁' : '观看任一结局后解锁'}</span>}
+                      {locked && <span className="fad-choice-req">
+                        {req?.kind === 'memory' ? `需要回忆【${req.name}】` : `观看【${req?.name}】结局后解锁`}
+                      </span>}
                     </button>
                   )
                 })}
