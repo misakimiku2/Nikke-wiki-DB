@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf, memoryOfEnding,
-  type FadingData, type FadingPage, type FadingRoute, type FadingStatus, type FadingCost,
+  type FadingData, type FadingPage, type FadingRoute, type FadingStatus, type FadingCost, type FadingChoice,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
 import './fading.css'
@@ -70,7 +70,6 @@ export default function FadingAffection() {
   const choices = data && node != null ? (isIntro ? [] : choicesFor(data, node)) : []
   const firsts = data && node != null && isIntro ? firstFor(data, node) : []
   const routeNo = route?.no ?? 0
-  const learned = found.some((id) => Math.floor(id / 100) - 60 === routeNo)
   const unlockedMemories = useMemo(() => {
     if (!data) return new Set<string>()
     const s = new Set<string>()
@@ -83,6 +82,23 @@ export default function FadingAffection() {
   function markSeen(id: number | null) {
     if (id == null) return
     setSeen((s) => (s.includes(id) ? s : [...s, id]))
+  }
+
+  /** HINT 条的真实触发条件：每条带提示的选项各有独立条件 */
+  function hintUnlocked(c: FadingChoice): boolean {
+    const req = c.hintReq
+    if (!req) return true
+    if (req.kind === 'memory') return unlockedMemories.has(req.memory ?? '')
+    if (req.kind === 'ending') return found.includes(req.page)
+    return status.food >= 1   // 状态类条件（如「粮食先省着点吃」）
+  }
+
+  function clearSave() {
+    [LS_ENDINGS, LS_CHECKED, LS_SEEN].forEach((k) => {
+      try { localStorage.removeItem(k) } catch { /* ignore */ }
+    })
+    setFound([]); setChecked([]); setSeen([])
+    setHistory([]); setMenu(false); setView('home'); setRoute(null); setNode(null)
   }
 
   function start(r: FadingRoute) {
@@ -162,6 +178,9 @@ export default function FadingAffection() {
               <div className="fad-actions">
                 <button className="fad-tape-btn" onClick={() => setView('memories')}>记忆 {unlockedMemories.size}/{data.memories.length}</button>
                 <button className="fad-tape-btn" onClick={() => setView('endings')}>回想 {found.length}/{endings.length}</button>
+                <button className="fad-tape-btn fad-danger" onClick={() => {
+                  if (window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) clearSave()
+                }}>⚠ 清除存档</button>
               </div>
             </div>
           </header>
@@ -255,7 +274,10 @@ export default function FadingAffection() {
             <div className="fad-popover">
               <div>状态：{costText(status)}</div>
               <button className="fad-mini" onClick={() => { setHistory([]); route && start(route) }}>重新记录</button>
-              <div className="fad-popover-tip">已记录 {history.length} 步</div>
+              <div className="fad-popover-tip">已记录 {history.length} 步 · 已访问 {seen.length} 页</div>
+              <button className="fad-mini fad-danger" onClick={() => {
+                if (window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) clearSave()
+              }}>⚠ 清除存档（开发用）</button>
             </div>
           )}
         </div>
@@ -317,14 +339,25 @@ export default function FadingAffection() {
               <div className="fad-choices">
                 {choices.map((c) => {
                   const isChecked = checked.includes(c.id)
-                  const hintLocked = !!c.hint && !learned
+                  const hintLocked = !!c.hint && !hintUnlocked(c)
                   const can = !hintLocked && affordable(c.cost)
                   const cost = costText(c.cost)
                   return (
                     <button key={c.id} className={`fad-choice ${hintLocked ? 'locked' : ''} ${isChecked ? 'checked' : ''} ${c.hint ? 'withhint' : ''}`}
                       disabled={!can} onClick={() => can && go(c.dest, c.cost, c.id)}>
                       {isChecked && <span className="fad-checked">Checked</span>}
-                      {hintLocked ? <span className="fad-choice-main">???</span> : (
+                      {hintLocked ? (
+                        <>
+                          <span className="fad-choice-main">???</span>
+                          <span className="fad-choice-req">
+                            {c.hintReq?.kind === 'memory'
+                              ? `需要回忆【${c.hintReq.name}】`
+                              : c.hintReq?.kind === 'ending'
+                                ? `观看【${c.hintReq.name}】结局后解锁`
+                                : '需要特定状态'}
+                          </span>
+                        </>
+                      ) : (
                         <>
                           {c.hint && <span className="fad-hint-badge">HINT</span>}
                           <span className="fad-choice-main">{c.text}</span>

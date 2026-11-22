@@ -41,6 +41,7 @@ export type FadingChoice = {
   text: string
   hintKey: string | null
   hint: string
+  hintReq: UnlockReq | null
   sfx: string | null
   dest: number | null
   candidates: number[]

@@ -92,6 +92,8 @@
   border: 0; min-width: 128px;
 }
 .fad-tape-btn:hover { filter: brightness(1.08); }
+.fad-danger { color: #8a2438 !important; border: 1px dashed #8a2438 !important; font-size: 11px !important; }
+.fad-mini.fad-danger { color: #ff8fa3 !important; border-color: #8a2438 !important; }
 .fad-mini { padding: 5px 11px; font-size: 11px; color: #e8e6dc; background: rgba(20,20,24,.72); border: 1px solid rgba(255,255,255,.25); }
 .fad-mini:hover { background: rgba(40,40,46,.9); }
 
