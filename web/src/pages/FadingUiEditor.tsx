@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState,
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState,
   type CSSProperties, type ChangeEvent, type DragEvent, type ReactNode,
   type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { usePageTitle } from '../usePageTitle'
@@ -28,7 +28,14 @@ type DragState =
       members: Array<{ id: string; x: number; y: number; w: number; h: number; rotate: number }> }
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
-const BLENDS = ['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'soft-light', 'luminosity']
+const BLENDS = [
+  'normal', 'multiply', 'darken', 'color-burn',
+  'screen', 'lighten', 'color-dodge',
+  'overlay', 'soft-light', 'hard-light',
+  'difference', 'exclusion',
+  'hue', 'saturation', 'color', 'luminosity',
+  'plus-lighter',
+]
 
 type Box = { x: number; y: number; r: number; b: number }
 type Guide = { axis: 'x' | 'y'; pos: number }
@@ -101,7 +108,8 @@ export default function FadingUiEditor() {
   }, [committed])
 
   function apply(mut: (l: FadingLayout) => FadingLayout) {
-    commit(mut(JSON.parse(JSON.stringify(layout)) as FadingLayout))
+    const base = draftRef.current ?? committedRef.current
+    commit(mut(JSON.parse(JSON.stringify(base)) as FadingLayout))
   }
   function patchLayer(id: string, patch: Partial<Layer>) {
     apply((l) => ({ ...l, layers: l.layers.map((x) => (x.id === id ? { ...x, ...patch } as Layer : x)) }))
@@ -218,6 +226,7 @@ export default function FadingUiEditor() {
   const [nineMode, setNineMode] = useState(false)
   /** 正在画布上就地编辑的文字图层 id */
   const [editingText, setEditingText] = useState<string | null>(null)
+  const blendRef = useRef<HTMLSelectElement>(null)
   const [spaceDown, setSpaceDown] = useState(false)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
@@ -241,6 +250,21 @@ export default function FadingUiEditor() {
     const b = Math.max(...groupMembers.map((l) => l.y + l.h))
     return { x, y, r, b }
   }, [groupMembers])
+
+  // 混合模式下拉框：悬停时用滚轮切换（原生监听 + passive:false，避免页面跟着滚）
+  useEffect(() => {
+    const el = blendRef.current
+    const id = selLayer?.id
+    if (!el || !id) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const i = BLENDS.indexOf(el.value)
+      const next = Math.max(0, Math.min(BLENDS.length - 1, i + (e.deltaY > 0 ? 1 : -1)))
+      if (BLENDS[next] !== el.value) patchLayer(id, { blend: BLENDS[next] })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [selLayer?.id])
 
   // 文字就地编辑：点击画布/面板其它地方时退出编辑（onBlur 在部分浏览器不稳定，做兜底）
   useEffect(() => {
@@ -960,45 +984,43 @@ export default function FadingUiEditor() {
   }
 
   /* ---------- 图层渲染 ---------- */
-  function layerStyle(l: Layer): CSSProperties {
+  /** 外层只管几何与交互，不承载混合模式 —— 否则手柄会被图层效果一起混合 */
+  function layerBoxStyle(l: Layer): CSSProperties {
     return {
       position: 'absolute',
       left: l.x, top: l.y, width: l.w, height: l.h,
-      zIndex: l.z + 1,
       transform: l.rotate ? `rotate(${l.rotate}deg)` : undefined,
-      opacity: l.opacity,
-      mixBlendMode: l.blend as CSSProperties['mixBlendMode'],
-      borderRadius: l.radius || undefined,
       display: l.visible ? undefined : 'none',
       cursor: preview ? 'default' : (l.locked ? 'not-allowed' : 'move'),
     }
   }
-  function styleOf(l: Layer): CSSProperties {
-    const base = layerStyle(l)
+  /** 内层只管画面：混合模式 / 透明度 / 滤镜都在这里，不影响操作手柄 */
+  function layerVisualStyle(l: Layer): CSSProperties {
+    const common: CSSProperties = {
+      pointerEvents: 'none',
+      opacity: l.opacity,
+      mixBlendMode: l.blend as CSSProperties['mixBlendMode'],
+      borderRadius: l.radius || undefined,
+    }
     if (l.kind === 'image') {
       const filter = l.grayscale || l.brightness !== 1
         ? `grayscale(${l.grayscale}) brightness(${l.brightness})` : undefined
       if (l.fit === 'sliced' && l.border.some((n) => n > 0)) {
-        // Unity Sliced → CSS border-image。Unity border 顺序(左下右上)换算成 CSS(上右下左)
         const [bL, bB, bR, bT] = l.border.map(Math.round)
         const s = l.borderScale ?? 1
         const f = (v: number) => +(v * s).toFixed(2)
         const [L, B, R, T] = [f(bL), f(bB), f(bR), f(bT)]
         return {
-          ...base,
-          borderStyle: 'solid',
-          borderColor: 'transparent',
-          borderTopWidth: `${T}px`,
-          borderRightWidth: `${R}px`,
-          borderBottomWidth: `${B}px`,
-          borderLeftWidth: `${L}px`,
-          // slice 用原图像素（取到完整的角），width 用倍率缩放后的值（边变细）
+          ...common,
+          borderStyle: 'solid', borderColor: 'transparent',
+          borderTopWidth: `${T}px`, borderRightWidth: `${R}px`,
+          borderBottomWidth: `${B}px`, borderLeftWidth: `${L}px`,
           borderImage: `url("${l.src}") ${bT} ${bR} ${bB} ${bL} fill / ${T}px ${R}px ${B}px ${L}px / 0 stretch`,
           filter,
         }
       }
       return {
-        ...base,
+        ...common,
         backgroundImage: `url("${l.src}")`,
         backgroundPosition: 'center',
         backgroundRepeat: l.fit === 'tiled' ? 'repeat' : 'no-repeat',
@@ -1007,12 +1029,11 @@ export default function FadingUiEditor() {
       }
     }
     if (l.kind === 'rect') {
-      return { ...base, background: l.color, border: l.border || undefined }
+      return { ...common, background: l.color, border: l.border || undefined }
     }
     return {
-      ...base,
-      display: l.visible ? 'flex' : 'none',
-      alignItems: 'center',
+      ...common,
+      display: 'flex', alignItems: 'center',
       justifyContent: l.align === 'center' ? 'center' : l.align === 'right' ? 'flex-end' : 'flex-start',
       color: l.color, fontSize: l.fontSize, fontWeight: l.weight,
       textAlign: l.align, lineHeight: l.lineHeight, letterSpacing: l.letterSpacing,
@@ -1023,14 +1044,14 @@ export default function FadingUiEditor() {
 
   /** 画布上就地编辑文字时的 textarea 样式：与最终渲染的字体/对齐一致 */
   function textEditStyle(l: TextLayer): CSSProperties {
-    const s = styleOf(l)
+    const s = layerVisualStyle(l)
     return {
       ...s,
-      display: 'block', inset: 0, width: '100%', height: '100%',
+      display: 'block', width: '100%', height: '100%',
       margin: 0, padding: 0, resize: 'none', overflow: 'hidden',
       fontFamily: 'inherit', background: 'rgba(255,255,255,.9)',
       border: '1px dashed #2ee6ff', outline: 'none', cursor: 'text',
-      mixBlendMode: 'normal',
+      mixBlendMode: 'normal', pointerEvents: 'auto', zIndex: 5,
     }
   }
 
@@ -1279,18 +1300,23 @@ export default function FadingUiEditor() {
                       sx: e.clientX, sy: e.clientY, orig: [...b], origW: l.w, origH: l.h, scale })
                   }
                   return (
-                    <div key={l.id} className={`fu-layer${isSel ? ' is-sel' : ''}${nine ? ' nine-mode' : ''}`}
-                      style={styleOf(l)}
-                      onClick={(e) => e.stopPropagation()}
-                      onPointerDown={(e) => onLayerDown(e, l)}
-                      onDoubleClick={(e) => {
-                        if (preview || l.kind !== 'text' || l.locked) return
-                        e.stopPropagation(); e.preventDefault()
-                        selectOnly(l.id)
-                        setEditingText(l.id)
-                      }}>
-                      {l.kind === 'text'
-                        ? editingText === l.id
+                    <Fragment key={l.id}>
+                      {/* 画面与手柄分开渲染：混合模式只作用于画面，不影响操作组件 */}
+                      <div className="fu-layer-visual"
+                        style={{ ...layerBoxStyle(l), zIndex: l.z + 1, ...layerVisualStyle(l) }}>
+                        {l.kind === 'text' && editingText !== l.id ? l.text : null}
+                      </div>
+                      <div className={`fu-layer${isSel ? ' is-sel' : ''}${nine ? ' nine-mode' : ''}`}
+                        style={{ ...layerBoxStyle(l), zIndex: 10000 + l.z }}
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => onLayerDown(e, l)}
+                        onDoubleClick={(e) => {
+                          if (preview || l.kind !== 'text' || l.locked) return
+                          e.stopPropagation(); e.preventDefault()
+                          selectOnly(l.id)
+                          setEditingText(l.id)
+                        }}>
+                        {l.kind === 'text' && editingText === l.id
                           ? <textarea
                             autoFocus
                             className="fu-text-edit"
@@ -1306,31 +1332,31 @@ export default function FadingUiEditor() {
                               }
                             }}
                           />
-                          : l.text
-                        : null}
-                      {isSel && <>
-                        <span className="fu-layer-tag">{l.name}{nine ? ' · .9 图' : ''}</span>
-                        {nine ? <>
-                          <span className="fu-slice fu-slice-v" style={{ left: bs[0] }} title="左 border（显示绘制宽度，实际源像素 × 倍率）"
-                            onPointerDown={sliceDown(0)}><i /><em>L {bs[0].toFixed(0)}</em></span>
-                          <span className="fu-slice fu-slice-v" style={{ left: l.w - bs[2] }} title="右 border"
-                            onPointerDown={sliceDown(2)}><i /><em>R {bs[2].toFixed(0)}</em></span>
-                          <span className="fu-slice fu-slice-h" style={{ top: bs[3] }} title="上 border"
-                            onPointerDown={sliceDown(3)}><i /><em>T {bs[3].toFixed(0)}</em></span>
-                          <span className="fu-slice fu-slice-h" style={{ top: l.h - bs[1] }} title="下 border"
-                            onPointerDown={sliceDown(1)}><i /><em>B {bs[1].toFixed(0)}</em></span>
-                        </> : HANDLES.map((h) => (
-                          <span key={h} className={`fu-handle fu-h-${h}`}
-                            onPointerDown={(e) => {
-                              e.stopPropagation(); e.preventDefault()
-                              startDrag(e, { mode: 'resize', id: l.id, handle: h,
-                                sx: e.clientX, sy: e.clientY, orig: { ...l } })
-                            }} />
-                        ))}
-                        <span className="fu-rotate" title="拖动旋转（Shift 吸附 15°）"
-                          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onRotateDown(e, l) }}>⟳</span>
-                      </>}
-                    </div>
+                          : null}
+                        {isSel && <>
+                          <span className="fu-layer-tag">{l.name}{nine ? ' · .9 图' : ''}</span>
+                          {nine ? <>
+                            <span className="fu-slice fu-slice-v" style={{ left: bs[0] }} title="左 border（显示绘制宽度，实际源像素 × 倍率）"
+                              onPointerDown={sliceDown(0)}><i /><em>L {bs[0].toFixed(0)}</em></span>
+                            <span className="fu-slice fu-slice-v" style={{ left: l.w - bs[2] }} title="右 border"
+                              onPointerDown={sliceDown(2)}><i /><em>R {bs[2].toFixed(0)}</em></span>
+                            <span className="fu-slice fu-slice-h" style={{ top: bs[3] }} title="上 border"
+                              onPointerDown={sliceDown(3)}><i /><em>T {bs[3].toFixed(0)}</em></span>
+                            <span className="fu-slice fu-slice-h" style={{ top: l.h - bs[1] }} title="下 border"
+                              onPointerDown={sliceDown(1)}><i /><em>B {bs[1].toFixed(0)}</em></span>
+                          </> : HANDLES.map((h) => (
+                            <span key={h} className={`fu-handle fu-h-${h}`}
+                              onPointerDown={(e) => {
+                                e.stopPropagation(); e.preventDefault()
+                                startDrag(e, { mode: 'resize', id: l.id, handle: h,
+                                  sx: e.clientX, sy: e.clientY, orig: { ...l } })
+                              }} />
+                          ))}
+                          <span className="fu-rotate" title="拖动旋转（Shift 吸附 15°）"
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onRotateDown(e, l) }}>⟳</span>
+                        </>}
+                      </div>
+                    </Fragment>
                   )
                 })}
                 {selectedGroup && groupBox && !preview && (
@@ -1441,8 +1467,9 @@ export default function FadingUiEditor() {
                     onChange={(e) => patchLayer(selLayer.id, { opacity: Number(e.target.value) })} />
                   <em>{Math.round(selLayer.opacity * 100)}%</em></label>
               </div>
-              <label className="fu-field"><span>混合模式</span>
-                <select className="fu-input" value={selLayer.blend}
+              <label className="fu-field"><span>混合模式 · 悬停滚轮可切换</span>
+                <select ref={blendRef} className="fu-input" value={selLayer.blend}
+                  title="悬停此处滚动鼠标滚轮即可切换混合模式"
                   onChange={(e) => patchLayer(selLayer.id, { blend: e.target.value })}>
                   {BLENDS.map((b) => <option key={b} value={b}>{b}</option>)}
                 </select></label>
@@ -1603,6 +1630,7 @@ export default function FadingUiEditor() {
               <li><b>存到项目</b>写入 <code>build/fading_ui_layout.json</code>（dev 接口），换机器也不丢；<b>本地存档</b>存在浏览器里。</li>
               <li>拼好后点 <b>导出 JSON</b> 把文件发我，我就能按精确坐标/尺寸改 <code>fading.css</code>，不再靠截图猜。</li>
             </ol>
+            <p className="fu-tip"><b>混合模式</b>共 17 种，属性面板里的下拉框<b>悬停后滚动鼠标滚轮</b>即可逐个切换。白色线稿想显示在浅色背景上，试试 <b>multiply</b> 或 <b>darken</b>。混合模式只作用于图像本身，选择框/手柄/切线不会跟着被混合。</p>
             <p className="fu-tip">选中图片后，顶部「变换」开关可在 <b>.9 图</b> 与 <b>自由</b> 间切换：.9 图模式下图层内出现四条橙色切线，直接拖动即可调整九宫格 border（左右上下），切线的手柄会跟着动；自由模式恢复八个缩放角点。</p>
             <p className="fu-tip">视图操作：<b>按住空格拖动</b>平移整块画布（中键拖动也可以），<b>Ctrl + 滚轮</b>以鼠标位置为锚点缩放，工具栏「适应」复位缩放与平移。</p>
             <p className="fu-tip">快捷键：方向键微调 1px（Shift 10px）、Delete 删除、Ctrl+D 复制、Ctrl+Z / Ctrl+Shift+Z 撤销重做、Esc 取消选中。</p>
