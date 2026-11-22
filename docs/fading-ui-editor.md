@@ -43,6 +43,7 @@ border 数值来自 bundle 里的 Sprite 子资源，由 `export_fading_ui.py` �
 `docs/fading-ui-sprite-metadata.md`。
 
 - `sliced`：CSS `border-image`，Unity 的「左下右上」换算成 CSS 的「上右下左」，四角固定、中间拉伸——即 .9 图行为。
+- **边宽倍率**：属性面板里可调。源图（如 `marian_bg_book` 512×512，border 47/81/70/101）直接按源像素绘制时四边会很粗；倍率 `< 1` 会把绘制宽度收细，同时 `border-image-slice` 仍取完整源图四角，所以纹样不会丢。点「按图层自适应」会按 `min(图层宽/源宽, 图层高/源高)` 自动算出倍率——把图层缩小后就不再显得边粗。橙色切线显示的是缩放后的绘制宽度，拖动时按倍率反算回源像素。
 - `tiled`：只用于**零 border 的无缝纹理**（木纹 `marian_ptn_wood_*`、噪波 `marian_texture_paper`、分隔笔刷等），渲染为 `background-repeat: repeat`。
 - 没有 border 的素材若手动选 `sliced`，会退化为纯拉伸，不会变成空白。
 - 旧存档会在清单加载后自动迁移：带 border 却存成 `tiled` 的图层会改回 `sliced`。
@@ -88,7 +89,7 @@ border 数值来自 bundle 里的 Sprite 子资源，由 `export_fading_ui.py` �
 | 存到项目 | POST `/api/fading-layout` → 写入 `build/fading_ui_layout.json`（入库，换机器不丢）。 |
 | 从项目读 | GET 同一文件并载入画布。文件不存在时给出提示。 |
 | 导出 JSON | 完整布局（画布 + 所有图层的精确数值），可再次「导入」或发给助手还原。 |
-| 导出 CSS | 生成 `.fadui-stage` + 每个可见图层的绝对定位规则，可直接贴进 `web/src/pages/fading.css`；`sliced` 输出 `border-image`、`tiled` 输出 `background-repeat: repeat`。文字内容在 JSON 的 `text` 字段里对照填写。 |
+| 导出 CSS | 生成 `.fadui-stage` + 每个可见图层的绝对定位规则，可直接贴进 `web/src/pages/fading.css`；`sliced` 输出带倍率的 `border-image` 与 `border-width`、`tiled` 输出 `background-repeat: repeat`。文字内容在 JSON 的 `text` 字段里对照填写。 |
 
 素材清单由 Vite 插件在开发服务器启动时扫描 `public/fading_ui/` 生成到
 `public/data/fading_ui_manifest.json`（含每张图的原始宽高，拖入时按原尺寸等比缩小）。

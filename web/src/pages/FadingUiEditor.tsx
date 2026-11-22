@@ -19,7 +19,7 @@ type DragState =
   | { mode: 'rotate'; id: string; sx: number; sy: number; cx: number; cy: number; a0: number; orig: number }
   /** 九宫格切线：side 0=左 1=下 2=右 3=上（Unity border 顺序） */
   | { mode: 'border'; id: string; side: 0 | 1 | 2 | 3; sx: number; sy: number;
-      orig: number[]; origW: number; origH: number }
+      orig: number[]; origW: number; origH: number; scale: number }
   /** 整组缩放 / 旋转：作用到组内每个图层的几何数据 */
   | { mode: 'groupResize'; handle: Handle; sx: number; sy: number; box: Box;
       members: Array<{ id: string; x: number; y: number; w: number; h: number }> }
@@ -170,7 +170,7 @@ export default function FadingUiEditor() {
       id: uid(), name: a.n.replace(/\.png$/i, ''), kind: 'image', x, y, w, h,
       rotate: 0, opacity: 1, z: layout.layers.length, visible: true, locked: false,
       blend: 'normal', radius: 0, group: '', src: `${ASSET_BASE}${a.n}`,
-      fit, border, grayscale: 0, brightness: 1,
+      fit, border, borderScale: 1, grayscale: 0, brightness: 1,
     }
     apply((l) => ({ ...l, layers: [...l.layers, layer] }))
     selectOnly(layer.id)
@@ -436,11 +436,12 @@ export default function FadingUiEditor() {
       } else if (d.mode === 'border') {
         // 拖九宫格切线：只改 border，不动图层位置尺寸
         const snapVal = (v: number) => Math.max(0, Math.round(doSnap ? Math.round(v / g) * g : v))
+        const sc = d.scale || 1
         const b = [...d.orig]
-        if (d.side === 0) b[0] = snapVal(d.orig[0] + dx)
-        else if (d.side === 2) b[2] = snapVal(d.orig[2] - dx)
-        else if (d.side === 3) b[3] = snapVal(d.orig[3] + dy)
-        else b[1] = snapVal(d.orig[1] - dy)
+        if (d.side === 0) b[0] = snapVal(d.orig[0] + dx / sc)
+        else if (d.side === 2) b[2] = snapVal(d.orig[2] - dx / sc)
+        else if (d.side === 3) b[3] = snapVal(d.orig[3] + dy / sc)
+        else b[1] = snapVal(d.orig[1] - dy / sc)
         // 对边 border 不允许相交
         if (d.side === 0) b[0] = Math.min(b[0], d.origW - d.orig[2] - 2)
         if (d.side === 2) b[2] = Math.min(b[2], d.origW - d.orig[0] - 2)
@@ -968,7 +969,10 @@ export default function FadingUiEditor() {
         ? `grayscale(${l.grayscale}) brightness(${l.brightness})` : undefined
       if (l.fit === 'sliced' && l.border.some((n) => n > 0)) {
         // Unity Sliced → CSS border-image。Unity border 顺序(左下右上)换算成 CSS(上右下左)
-        const [L, B, R, T] = l.border.map(Math.round)
+        const [bL, bB, bR, bT] = l.border.map(Math.round)
+        const s = l.borderScale ?? 1
+        const f = (v: number) => +(v * s).toFixed(2)
+        const [L, B, R, T] = [f(bL), f(bB), f(bR), f(bT)]
         return {
           ...base,
           borderStyle: 'solid',
@@ -977,8 +981,8 @@ export default function FadingUiEditor() {
           borderRightWidth: `${R}px`,
           borderBottomWidth: `${B}px`,
           borderLeftWidth: `${L}px`,
-          // 用单条简写，避免 React 应用 border 简写时把 border-image-source 重置为 none
-          borderImage: `url("${l.src}") ${T} ${R} ${B} ${L} fill / ${T}px ${R}px ${B}px ${L}px / 0 stretch`,
+          // slice 用原图像素（取到完整的角），width 用倍率缩放后的值（边变细）
+          borderImage: `url("${l.src}") ${bT} ${bR} ${bB} ${bL} fill / ${T}px ${R}px ${B}px ${L}px / 0 stretch`,
           filter,
         }
       }
@@ -1256,10 +1260,12 @@ export default function FadingUiEditor() {
                   const isSel = selected === l.id && !preview && !selectedGroup
                   const nine = isSel && nineMode && l.kind === 'image'
                   const b = l.kind === 'image' ? l.border : [0, 0, 0, 0]
+                  const scale = l.kind === 'image' ? (l.borderScale ?? 1) : 1
+                  const bs = b.map((v) => v * scale)
                   const sliceDown = (side: 0 | 1 | 2 | 3) => (e: ReactPointerEvent) => {
                     e.stopPropagation(); e.preventDefault()
                     startDrag(e, { mode: 'border', id: l.id, side,
-                      sx: e.clientX, sy: e.clientY, orig: [...b], origW: l.w, origH: l.h })
+                      sx: e.clientX, sy: e.clientY, orig: [...b], origW: l.w, origH: l.h, scale })
                   }
                   return (
                     <div key={l.id} className={`fu-layer${isSel ? ' is-sel' : ''}${nine ? ' nine-mode' : ''}`}
@@ -1294,14 +1300,14 @@ export default function FadingUiEditor() {
                       {isSel && <>
                         <span className="fu-layer-tag">{l.name}{nine ? ' · .9 图' : ''}</span>
                         {nine ? <>
-                          <span className="fu-slice fu-slice-v" style={{ left: b[0] }} title="左 border"
-                            onPointerDown={sliceDown(0)}><i /><em>L {Math.round(b[0])}</em></span>
-                          <span className="fu-slice fu-slice-v" style={{ left: l.w - b[2] }} title="右 border"
-                            onPointerDown={sliceDown(2)}><i /><em>R {Math.round(b[2])}</em></span>
-                          <span className="fu-slice fu-slice-h" style={{ top: b[3] }} title="上 border"
-                            onPointerDown={sliceDown(3)}><i /><em>T {Math.round(b[3])}</em></span>
-                          <span className="fu-slice fu-slice-h" style={{ top: l.h - b[1] }} title="下 border"
-                            onPointerDown={sliceDown(1)}><i /><em>B {Math.round(b[1])}</em></span>
+                          <span className="fu-slice fu-slice-v" style={{ left: bs[0] }} title="左 border（显示绘制宽度，实际源像素 × 倍率）"
+                            onPointerDown={sliceDown(0)}><i /><em>L {bs[0].toFixed(0)}</em></span>
+                          <span className="fu-slice fu-slice-v" style={{ left: l.w - bs[2] }} title="右 border"
+                            onPointerDown={sliceDown(2)}><i /><em>R {bs[2].toFixed(0)}</em></span>
+                          <span className="fu-slice fu-slice-h" style={{ top: bs[3] }} title="上 border"
+                            onPointerDown={sliceDown(3)}><i /><em>T {bs[3].toFixed(0)}</em></span>
+                          <span className="fu-slice fu-slice-h" style={{ top: l.h - bs[1] }} title="下 border"
+                            onPointerDown={sliceDown(1)}><i /><em>B {bs[1].toFixed(0)}</em></span>
                         </> : HANDLES.map((h) => (
                           <span key={h} className={`fu-handle fu-h-${h}`}
                             onPointerDown={(e) => {
@@ -1452,7 +1458,8 @@ export default function FadingUiEditor() {
                     onChange={(v) => patchLayer(selLayer.id, { brightness: v })} />
                 </div>
                 {(selLayer.fit === 'sliced' || selLayer.border.some((n) => n > 0)) && (
-                  <label className="fu-field"><span>九宫格 border（左 / 下 / 右 / 上 · 来自原作 Sprite）</span>
+                  <div className="fu-field">
+                    <span>九宫格 border（左 / 下 / 右 / 上 · 来自原作 Sprite）</span>
                     <div className="fu-border-row">
                       {(['左', '下', '右', '上'] as const).map((label, i) => (
                         <NumField key={label} label={label} value={selLayer.border[i] ?? 0}
@@ -1462,7 +1469,21 @@ export default function FadingUiEditor() {
                             patchLayer(selLayer.id, { border: b })
                           }} />
                       ))}
-                    </div></label>
+                    </div>
+                    <div className="fu-border-scale">
+                      <NumField label="边宽倍率" value={selLayer.borderScale ?? 1} step={0.05}
+                        onChange={(v) => patchLayer(selLayer.id, { borderScale: Math.max(0.05, v) })} />
+                      <button className="fu-btn" title="按素材原尺寸与当前图层尺寸的比例自动收细/放大边框"
+                        onClick={() => {
+                          const a = assets.find((x) => x.n === (selLayer.src.split('/').pop() || ''))
+                          if (!a?.w || !a?.h) { showToast('素材清单里没有这张图的尺寸'); return }
+                          const s = Math.max(0.05, Math.min(selLayer.w / a.w, selLayer.h / a.h))
+                          patchLayer(selLayer.id, { borderScale: +s.toFixed(3) })
+                          showToast(`边宽倍率已设为 ${s.toFixed(2)}`)
+                        }}>按图层自适应</button>
+                    </div>
+                    <p className="fu-tip">倍率 &lt; 1 可把粗边收细：源图四角纹样仍完整取用，只是被压窄绘制。</p>
+                  </div>
                 )}
               </>}
               {selLayer.kind === 'text' && <>

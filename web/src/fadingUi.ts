@@ -30,6 +30,8 @@ export interface ImageLayer extends LayerBase {
   fit: 'fill' | 'contain' | 'cover' | 'sliced' | 'tiled'
   /** Unity Sprite.border，顺序 [左, 下, 右, 上]，sliced 模式使用 */
   border: number[]
+  /** 九宫格边的绘制倍率：1=原图像素宽度，<1 可把粗边收细 */
+  borderScale: number
   grayscale: number
   brightness: number
 }
@@ -87,7 +89,7 @@ function img(name: string, file: string, x: number, y: number, w: number, h: num
     id: uid(), name, kind: 'image', x, y, w, h,
     rotate: 0, opacity: 1, z: 0, visible: true, locked: false,
     blend: 'normal', radius: 0, group: '',
-    src: `${ASSET_BASE}${file}`, fit: 'fill', border: [0, 0, 0, 0], grayscale: 0, brightness: 1, ...extra,
+    src: `${ASSET_BASE}${file}`, fit: 'fill', border: [0, 0, 0, 0], borderScale: 1, grayscale: 0, brightness: 1, ...extra,
   }
 }
 function txt(name: string, text: string, x: number, y: number, w: number, h: number, extra: Partial<TextLayer> = {}): TextLayer {
@@ -188,6 +190,7 @@ export function normalizeLayout(v: FadingLayout): FadingLayout {
         im.src = normSrc(im.src)
         im.fit = im.fit || 'fill'
         im.border = Array.isArray(im.border) && im.border.length === 4 ? im.border : [0, 0, 0, 0]
+        im.borderScale = im.borderScale ?? 1
         im.grayscale = im.grayscale ?? 0
         im.brightness = im.brightness ?? 1
       }
@@ -232,12 +235,15 @@ export function exportCss(layout: FadingLayout): string {
     if (l.radius) out.push(`  border-radius: ${l.radius}px;`)
     if (l.kind === 'image') {
       if (l.fit === 'sliced' && l.border.some((n) => n > 0)) {
-        const [L, B, R, T] = l.border.map(Math.round)
-        out.push(`  /* 九宫格 · Unity border(左${L} 下${B} 右${R} 上${T}) */`,
+        const [bL, bB, bR, bT] = l.border.map(Math.round)
+        const s = l.borderScale ?? 1
+        const f = (v: number) => +(v * s).toFixed(2)
+        const [L, B, R, T] = [f(bL), f(bB), f(bR), f(bT)]
+        out.push(`  /* 九宫格 · Unity border(左${bL} 下${bB} 右${bR} 上${bT}) · 绘制倍率 ${s} */`,
           `  border-style: solid;`,
           `  border-color: transparent;`,
           `  border-width: ${T}px ${R}px ${B}px ${L}px;`,
-          `  border-image: url('${l.src}') ${T} ${R} ${B} ${L} fill / ${T}px ${R}px ${B}px ${L}px / 0 stretch;`)
+          `  border-image: url('${l.src}') ${bT} ${bR} ${bB} ${bL} fill / ${T}px ${R}px ${B}px ${L}px / 0 stretch;`)
       } else if (l.fit === 'tiled') {
         out.push(`  background: url('${l.src}') repeat;`)
       } else {

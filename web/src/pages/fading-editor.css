@@ -360,6 +360,9 @@
 .fu-grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .fu-grid4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .fu-border-row { grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 5px; background: #171720; border: 1px solid #303044; }
+.fu-border-scale { display: flex; align-items: flex-end; gap: 6px; }
+.fu-border-scale > .fu-field { flex: 1; }
+.fu-border-scale > .fu-btn { flex: none; white-space: nowrap; }
 .fu-span2 { grid-column: span 2; }
 .fu-textarea { resize: vertical; line-height: 1.5; }
 .fu-zrow { display: flex; gap: 5px; }
