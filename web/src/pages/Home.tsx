@@ -44,7 +44,7 @@ const WALL: { to: string; idx: string; titleKey: UIKey; key: string; unit: UIKey
     titleKey: 'char_title',
     key: 'characters',
     unit: 'home_wall_chars',
-    img: '/img/m/8a3eaae83314f8cc.webp?v=2',
+    img: '/img/m/524f083c9774e606.webp?v=2',
   },
   {
     to: '/story',
@@ -60,7 +60,7 @@ const WALL: { to: string; idx: string; titleKey: UIKey; key: string; unit: UIKey
     titleKey: 'cg_title',
     key: 'cg',
     unit: 'home_wall_cg',
-    img: '/img/m/5289bcb216c275ac.webp?v=2',
+    img: '/img/m/caa05595e634340f.webp?v=2',
   },
 ]
 
