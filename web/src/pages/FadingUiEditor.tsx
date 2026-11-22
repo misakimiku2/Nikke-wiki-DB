@@ -176,7 +176,7 @@ export default function FadingUiEditor() {
     // 按原作行为选默认填充方式：平铺类 > 有九宫格 border 的 > 纯拉伸
     const fit: ImageLayer['fit'] = a.tiled ? 'tiled' : border.some((n) => n > 0) ? 'sliced' : 'fill'
     const layer: ImageLayer = {
-      id: uid(), name: a.n.replace(/\.png$/i, ''), kind: 'image', x, y, w, h,
+      id: uid(), name: a.n.replace(/\.png$/i, ''), kind: 'image', x, y, w, h, baseW: w, baseH: h,
       rotate: 0, opacity: 1, z: layout.layers.length, visible: true, locked: false,
       blend: 'normal', radius: 0, group: '', src: `${ASSET_BASE}${a.n}`,
       fit, border, borderScale: 1, grayscale: 0, brightness: 1,
@@ -187,7 +187,7 @@ export default function FadingUiEditor() {
   function addText() {
     const layer: TextLayer = {
       id: uid(), name: '文字', kind: 'text',
-      x: 120, y: 120, w: 320, h: 48,
+      x: 120, y: 120, w: 320, h: 48, baseW: 320, baseH: 48,
       rotate: 0, opacity: 1, z: layout.layers.length, visible: true, locked: false,
       blend: 'normal', radius: 0, group: '', text: '双击此处编辑文字', color: '#171610',
       fontSize: 18, weight: 700, align: 'left', lineHeight: 1.5, letterSpacing: 0, shadow: '',
@@ -198,7 +198,7 @@ export default function FadingUiEditor() {
   function addRect() {
     const layer: RectLayer = {
       id: uid(), name: '色块', kind: 'rect',
-      x: 120, y: 200, w: 240, h: 120,
+      x: 120, y: 200, w: 240, h: 120, baseW: 240, baseH: 120,
       rotate: 0, opacity: 1, z: layout.layers.length, visible: true, locked: false,
       blend: 'normal', radius: 0, group: '', color: 'rgba(140,30,50,.6)', border: '',
     }
@@ -224,6 +224,7 @@ export default function FadingUiEditor() {
   const [preview, setPreview] = useState(false)
   /** 选中图片时：true=用切线调九宫格 border，false=自由缩放/旋转 */
   const [nineMode, setNineMode] = useState(false)
+  const [scaleLink, setScaleLink] = useState(true)
   /** 正在画布上就地编辑的文字图层 id */
   const [editingText, setEditingText] = useState<string | null>(null)
   const blendRef = useRef<HTMLSelectElement>(null)
@@ -1334,7 +1335,9 @@ export default function FadingUiEditor() {
                           />
                           : null}
                         {isSel && <>
-                          <span className="fu-layer-tag">{l.name}{nine ? ' · .9 图' : ''}</span>
+                          <span className="fu-layer-tag">{l.name}{nine ? ' · .9 图' : ''}
+                            {Math.round(l.w / (l.baseW || l.w) * 100) !== 100 || Math.round(l.h / (l.baseH || l.h) * 100) !== 100
+                              ? ` · ${Math.round(l.w / (l.baseW || l.w) * 100)}% / ${Math.round(l.h / (l.baseH || l.h) * 100)}%` : ''}</span>
                           {nine ? <>
                             <span className="fu-slice fu-slice-v" style={{ left: bs[0] }} title="左 border（显示绘制宽度，实际源像素 × 倍率）"
                               onPointerDown={sliceDown(0)}><i /><em>L {bs[0].toFixed(0)}</em></span>
@@ -1388,7 +1391,7 @@ export default function FadingUiEditor() {
           </div>
           <div className="fu-statusbar">
             <span>坐标以画布左上角为原点 · 选中图片后顶部切「.9 图」可拖橙色切线调 border · 空格拖动画布 · Ctrl+滚轮缩放</span>
-            <span>{selLayer ? `已选：${selLayer.name} · x=${selLayer.x} y=${selLayer.y} w=${selLayer.w} h=${selLayer.h}` : '未选中图层'}</span>
+            <span>{selLayer ? `已选：${selLayer.name} · x=${selLayer.x} y=${selLayer.y} w=${selLayer.w} h=${selLayer.h} · 缩放 ${(selLayer.w / (selLayer.baseW || selLayer.w) * 100).toFixed(0)}% / ${(selLayer.h / (selLayer.baseH || selLayer.h) * 100).toFixed(0)}%` : '未选中图层'}</span>
           </div>
         </main>
 
@@ -1466,6 +1469,29 @@ export default function FadingUiEditor() {
                   <input type="range" min="0" max="1" step="0.01" value={selLayer.opacity}
                     onChange={(e) => patchLayer(selLayer.id, { opacity: Number(e.target.value) })} />
                   <em>{Math.round(selLayer.opacity * 100)}%</em></label>
+              </div>
+              <div className="fu-field">
+                <span>缩放 · 相对原始尺寸 {selLayer.baseW}×{selLayer.baseH}</span>
+                <label className="fu-check" style={{ marginBottom: 4 }}>
+                  <input type="checkbox" checked={scaleLink} onChange={(e) => setScaleLink(e.target.checked)} /> 等比联动</label>
+                <div className="fu-grid2">
+                  <NumField label="宽 %" value={+(selLayer.w / (selLayer.baseW || selLayer.w) * 100).toFixed(1)}
+                    onChange={(v) => {
+                      const s = Math.max(1, v) / 100
+                      patchLayer(selLayer.id, {
+                        w: Math.max(1, (selLayer.baseW || selLayer.w) * s),
+                        ...(scaleLink ? { h: Math.max(1, (selLayer.baseH || selLayer.h) * s) } : {}),
+                      })
+                    }} />
+                  <NumField label="高 %" value={+(selLayer.h / (selLayer.baseH || selLayer.h) * 100).toFixed(1)}
+                    onChange={(v) => {
+                      const s = Math.max(1, v) / 100
+                      patchLayer(selLayer.id, {
+                        h: Math.max(1, (selLayer.baseH || selLayer.h) * s),
+                        ...(scaleLink ? { w: Math.max(1, (selLayer.baseW || selLayer.w) * s) } : {}),
+                      })
+                    }} />
+                </div>
               </div>
               <label className="fu-field"><span>混合模式 · 悬停滚轮可切换</span>
                 <select ref={blendRef} className="fu-input" value={selLayer.blend}
@@ -1630,6 +1656,7 @@ export default function FadingUiEditor() {
               <li><b>存到项目</b>写入 <code>build/fading_ui_layout.json</code>（dev 接口），换机器也不丢；<b>本地存档</b>存在浏览器里。</li>
               <li>拼好后点 <b>导出 JSON</b> 把文件发我，我就能按精确坐标/尺寸改 <code>fading.css</code>，不再靠截图猜。</li>
             </ol>
+            <p className="fu-tip">缩放后属性面板会显示相对原始尺寸的<b>宽/高百分比</b>，也可直接输入百分比调整；勾选「等比联动」则宽高一起变。选中标签和底部状态栏也会实时显示。</p>
             <p className="fu-tip"><b>混合模式</b>共 17 种，属性面板里的下拉框<b>悬停后滚动鼠标滚轮</b>即可逐个切换。白色线稿想显示在浅色背景上，试试 <b>multiply</b> 或 <b>darken</b>。混合模式只作用于图像本身，选择框/手柄/切线不会跟着被混合。</p>
             <p className="fu-tip">选中图片后，顶部「变换」开关可在 <b>.9 图</b> 与 <b>自由</b> 间切换：.9 图模式下图层内出现四条橙色切线，直接拖动即可调整九宫格 border（左右上下），切线的手柄会跟着动；自由模式恢复八个缩放角点。</p>
             <p className="fu-tip">视图操作：<b>按住空格拖动</b>平移整块画布（中键拖动也可以），<b>Ctrl + 滚轮</b>以鼠标位置为锚点缩放，工具栏「适应」复位缩放与平移。</p>

@@ -12,6 +12,9 @@ export interface LayerBase {
   y: number
   w: number
   h: number
+  /** 创建时的基准尺寸，用来计算缩放百分比 */
+  baseW: number
+  baseH: number
   rotate: number
   opacity: number
   z: number
@@ -86,7 +89,7 @@ export function emptyLayout(w = 1080, h = 920): FadingLayout {
 /** 图片 / 文字 / 色块图层的快捷构造器 */
 function img(name: string, file: string, x: number, y: number, w: number, h: number, extra: Partial<ImageLayer> = {}): ImageLayer {
   return {
-    id: uid(), name, kind: 'image', x, y, w, h,
+    id: uid(), name, kind: 'image', x, y, w, h, baseW: w, baseH: h,
     rotate: 0, opacity: 1, z: 0, visible: true, locked: false,
     blend: 'normal', radius: 0, group: '',
     src: `${ASSET_BASE}${file}`, fit: 'fill', border: [0, 0, 0, 0], borderScale: 1, grayscale: 0, brightness: 1, ...extra,
@@ -94,7 +97,7 @@ function img(name: string, file: string, x: number, y: number, w: number, h: num
 }
 function txt(name: string, text: string, x: number, y: number, w: number, h: number, extra: Partial<TextLayer> = {}): TextLayer {
   return {
-    id: uid(), name, kind: 'text', x, y, w, h,
+    id: uid(), name, kind: 'text', x, y, w, h, baseW: w, baseH: h,
     rotate: 0, opacity: 1, z: 0, visible: true, locked: false,
     blend: 'normal', radius: 0, group: '',
     text, color: '#171610', fontSize: 15, weight: 600,
@@ -103,7 +106,7 @@ function txt(name: string, text: string, x: number, y: number, w: number, h: num
 }
 function rect(name: string, x: number, y: number, w: number, h: number, extra: Partial<RectLayer> = {}): RectLayer {
   return {
-    id: uid(), name, kind: 'rect', x, y, w, h,
+    id: uid(), name, kind: 'rect', x, y, w, h, baseW: w, baseH: h,
     rotate: 0, opacity: 1, z: 0, visible: true, locked: false,
     blend: 'normal', radius: 0, group: '',
     color: '#4a4638', border: '', ...extra,
@@ -182,7 +185,8 @@ export function normalizeLayout(v: FadingLayout): FadingLayout {
     version: 1,
     canvas: { ...v.canvas, bgImage: normSrc(v.canvas.bgImage) },
     layers: v.layers.map((l) => {
-      const base = { ...l, blend: l.blend || 'normal', radius: l.radius || 0,
+      const base = { ...l, baseW: l.baseW || l.w, baseH: l.baseH || l.h,
+        blend: l.blend || 'normal', radius: l.radius || 0,
         rotate: l.rotate || 0, opacity: l.opacity ?? 1, visible: l.visible !== false,
         locked: !!l.locked, group: l.group || '' }
       if (base.kind === 'image') {
