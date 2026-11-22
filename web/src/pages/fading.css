@@ -1,0 +1,282 @@
+/* ============ FADING AFFECTION · 原版 UI 素材还原 ============ */
+/* 纹理提取自 core 资源池 eventui-marian_assets_adventure_* (file_id 14098-14112)
+   导出：python scripts/export_fading_ui.py                       */
+
+.fad-root {
+  position: relative; min-height: calc(100vh - 64px);
+  padding: 24px 16px 56px; color: var(--text);
+  background: #4e4e51 url(/fading_ui/marian_ptn_wood_02.png) repeat;
+  background-size: 512px 512px;
+  box-shadow: inset 0 0 140px rgba(0,0,0,.6);
+}
+[data-theme="light"] .fad-root {
+  background: #b8b7b1 url(/fading_ui/marian_ptn_wood_01.png) repeat;
+  background-size: 512px 512px;
+  box-shadow: inset 0 0 90px rgba(0,0,0,.16);
+}
+.fad-root::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    url(/fading_ui/marian_main_back_bg_02.png) no-repeat left top / 280px auto,
+    url(/fading_ui/marian_main_middle_bg.png) no-repeat right bottom / 340px auto;
+  opacity: .12;
+}
+.fad-root > * { position: relative; z-index: 1; }
+.fad-wrap, .fad-home { max-width: 960px; margin: 0 auto; }
+.fad-back {
+  display: inline-block; margin-bottom: 16px; color: rgba(255,255,255,.85);
+  font-size: 13px; text-decoration: none; background: none; border: 0; cursor: pointer;
+  font-family: inherit; text-shadow: 0 1px 3px #000;
+}
+.fad-empty { padding: 80px 0; text-align: center; color: #fff; }
+
+/* ---------- 首页：SILVERGUN PROJECT 档案 ---------- */
+.fad-home-hero {
+  position: relative; min-height: 500px; overflow: hidden; color: #26251e;
+  display: flex; align-items: center; justify-content: center;
+  background: #555 url(/fading_ui/marian_main_back_bg_01.png) no-repeat center / cover;
+  box-shadow: 0 14px 40px rgba(0,0,0,.5);
+  clip-path: polygon(0 1%, 99.5% 0, 100% 98.5%, 1% 100%);
+}
+.fad-home-hero::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, rgba(242,240,230,.94) 0%, rgba(242,240,230,.88) 45%, rgba(35,35,38,.5) 100%);
+}
+.fad-home-doc {
+  position: relative; z-index: 1; width: min(540px, 88%); padding: 26px 30px;
+  background: rgba(248,246,238,.82); border: 1px solid rgba(120,110,85,.4);
+  box-shadow: 0 8px 30px rgba(0,0,0,.3);
+}
+.fad-kicker { font-size: 10px; letter-spacing: .26em; color: #8a2438; font-weight: 800; text-align: center; }
+.fad-logo { display: block; width: min(360px, 90%); margin: 6px auto 2px; mix-blend-mode: multiply; }
+.fad-doc-id { text-align: center; font-size: 12px; font-weight: 800; letter-spacing: .18em; color: #444; padding-bottom: 10px; border-bottom: 2px solid #9a9584; margin-bottom: 14px; }
+.fad-lead { font-size: 13px; line-height: 1.8; color: #454234; }
+.fad-stats { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
+.fad-stats span { font-size: 11px; color: #6b6755; }
+.fad-stats b { font-size: 16px; color: #26251e; margin-right: 3px; }
+.fad-section-title { margin: 28px 0 14px; font-size: 13px; letter-spacing: .2em; color: #f0eee6; text-shadow: 0 2px 4px #000; }
+.fad-routes { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.fad-route {
+  position: relative; text-align: left; cursor: pointer; font-family: inherit; color: #26251e;
+  padding: 140px 18px 14px; border: 0; background: #e5e2d5;
+  background-image: url(/fading_ui/marian_bg_paper.png);
+  background-size: 100% 100%; box-shadow: 0 10px 26px rgba(0,0,0,.4);
+  clip-path: polygon(0 1%, 100% 0, 99% 99%, 1% 100%);
+  transition: transform .18s, box-shadow .18s;
+}
+.fad-route::before {
+  content: ''; position: absolute; left: 14px; right: 14px; top: 12px; height: 118px;
+  background-size: cover; background-position: center; opacity: .9;
+  box-shadow: 0 3px 8px rgba(0,0,0,.35);
+}
+.fad-route:nth-child(1)::before { background-image: url(/fading_ui/marian_routeselect_01.png); }
+.fad-route:nth-child(2)::before { background-image: url(/fading_ui/marian_routeselect_02.png); }
+.fad-route:nth-child(3)::before { background-image: url(/fading_ui/marian_routeselect_03.png); }
+.fad-route:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 16px 34px rgba(0,0,0,.5); }
+.fad-route.locked { opacity: .48; filter: grayscale(1); cursor: not-allowed; }
+.fad-route-no { font-size: 10px; letter-spacing: .18em; color: #a4263f; font-weight: 800; }
+.fad-route-name { font-size: 19px; font-weight: 800; margin: 8px 0 6px; }
+.fad-route-desc { font-size: 11px; color: #5a5748; line-height: 1.6; min-height: 34px; }
+.fad-route-foot { display: flex; justify-content: space-between; margin-top: 12px; padding-top: 8px; border-top: 1px dashed #b7b2a0; font-size: 10px; color: #7a7563; }
+.fad-route-go { font-weight: 700; color: #26251e; }
+.fad-note { margin-top: 20px; font-size: 11px; color: rgba(255,255,255,.7); line-height: 1.7; text-shadow: 0 1px 3px #000; }
+
+.fad-btn, .fad-mini { cursor: pointer; font-family: inherit; border-radius: 2px; }
+.fad-btn { padding: 9px 18px; font-size: 12px; font-weight: 700; background: #a4263f; color: #fff; border: 1px solid #7d1a2e; }
+.fad-btn:hover { filter: brightness(1.12); }
+.fad-btn-ghost { background: rgba(255,255,255,.45); color: #3b382d; border: 1px solid #999; }
+.fad-tape-btn {
+  position: relative; cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 800;
+  color: #2e2c25; padding: 11px 22px; letter-spacing: .06em;
+  background: url(/fading_ui/marian_btn_bg.png) no-repeat center / 100% 100%;
+  border: 0; min-width: 128px;
+}
+.fad-tape-btn:hover { filter: brightness(1.08); }
+.fad-mini { padding: 5px 11px; font-size: 11px; color: #e8e6dc; background: rgba(20,20,24,.72); border: 1px solid rgba(255,255,255,.25); }
+.fad-mini:hover { background: rgba(40,40,46,.9); }
+
+/* ---------- 游戏：纸张档案 ---------- */
+.fad-playing { padding-top: 14px; padding-bottom: 20px; }
+.fad-desk {
+  max-width: 820px; margin: 0 auto;
+  min-height: calc(100vh - 64px - 34px);
+  display: flex; flex-direction: column;
+}
+.fad-deskbar { position: relative; display: flex; gap: 8px; margin-bottom: 10px; flex: none; }
+.fad-popover { position: absolute; top: 36px; left: 0; z-index: 20; padding: 12px 14px; background: #f0eee3; color: #26251e; border: 1px solid #b9b4a2; box-shadow: 0 8px 24px rgba(0,0,0,.5); font-size: 12px; display: grid; gap: 8px; }
+.fad-popover-tip { color: #777; font-size: 10px; }
+
+.fad-doc {
+  position: relative; margin: 0 auto; padding: 26px 38px 0; color: #1a1914;
+  flex: 1; display: flex; flex-direction: column;
+  background: #e8e5d8 url(/fading_ui/marian_texture_paper.png) center / cover no-repeat;
+  box-shadow: 0 20px 55px rgba(0,0,0,.6), inset 0 0 60px rgba(110,95,65,.16);
+  clip-path: polygon(0.4% 0.5%, 99.5% 0, 100% 99.4%, 0.7% 100%);
+}
+.fad-doc::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(224,219,200,.28), rgba(222,216,194,.42));
+}
+/* 藤蔓 / 夹子 / 弹孔（原版装饰） */
+.fad-doc-clip {
+  position: absolute; top: -16px; left: 44%; width: 104px; height: 34px; z-index: 5;
+  background: url(/fading_ui/marian_deco_book.png) no-repeat center / contain;
+}
+.fad-doc-leaf { position: absolute; pointer-events: none; opacity: .9; }
+.fad-doc-leaf.left { left: -26px; top: 60px; width: 120px; height: 240px; background: url(/fading_ui/marian_deco_02.png) no-repeat center / contain; }
+.fad-doc-leaf.right { right: -20px; top: 250px; width: 110px; height: 210px; background: url(/fading_ui/marian_deco_03.png) no-repeat center / contain; }
+.fad-bullet { display: none; }
+.fad-hole { position: absolute; width: 4px; height: 4px; border-radius: 50%; background: #4a4638; pointer-events: none; }
+.fad-hole.h1 { right: 36px; top: 380px; }
+.fad-hole.h2 { left: 30px; bottom: 230px; }
+
+/* 页眉 */
+.fad-doc-head {
+  position: relative; z-index: 1; display: flex; align-items: center; gap: 12px;
+  height: 60px; margin: 0 -6px 14px; padding: 0 14px 0 76px;
+  background: linear-gradient(180deg, #a9bdc9, #8ea5b4);
+  box-shadow: inset 0 0 0 1px #7d95a4;
+}
+.fad-doc-head::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: url(/fading_ui/marian_bg_tilte.png) no-repeat center / 100% 100%; opacity: .45;
+}
+.fad-doc-tag {
+  position: absolute; left: -16px; top: -12px; width: 72px; height: 84px;
+  background: url(/fading_ui/marian_deco_01.png) no-repeat center / contain;
+  font-size: 0; color: transparent;
+}
+.fad-doc-title { flex: 1; font-size: 18px; font-weight: 800; color: #20303b; }
+.fad-doc-stamp {
+  padding: 2px 8px; border: 2px solid #a4263f; color: #a4263f;
+  font: 800 11px/1 sans-serif; letter-spacing: .08em; transform: rotate(-3deg);
+}
+.fad-doc-nav { display: flex; gap: 5px; }
+.fad-doc-nav button { width: 30px; height: 28px; font-size: 13px; cursor: pointer; font-family: inherit; color: #333; background: rgba(255,255,255,.5); border: 1px solid #8a9aa6; }
+.fad-doc-nav button:disabled { opacity: .35; cursor: default; }
+
+/* 正文：撑满剩余高度，状态栏贴底 */
+.fad-doc-body { position: relative; z-index: 1; padding: 0 2px 12px; flex: 1; display: flex; flex-direction: column; }
+.fad-frame {
+  position: relative; width: min(100%, 520px); margin: 0 auto 10px; padding: 8px;
+  background: #242426; box-shadow: 0 4px 12px rgba(0,0,0,.35);
+}
+.fad-frame::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: url(/fading_ui/marian_mask_scene.png) no-repeat center / 100% 100%;
+  opacity: .28; mix-blend-mode: screen;
+}
+.fad-frame img { display: block; width: 100%; max-height: min(280px, 32vh); object-fit: contain; filter: grayscale(1) contrast(1.03); background: #1c1c1e; }
+.fad-frame-tag {
+  position: absolute; right: -4px; bottom: -14px; width: 84px; height: 26px;
+  background: url(/fading_ui/marian_txt_script.png) no-repeat center / contain;
+  font-size: 0; color: transparent;
+}
+.fad-script-tag { display: block; width: 84px; height: 24px; margin: 0 0 2px -4px; background: url(/fading_ui/marian_txt_script.png) no-repeat left center / contain; font-size: 0; }
+.fad-script { white-space: pre-wrap; font-size: 14px; line-height: 1.85; color: #171610; min-height: 52px; font-weight: 600; }
+
+/* 选项：笔刷条，按原图比例拉伸 */
+.fad-choices { display: flex; flex-direction: column; gap: 7px; margin-top: auto; padding-top: 16px; }
+.fad-choice {
+  position: relative; width: 100%; height: 46px; text-align: left; cursor: pointer;
+  font-family: inherit; color: #17232c; padding: 8px 14px 8px 80px;
+  background-color: #9fb3c0;
+  background-image: url(/fading_ui/marian_bg_choice_maria.png);
+  background-repeat: no-repeat; background-position: center; background-size: 100% 100%;
+  border: 0; transition: transform .12s, filter .15s;
+}
+.fad-choice:hover:not(:disabled) { transform: translateX(4px); filter: brightness(1.06); }
+.fad-choice:disabled { cursor: default; }
+.fad-choice-main { font-size: 13px; font-weight: 700; }
+.fad-choice.checked { background-image: url(/fading_ui/marian_bg_choice.png); }
+.fad-choice.locked {
+  background-color: #33322f;
+  background-image: url(/fading_ui/marian_bg_choice_hidden.png);
+  background-repeat: no-repeat; background-position: center; background-size: 100% 100%;
+  background-blend-mode: multiply;
+  color: #f0ece0;
+}
+.fad-choice.locked .fad-choice-main {
+  display: inline-block; width: 68px; height: 32px; font-size: 0; color: transparent;
+  background: url(/fading_ui/marian_txt_choice_hidden.png) no-repeat center / contain;
+}
+.fad-choice-req { display: block; margin-top: 2px; font-size: 10px; color: #8a2438; }
+.fad-choice.locked .fad-choice-req {
+  position: absolute; right: 12px; top: 16px; margin: 0;
+  font-size: 9px; color: rgba(240,236,224,.7);
+}
+.fad-checked { position: absolute; left: 6px; top: 13px; width: 68px; height: 20px; background: url(/fading_ui/marian_txt_check.png) no-repeat center / contain; font-size: 0; }
+.fad-plus { position: absolute; right: 12px; top: 11px; color: #8a2438; font-size: 10px; font-weight: 800; }
+.fad-hint-badge { position: absolute; left: 6px; top: 8px; width: 68px; height: 32px; background: url(/fading_ui/marian_icn_hint.png) no-repeat center / contain; font-size: 0; }
+.fad-hint-text { display: block; margin-top: 3px; font-size: 11px; color: #36546e; }
+.fad-observe { display: inline-block; margin-top: 4px; padding: 2px 8px; font-size: 10px; border: 1px solid #96917e; background: rgba(255,255,255,.5); color: #34322a; }
+.fad-choice-cost { display: block; margin-top: 3px; font-size: 10px; color: #8a5a12; }
+
+/* 结局面板 */
+.fad-ending-panel { margin-top: auto; padding: 14px 16px; border: 2px solid #9a9584; background: rgba(255,255,255,.32); }
+.fad-ending-label { font-size: 10px; letter-spacing: .16em; color: #8a2438; font-weight: 800; }
+.fad-ending-title { font-size: 20px; font-weight: 800; margin: 6px 0; }
+.fad-ending-tip { font-size: 12px; color: #4b483b; line-height: 1.7; }
+.fad-memory-unlock { margin-top: 8px; padding: 6px 10px; background: #d9d6c8; border: 1px solid #a9a48f; font-size: 12px; color: #2f5f8a; }
+.fad-next { margin-top: auto; padding-top: 14px; text-align: center; font-size: 12px; color: #55523f; cursor: pointer; }
+.fad-next:hover { color: #8a2438; }
+
+/* ---------- 底部状态栏（按原版比例） ---------- */
+.fad-doc-foot {
+  position: relative; z-index: 1; margin: 18px -38px 0; padding: 24px 30px 12px;
+  min-height: 128px;
+  background: #a7b6c1 url(/fading_ui/marian_bg_state.png) no-repeat center 8px / calc(100% - 40px) 82px;
+}
+.fad-status { position: relative; display: flex; align-items: center; gap: 8px; height: 66px; padding: 0 8px; }
+.fad-status-cell { flex: 1; font-size: 14px; font-weight: 800; color: #182731; }
+.fad-status-name { display: none; }
+.fad-memory-card {
+  width: 186px; height: 92px; flex: none; cursor: pointer; font-family: inherit;
+  border: 0; color: #e9e6da; font-size: 12px; font-weight: 800; letter-spacing: .1em;
+  background: url(/fading_ui/btn_marian_memory.png) no-repeat center / contain;
+}
+.fad-memory-card span { color: #e0c060; }
+.fad-erosion {
+  position: relative; display: flex; align-items: center; gap: 8px; height: 28px;
+  margin: 0 8px; padding: 0 10px; color: #182731;
+  background: url(/fading_ui/marian_bg_choice_maria.png) no-repeat center / 100% 100%;
+}
+.fad-erosion-eye, .fad-erosion-name { font-size: 10px; font-weight: 700; }
+.fad-erosion-track { flex: 1; height: 6px; background: rgba(30,30,35,.22); }
+.fad-erosion-track > div { height: 100%; background: #8a2438; transition: width .35s; }
+.fad-erosion-num { font-size: 11px; font-weight: 800; width: 30px; text-align: right; }
+.fad-access {
+  margin: 8px auto 0; text-align: center; font-size: 9px; letter-spacing: .45em;
+  color: rgba(255,255,255,.55);
+}
+.fad-footer-note { max-width: 820px; margin: 12px auto 0; font-size: 10px; color: rgba(255,255,255,.6); text-shadow: 0 1px 3px #000; }
+
+/* ---------- 图鉴 / 记忆 ---------- */
+.fad-title-sm { margin: 8px 0 18px; font-size: 23px; color: #f0eee6; text-shadow: 0 2px 5px #000; }
+.fad-title-sm small { color: rgba(255,255,255,.65); font-size: 13px; margin-left: 8px; }
+.fad-endings { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+.fad-ending { border: 1px solid #c7c3b4; background: #e9e7dc; color: #26251e; clip-path: polygon(0 1%, 100% 0, 99% 99%, 1% 100%); }
+.fad-ending.locked { opacity: .5; filter: grayscale(1); }
+.fad-ending-img { aspect-ratio: 1; background: #d4d1c3; display: flex; align-items: center; justify-content: center; font-size: 30px; color: #888; }
+.fad-ending-img img { width: 100%; height: 100%; object-fit: cover; filter: grayscale(1); }
+.fad-ending-meta { padding: 9px 11px; }
+.fad-ending-id { font-size: 10px; color: #8a2438; font-weight: 800; }
+.fad-ending-name { font-size: 13px; font-weight: 800; margin: 4px 0; }
+.fad-ending-hint { font-size: 10px; color: #666250; line-height: 1.5; }
+.fad-memories { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.fad-memory { padding: 13px 15px; background: #e9e7dc; color: #26251e; border-left: 4px solid #2f5f8a; clip-path: polygon(0 1%, 100% 0, 99% 99%, 1% 100%); }
+.fad-memory.locked { opacity: .45; border-left-color: #999; }
+.fad-memory-id { font-size: 10px; color: #8a2438; letter-spacing: .1em; font-weight: 800; }
+.fad-memory-name { font-size: 14px; font-weight: 800; margin: 5px 0 2px; }
+.fad-memory-short { font-size: 11px; color: #2f5f8a; margin-bottom: 6px; }
+.fad-memory-desc { font-size: 11px; color: #55513f; line-height: 1.7; white-space: pre-wrap; }
+
+@media (max-width: 640px) {
+  .fad-root { padding: 14px 10px 40px; }
+  .fad-doc { padding: 24px 16px 0; }
+  .fad-doc-foot { margin: 14px -16px 0; padding: 20px 12px 10px; background-size: calc(100% - 20px) 72px; }
+  .fad-doc-title { font-size: 15px; }
+  .fad-doc-stamp { display: none; }
+  .fad-script { font-size: 13px; }
+  .fad-memory-card { width: 130px; height: 64px; }
+}

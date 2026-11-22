@@ -19,6 +19,7 @@ const DICT = {
   nav_story: ['剧情', 'Story', '스토리', 'ストーリー'],
   nav_search: ['搜索', 'Search', '검색', '検索'],
   nav_cg: ['CG', 'CG', 'CG', 'CG'],
+  nav_minigame: ['小游戏', 'Mini Game', '미니게임', 'ミニゲーム'],
 
   /* ---- 剧情分类（story cat key → 显示名） ---- */
   cat_main: ['主线剧情', 'Main Story', '메인 스토리', 'メインストーリー'],

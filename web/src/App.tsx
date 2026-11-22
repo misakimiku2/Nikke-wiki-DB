@@ -12,6 +12,7 @@ import CgGallery from './pages/CgGallery'
 import CgView from './pages/CgView'
 import CgAlbums from './pages/CgAlbums'
 import StoryCovers from './pages/StoryCovers'
+import FadingAffection from './pages/FadingAffection'
 import { applyTheme, getInitialTheme, type Theme } from './theme'
 import { LANGS, useLang } from './lang'
 import { useUI, type UIKey } from './ui'
@@ -23,6 +24,7 @@ const NAV: { to: string; end?: boolean; label: UIKey; drawerOnly?: boolean }[] =
   { to: '/story', label: 'nav_story' },
   { to: '/search', label: 'nav_search' },
   { to: '/cg', label: 'nav_cg' },
+  { to: '/game/fadingaffection', label: 'nav_minigame' },
   { to: '/notice', label: 'notice_title', drawerOnly: true },
 ]
 
@@ -193,6 +195,7 @@ export default function App() {
         <Route path="/notice/:slug" element={<NoticeDetail />} />
         <Route path="/cg" element={<CgGallery />} />
         <Route path="/cg/:name" element={<CgView />} />
+        <Route path="/game/fadingaffection" element={<FadingAffection />} />
         {/* 图集整理后台只存在于 dev：import.meta.env.DEV 在生产构建里被静态替换成
             false，这条路由（连同未用到的导入）会被整体摇掉，正式站点没有入口 */}
         {import.meta.env.DEV && <Route path="/cg/albums" element={<CgAlbums />} />}
