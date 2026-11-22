@@ -106,8 +106,23 @@ u32 记录数
 
 ## 3. UI 素材
 
-素材来自资源池 `core` 的 `eventui-marian_assets_adventure_*` bundle（file_id **14098–14112**），
-由 `nikke_extract/scripts/export_fading_ui.py` 导出到 `public/fading_ui/`（174 张 PNG）。
+素材来自两个资源池的 bundle，由 `nikke_extract/scripts/export_fading_ui.py` 导出到
+`public/fading_ui/`，目前 **244 张 PNG（约 34 MB）**：
+
+| 资源池 | bundle | 内容 |
+|---|---|---|
+| core | 14098–14112 | `eventui-marian_assets_adventure_*`：主界面、路线选择、首选项、剧情、结局、回想、开场、弹窗等全部 UI |
+| core | 14117 | 血迹/走马灯特效 |
+| core | 14120–14126 | 结局类型图标（death/erosion/hidden/true）与状态图标（hp/food/erosion） |
+| core | 26802–26813 | `view-fadingaffection*` 视图壳及其 atlas |
+| dp | 5050 | `icons-event-89_marian(hd)`：教程插画 `ele_fadingaffection_tutorial_*` 与 `icn_fadingaffection_*` |
+
+审计结果：上述 bundle 共含 247 张纹理，已导出 244 张；缺失的 3 张是 `2x2love` 活动的
+通用资源与字体图集，小游戏不会用到。
+
+> **重要**：这些 UI 纹理**不进入 CG 池**。它们只放在 `public/fading_ui/`，
+> 与 `cg_index.json` / `manifest.json` / `CG/` 完全没有交集。CG 池里只有小游戏的
+> 59 张黑白剧情 CG（`EventScene_FadingAffection_*`，由 `export_cg_v2.py` 走正常 CG 流程导出）。
 
 | 素材 | 用途 |
 |---|---|
@@ -185,6 +200,7 @@ python scripts/export_fading_ui.py            # --force 可覆盖
 
 ## 7. 验证记录
 
+- UI 完整性审计：小游戏 bundle 共 247 张纹理，已导出 244 张；与 CG 池零重叠。
 - `npm run build` 通过，产物含 `dist/data/fadingaffection.json` 与 `dist/fading_ui/`。
 - 实测：全新存档 → 湖锁定（显示需要「小径」）→ 走到页面 1114 → 湖解锁。
 - 实测：HINT 选项按各自条件从 ??? 变为 HINT 条。
