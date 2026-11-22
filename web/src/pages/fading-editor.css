@@ -291,7 +291,9 @@
   display: flex; align-items: center; gap: 3px;
   padding: 3px 4px; margin-top: 3px;
   background: #1a1a26; border: 1px solid #34344a;
+  cursor: grab;
 }
+.fu-group-head:active { cursor: grabbing; }
 .fu-group-head.on { border-color: #2ee6ff; }
 .fu-group-head.drop-target { border-color: #ffb020; background: #3a3018; box-shadow: inset 0 0 0 1px #ffb020; }
 .fu-layers.root-drag { background: #1c1a12; box-shadow: inset 0 0 0 2px #ffb020; }

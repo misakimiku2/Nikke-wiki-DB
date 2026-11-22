@@ -762,17 +762,61 @@ export default function FadingUiEditor() {
       }
     })
   }
-  /** 把图层拖进某个组（或拖到空白区时 group='' 表示移出组），z 顺序保持 */
+  /** 把图层拖进某个组（或拖到空白区时移出组）。
+   *  关键：必须同时把 z 移到目标组的层级区间内，否则图层树里组标题会跟着它的 z 跳到顶部，
+   *  而画面层叠却没变。用小数 z 保证插在目标组最上层成员之后，再统一重编号。 */
   function dropIntoGroup(ids: string[], group: string) {
-    apply((l) => {
-      const layers = l.layers.map((x) => (ids.includes(x.id) ? { ...x, group } : x))
-      return { ...l, layers: [...layers].sort((a, b) => a.z - b.z).map((x, i) => ({ ...x, z: i })) }
+    apply((cur) => {
+      const existing = cur.layers.filter((x) => x.group === group && !ids.includes(x.id))
+      const maxZ = existing.length ? Math.max(...existing.map((x) => x.z)) : -1
+      let z = maxZ
+      const layers = cur.layers.map((x) => {
+        if (!ids.includes(x.id)) return x
+        z += 0.01
+        return { ...x, group, z }
+      })
+      return {
+        ...cur,
+        layers: [...layers].sort((a, b) => a.z - b.z).map((x, i) => ({ ...x, z: i })),
+      }
     })
+  }
+  /** 整组拖拽排序：把 src 组的所有成员作为一个块插到 target 组之后 */
+  function reorderGroup(src: string, target: string) {
+    if (src === target) return
+    apply((cur) => {
+      const sorted = [...cur.layers].sort((a, b) => a.z - b.z)
+      const block = sorted.filter((x) => x.group === src)
+      const rest = sorted.filter((x) => x.group !== src)
+      if (!block.length) return cur
+      let at = rest.length
+      for (let i = rest.length - 1; i >= 0; i--) {
+        if (rest[i].group === target) { at = i + 1; break }
+      }
+      rest.splice(at, 0, ...block)
+      return { ...cur, layers: rest.map((x, i) => ({ ...x, z: i })) }
+    })
+  }
+  /** 整组拖到某图层上：插到该图层之前 */
+  function reorderGroupToLayer(src: string, targetId: string) {
+    apply((cur) => {
+      const sorted = [...cur.layers].sort((a, b) => a.z - b.z)
+      const block = sorted.filter((x) => x.group === src)
+      const rest = sorted.filter((x) => x.group !== src)
+      if (!block.length) return cur
+      const at = rest.findIndex((x) => x.id === targetId)
+      rest.splice(at < 0 ? rest.length : at, 0, ...block)
+      return { ...cur, layers: rest.map((x, i) => ({ ...x, z: i })) }
+    })
+  }
+  function draggedGroup(e: DragEvent): string | null {
+    return e.dataTransfer.getData('application/x-fading-group') || null
   }
   function ungroupDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault(); e.stopPropagation()
-    const ids = draggedIds(e)
-    if (ids.length) { dropIntoGroup(ids, ''); showToast('已把图层移出组') }
+    const g = draggedGroup(e)
+    const ids = g ? layout.layers.filter((x) => x.group === g).map((x) => x.id) : draggedIds(e)
+    if (ids.length) { dropIntoGroup(ids, ''); showToast(g ? `已解散组「${g}」的分组` : '已把图层移出组') }
     setDragOverRoot(false); setDragOverGroup(null)
   }
   function draggedIds(e: DragEvent): string[] {
@@ -1109,7 +1153,9 @@ export default function FadingUiEditor() {
         onDragLeave={() => setDragOverGroup(null)}
         onDrop={(e) => {
           e.preventDefault(); e.stopPropagation()
-          dropOnLayer(draggedIds(e), l)
+          const g = draggedGroup(e)
+          if (g) reorderGroupToLayer(g, l.id)
+          else dropOnLayer(draggedIds(e), l)
           setDragOverGroup(null); setDragOverRoot(false)
         }}
         onClick={(e) => onLayerRowClick(e, l)}
@@ -1136,13 +1182,25 @@ export default function FadingUiEditor() {
     return (
       <div key={`g-${name}`}
         className={`fu-group-head${isOn ? ' on' : ''}${dragOverGroup === name ? ' drop-target' : ''}`}
+        draggable
+        title="拖动组标题可整组排序；拖图层到此处可移入组"
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/x-fading-group', name)
+          e.dataTransfer.effectAllowed = 'move'
+        }}
         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverGroup(name) }}
         onDragLeave={() => setDragOverGroup(null)}
         onDrop={(e) => {
           e.preventDefault(); e.stopPropagation()
-          dropIntoGroup(draggedIds(e), name)
+          const g = draggedGroup(e)
+          if (g) {
+            reorderGroup(g, name)
+            showToast(`已把组「${g}」排到「${name}」之上`)
+          } else {
+            dropIntoGroup(draggedIds(e), name)
+            showToast(`已把图层移入组「${name}」`)
+          }
           setDragOverGroup(null); setDragOverRoot(false)
-          showToast(`已把图层移入组「${name}」`)
         }}>
         <button className="fu-group-toggle" title="折叠 / 展开组"
           onClick={() => setCollapsed((c) => ({ ...c, [name]: !c[name] }))}>{collapsed[name] ? '▸' : '▾'}</button>
@@ -1708,7 +1766,7 @@ export default function FadingUiEditor() {
               <li>左侧素材库列出 <code>public/fading_ui/</code> 里全部原版纹理。可按名字搜索、按类型筛选；拖到画布或点击添加。</li>
               <li>画布里拖动图层移动，八个角点缩放（按住 <b>Shift</b> 等比缩放，组也一样），顶部 <b>⟳</b> 旋转（按住 Shift 吸附 15°）。文字图层<b>双击</b>可直接在画布上编辑（Esc / Ctrl+Enter 结束）。右侧属性面板可输入精确数值。</li>
               <li>左侧「↺ 骨架模板」= 载入一份按原截图比例预摆好的剧情页脚手架（纸张、夹子、藤蔓、标题条、正文、选项条、状态栏…约 28 层），在它上面微调比从零开始快。会先弹窗确认，旧布局可 Ctrl+Z 找回。</li>
-              <li><b>多选与编组</b>：图层面板里 <b>Ctrl + 左键</b> 多选，面板顶部点「＋编组」或按 <b>Ctrl+G</b> 即可把选中层编成组（「解组」解散）。多选后可一起删除、复制（副本自动成组）、对齐、调层级。单选时属性面板的「所属组」也能填名字编组。</li>
+              <li><b>多选与编组</b>：图层面板里 <b>Ctrl + 左键</b> 多选，面板顶部点「＋编组」或按 <b>Ctrl+G</b> 编组。拖动图层到组标题可移入组（z 会同步落到该组层级），拖动组标题可整组排序，拖到列表底部区域可移出组。</li>
               <li><b>组整体变换</b>：点击图层面板的组名（📁）选中整组，画布上出现**整组虚线包围盒**；拖框内任意位置移动整组，8 个缩放手柄缩放整组，⟳ 旋转整组（中心十字是支点）。右侧属性面板切换为组属性。</li>
               <li><b>组图层模式</b>：选中组后，属性面板可统一调整组内所有图层的混合模式（悬停滚轮可切换）、透明度，以及组内图片的填充模式（fill / contain / cover / sliced / tiled）。</li>
               <li><b>编辑组内单层</b>：组框会盖住组内图层，选中组时请<b>双击框内某个图层</b>退出组模式并选中它（或直接点右侧图层面板里的行）；之后拖该层就只动它。未选中组时，拖图层本来就只移动单层。Ctrl+D 复制会保留原图层的分组，不会凭空新建组。</li>
