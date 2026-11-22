@@ -52,6 +52,47 @@ def page_line(atlas_text):
     return ""
 
 
+# 少数游戏 bundle 里的图集贴图被 Unity 按 Max Texture Size 缩过（例如
+# EventScene_goninjathief_01：atlas 头写 size:2048，贴图却只有 1024²），
+# 而 .skel 的附件尺寸也是按缩小后的空间导出的。Spine 运行时用 atlas 的 size 算
+# UV、用区域 bounds / offsets 算附件几何，两边空间不一致时画面会碎成马赛克。
+# 这里把 atlas 的 size 和区域坐标同比缩到贴图空间；UV（坐标 / size）保持不变，
+# 只把几何元数据校准到 .skel 的口径。
+_ATLAS_NUM_FIELDS = {"bounds", "offsets", "orig", "offset", "xy"}
+
+
+def fit_atlas_to_image(lines, img_w, img_h):
+    """若贴图比 atlas 声明的 size 小，等比缩放 size 与全部区域坐标。"""
+    size_i = next((i for i, ln in enumerate(lines)
+                   if re.match(r"^\s*size\s*:", ln)), None)
+    if size_i is None:
+        return lines
+    m = re.match(r"^\s*size\s*:\s*(\d+)\s*,\s*(\d+)", lines[size_i])
+    if not m:
+        return lines
+    aw, ah = int(m.group(1)), int(m.group(2))
+    rx, ry = img_w / aw, img_h / ah
+    # 尺寸一致或只是几像素的取整误差（2045 vs 2048 之类）都不动
+    if 0.99 <= rx <= 1.01 and 0.99 <= ry <= 1.01:
+        return lines
+    if abs(rx - ry) > 0.01:  # 非等比缩放说明不是 Unity 降采样，别乱改
+        return lines
+    ratio = rx
+    out = []
+    for ln in lines:
+        m = re.match(r"^(\s*size\s*:\s*)(\d+)(\s*,\s*)(\d+)", ln)
+        if m:
+            out.append(f"{m.group(1)}{round(aw * ratio)}{m.group(3)}{round(ah * ratio)}")
+            continue
+        m = re.match(r"^(\s*)(\w+)(\s*:\s*)(.+)$", ln)
+        if m and m.group(2) in _ATLAS_NUM_FIELDS:
+            vals = [str(round(int(v.strip()) * ratio)) for v in m.group(4).split(",")]
+            out.append(m.group(1) + m.group(2) + m.group(3) + ",".join(vals))
+            continue
+        out.append(ln)
+    return out
+
+
 def convert(job, force=False, lossless=True):
     from PIL import Image
 
@@ -97,12 +138,15 @@ def convert(job, force=False, lossless=True):
             return {"name": name, "cached": True, "bytes": total}
 
         lines = atlas_text.splitlines()
+        first_page_size = None
         for old_page, new_name, src_page in out_pages:
             for i, ln in enumerate(lines):
                 if ln.strip() == old_page:
                     lines[i] = new_name
                     break
             with Image.open(src_page) as im:
+                if first_page_size is None:
+                    first_page_size = im.size
                 im = im.convert("RGBA")
                 # 把 alpha=0 的像素整颗清零（RGB 也要清，PMA 混合下残留色会直接叠加）。
                 # 用 mask + composite 走 C 实现，避免 400 万像素的 Python 循环。
@@ -118,6 +162,8 @@ def convert(job, force=False, lossless=True):
                     im.save(dst, "WEBP", lossless=True, method=6, exact=True)
                 else:
                     im.save(dst, "WEBP", quality=QUALITY, method=5)
+        if first_page_size:
+            lines = fit_atlas_to_image(lines, *first_page_size)
         with open(dst_atlas, "w", encoding="utf-8") as f:
             f.write("\n".join(lines) + "\n")
 
