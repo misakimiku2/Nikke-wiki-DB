@@ -1177,8 +1177,18 @@ export default function FadingUiEditor() {
       </div>
     )
   }
+  /** 一键隐藏/显示整组；组内只要有隐藏的层，点击就全部显示 */
+  function toggleGroupVisible(name: string) {
+    const members = layout.layers.filter((l) => l.group === name)
+    if (!members.length) return
+    const show = !members.every((l) => l.visible)
+    apply((cur) => ({ ...cur, layers: cur.layers.map((x) =>
+      (x.group === name ? { ...x, visible: show } : x)) }))
+  }
   function renderGroupHeader(name: string, count: number) {
     const isOn = selectedGroup === name || (!!selLayer && selLayer.group === name)
+    const members = layout.layers.filter((l) => l.group === name)
+    const allVisible = members.length > 0 && members.every((l) => l.visible)
     return (
       <div key={`g-${name}`}
         className={`fu-group-head${isOn ? ' on' : ''}${dragOverGroup === name ? ' drop-target' : ''}`}
@@ -1208,6 +1218,8 @@ export default function FadingUiEditor() {
           const first = layout.layers.find((l) => l.group === name)
           if (first) { selectOnly(first.id); setSelectedGroup(name) }
         }} title="选中整组：画布出现包围盒，可整体缩放/旋转">📁 {name} <small>{count}</small></button>
+        <button className="fu-ico" title={allVisible ? '隐藏整组' : '显示整组'}
+          onClick={() => toggleGroupVisible(name)}>{allVisible ? '◉' : '◌'}</button>
         <button className="fu-ico" title="复制整组" onClick={() => duplicateGroup(name)}>⧉</button>
         <button className="fu-ico" title="解散组（图层保留）" onClick={() => ungroup(name)}>⊠</button>
         <button className="fu-ico" title="删除整组" onClick={() => deleteGroup(name)}>✕</button>
@@ -1768,7 +1780,7 @@ export default function FadingUiEditor() {
               <li>左侧「↺ 骨架模板」= 载入一份按原截图比例预摆好的剧情页脚手架（纸张、夹子、藤蔓、标题条、正文、选项条、状态栏…约 28 层），在它上面微调比从零开始快。会先弹窗确认，旧布局可 Ctrl+Z 找回。</li>
               <li><b>多选与编组</b>：图层面板里 <b>Ctrl + 左键</b> 多选，面板顶部点「＋编组」或按 <b>Ctrl+G</b> 编组。拖动图层到组标题可移入组（z 会同步落到该组层级），拖动组标题可整组排序，拖到列表底部区域可移出组。</li>
               <li><b>组整体变换</b>：点击图层面板的组名（📁）选中整组，画布上出现**整组虚线包围盒**；拖框内任意位置移动整组，8 个缩放手柄缩放整组，⟳ 旋转整组（中心十字是支点）。右侧属性面板切换为组属性。</li>
-              <li><b>组图层模式</b>：选中组后，属性面板可统一调整组内所有图层的混合模式（悬停滚轮可切换）、透明度，以及组内图片的填充模式（fill / contain / cover / sliced / tiled）。</li>
+              <li><b>组图层模式</b>：选中组后，属性面板可统一调整组内所有图层的混合模式（悬停滚轮可切换）、透明度，以及组内图片的填充模式（fill / contain / cover / sliced / tiled）。组标题上的 ◉/◌ 按钮可一键隐藏/显示整组。</li>
               <li><b>编辑组内单层</b>：组框会盖住组内图层，选中组时请<b>双击框内某个图层</b>退出组模式并选中它（或直接点右侧图层面板里的行）；之后拖该层就只动它。未选中组时，拖图层本来就只移动单层。Ctrl+D 复制会保留原图层的分组，不会凭空新建组。</li>
               <li>「网格吸附」按步长对齐坐标；「智能吸附」拖动时贴齐其它图层的边 / 中心与画布中线，并显示红色参考线。「对齐」按钮把选中层或整组包围盒对齐到画布。撤销 / 重做支持 120 步（Ctrl+Z / Ctrl+Shift+Z）。「预览」隐藏所有控制点看最终效果。</li>
               <li><b>存到项目</b>写入 <code>build/fading_ui_layout.json</code>（dev 接口），换机器也不丢；<b>本地存档</b>存在浏览器里。</li>
