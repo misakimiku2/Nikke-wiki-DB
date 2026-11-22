@@ -195,7 +195,9 @@
   position: absolute; left: 0; top: -22px; white-space: nowrap;
   padding: 2px 6px; font: 800 9px ui-monospace, "Microsoft YaHei", monospace;
   color: #06141a; background: #ffb020;
+  pointer-events: auto; cursor: move;
 }
+.fu-group-box-tag:active { cursor: grabbing; }
 .fu-group-pivot {
   position: absolute; left: 50%; top: 50%; width: 0; height: 0;
   border-left: 7px solid transparent; border-right: 7px solid transparent;
