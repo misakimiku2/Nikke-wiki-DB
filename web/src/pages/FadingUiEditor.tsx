@@ -1308,6 +1308,7 @@ export default function FadingUiEditor() {
                         {l.kind === 'text' && editingText !== l.id ? l.text : null}
                       </div>
                       <div className={`fu-layer${isSel ? ' is-sel' : ''}${nine ? ' nine-mode' : ''}`}
+                        data-layer-id={l.id}
                         style={{ ...layerBoxStyle(l), zIndex: 10000 + l.z }}
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => onLayerDown(e, l)}
@@ -1366,10 +1367,23 @@ export default function FadingUiEditor() {
                   <div className="fu-group-box" style={{
                     left: groupBox.x, top: groupBox.y,
                     width: groupBox.r - groupBox.x, height: groupBox.b - groupBox.y,
-                  }}>
-                    <span className="fu-group-box-tag" title="拖动整组移动（组内的单个图层请直接拖图层本身）"
+                  }}
+                    onPointerDown={(e) => {
+                      e.preventDefault()
+                      onGroupMoveDown(e)
+                    }}
+                    onDoubleClick={(e) => {
+                      // 组框盖住图层时，双击框内某一层可退出组模式并选中该层
+                      const box = e.currentTarget as HTMLElement
+                      box.style.pointerEvents = 'none'
+                      const hit = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null
+                      box.style.pointerEvents = ''
+                      const id = hit?.closest('.fu-layer')?.getAttribute('data-layer-id')
+                      if (id) { selectOnly(id); setSelectedGroup(null) }
+                    }}>
+                    <span className="fu-group-box-tag" title="拖框内任意位置移动整组；双击框内某个图层可编辑该层"
                       onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onGroupMoveDown(e) }}>
-                      📁 {selectedGroup} · {groupMembers.length} 层（拖此处移动整组）</span>
+                      📁 {selectedGroup} · {groupMembers.length} 层（拖框内移动整组 · 双击某层编辑单层）</span>
                     <span className="fu-group-pivot" title="旋转支点：包围盒中心" />
                     {HANDLES.map((h) => (
                       <span key={h} className={`fu-handle fu-h-${h}`}
@@ -1650,8 +1664,8 @@ export default function FadingUiEditor() {
               <li>画布里拖动图层移动，八个角点缩放（按住 <b>Shift</b> 等比缩放，组也一样），顶部 <b>⟳</b> 旋转（按住 Shift 吸附 15°）。文字图层<b>双击</b>可直接在画布上编辑（Esc / Ctrl+Enter 结束）。右侧属性面板可输入精确数值。</li>
               <li>左侧「↺ 骨架模板」= 载入一份按原截图比例预摆好的剧情页脚手架（纸张、夹子、藤蔓、标题条、正文、选项条、状态栏…约 28 层），在它上面微调比从零开始快。会先弹窗确认，旧布局可 Ctrl+Z 找回。</li>
               <li><b>多选与编组</b>：图层面板里 <b>Ctrl + 左键</b> 多选，面板顶部点「＋编组」或按 <b>Ctrl+G</b> 即可把选中层编成组（「解组」解散）。多选后可一起删除、复制（副本自动成组）、对齐、调层级。单选时属性面板的「所属组」也能填名字编组。</li>
-              <li><b>组整体变换</b>：点击图层面板的组名（📁）选中整组，画布上出现**整组虚线包围盒**；拖橙色标题条移动整组，8 个缩放手柄缩放整组，⟳ 旋转整组（中心十字是支点）。右侧属性面板切换为组属性（组名、X/Y/宽/高、复制/解散/删除整组）。</li>
-              <li><b>图层关系</b>：拖动组内某一层只会移动那一层（多选时一起动），不会带动整组；要动整组请用上面的组包围盒。组可折叠、整组复制/解散/删除，拖动行可调整层级。<b>对齐</b>按钮把选中集合或整组包围盒对齐到画布。</li>
+              <li><b>组整体变换</b>：点击图层面板的组名（📁）选中整组，画布上出现**整组虚线包围盒**；拖框内任意位置移动整组，8 个缩放手柄缩放整组，⟳ 旋转整组（中心十字是支点）。右侧属性面板切换为组属性。</li>
+              <li><b>编辑组内单层</b>：组框会盖住组内图层，选中组时请<b>双击框内某个图层</b>退出组模式并选中它（或直接点右侧图层面板里的行）；之后拖该层就只动它。未选中组时，拖图层本来就只移动单层。</li>
               <li>「网格吸附」按步长对齐坐标；「智能吸附」拖动时贴齐其它图层的边 / 中心与画布中线，并显示红色参考线。「对齐」按钮把选中层或整组包围盒对齐到画布。撤销 / 重做支持 120 步（Ctrl+Z / Ctrl+Shift+Z）。「预览」隐藏所有控制点看最终效果。</li>
               <li><b>存到项目</b>写入 <code>build/fading_ui_layout.json</code>（dev 接口），换机器也不丢；<b>本地存档</b>存在浏览器里。</li>
               <li>拼好后点 <b>导出 JSON</b> 把文件发我，我就能按精确坐标/尺寸改 <code>fading.css</code>，不再靠截图猜。</li>
