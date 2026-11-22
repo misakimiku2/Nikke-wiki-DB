@@ -29,6 +29,9 @@ fi
 echo "== 构建 =="
 (cd "$ROOT/web" && npm run build)
 
+echo "== dist 清理（dev-only 后台素材 / 裁剪指纹 / 未引用的中档图）=="
+python "$ROOT/build/prune_dist.py"
+
 echo "== dist 体检（Pages 免费版：单文件 25 MiB / 单次 20000 文件）=="
 OVER="$(find "$DIST" -type f -size +26214399c | head -5)"
 if [ -n "$OVER" ]; then

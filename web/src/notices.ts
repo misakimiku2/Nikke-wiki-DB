@@ -28,6 +28,43 @@ export type Notice = {
 
 export const NOTICES: Notice[] = [
   {
+    slug: 'cg-covers-refresh',
+    date: '2026-11-22',
+    tag: '数据',
+    title: {
+      zh: 'CG 与剧情封面全面核对更新',
+      en: 'CG and story cover audit update',
+      ko: 'CG 및 스토리 커버 전면 점검 업데이트',
+      ja: 'CGとストーリーカバーの全面見直し',
+    },
+    body: [
+      {
+        zh: '剧情目录封面全面更新：主线与活动剧情的封面已完成人工筛选与裁剪；妮姬个人剧情（含宝物剧情）共 184 卷补上对应角色的大招待机定格帧封面，翻目录时一眼就能认出是哪位妮姬。',
+        en: 'Story directory covers refreshed: main and event covers have been hand-picked and cropped, and 184 Nikke personal / treasure stories now use their own character burst-idle still as the cover — easy to tell who is who at a glance.',
+        ko: '스토리 목록 커버를 전면 갱신했습니다: 메인·이벤트 커버는 직접 선별·크롭했고, 니케 개인·보물 스토리 184권에는 해당 캐릭터의 버스트 대기 정지 프레임을 커버로 적용해 목록에서 누구인지 바로 알아볼 수 있습니다.',
+        ja: 'ストーリー一覧のカバーを全面更新しました：メイン・イベントは手動で選定・トリミングし、ニケの個人・宝物ストーリー184件には各キャラのバースト待機静止画をカバーとして適用。一覧を見ただけでも誰の話かすぐ分かります。',
+      },
+      {
+        zh: 'CG 查看器：角色大招过场改为实时 Spine 播放，使用游戏里播完后停留的 idle 待机姿势，并还原多层场景底图；静态定格帧也整体重渲，去掉旧图的灰色接缝。新增运镜开关、场景图层开关与目录筛选。',
+        en: 'CG viewer: character burst cut-ins now play as live Spine animations using the in-game idle pose that remains after the burst, with layered scene backgrounds restored. Static stills were re-rendered to remove the old grey seams; camera-follow, scene-layer toggles and directory filtering are added.',
+        ko: 'CG 뷰어: 캐릭터 버스트 컷인이 실시간 Spine 애니메이션으로 재생되며, 게임에서 버스트 후 유지되는 idle 포즈와 다층 배경이 재현됩니다. 정적 프레임도 전체 재렌더링해 회색 이음새를 제거했고, 카메라 추적·레이어 토글·목록 필터를 추가했습니다.',
+        ja: 'CGビューア：キャラのバーストカットインがリアルタイムSpine再生になり、ゲームでバースト後に留まるidleポーズと多層の背景が再現されます。静止画も全面再レンダリングして古い灰色の継ぎ目を除去。カメラ追従・レイヤー切り替え・一覧フィルターも追加しました。',
+      },
+      {
+        zh: '剧情阅读器：场景切换（黑屏 / 清空 / 换景）按游戏实际流程呈现；移除观感突兀的纯色转场板，CG 切换改为叠化过渡，并修复带选项跳转落点空白等问题。',
+        en: 'Story reader: scene changes (blackout / clear / scene switch) now follow the actual game flow; abrupt solid-colour transition panels are removed, CG changes use a crossfade, and blank landing spots after choice jumps are fixed.',
+        ko: '스토리 리더: 장면 전환(블랙아웃 / 초기화 / 장면 변경)이 게임 실제 흐름대로 표시됩니다. 어색한 단색 전환 패널을 제거하고 CG 전환을 크로스페이드로 바꿨으며, 선택지 점프 후 빈 화면 문제도 수정했습니다.',
+        ja: 'ストーリーリーダー：場面転換（暗転／クリア／背景切替）がゲームの実際の流れどおりに表示されます。違和感のあった単色トランジションを廃し、CG切り替えをクロスフェードに変更。選択肢ジャンプ後の空白も修正しました。',
+      },
+      {
+        zh: 'CG 数据核对：补采演出位遗漏的动态 CG，修复文件名别名导致的 26 张缺图，并持续校正 CG 与剧情行、说话人、场景的对应关系。',
+        en: 'CG audit: missed dynamic CGs in cut-in slots were collected, 26 missing images caused by filename aliases were fixed, and CG-to-line / speaker / scene mappings keep being verified.',
+        ko: 'CG 점검: 컷인 슬롯에서 누락된 동적 CG를 보완하고, 파일명 별칭으로 빠졌던 26장을 복구했습니다. CG와 대사·화자·장면의 대응 관계도 계속 교정 중입니다.',
+        ja: 'CGの見直し：カットイン枠で漏れていた動的CGを補完し、ファイル名の別名で欠けていた26枚を復旧。CGと台詞・話者・場面の対応関係も継続して校正しています。',
+      },
+    ],
+  },
+  {
     slug: 'site-i18n-full',
     date: '2026-11-21',
     tag: '功能',
