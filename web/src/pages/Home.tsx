@@ -44,7 +44,7 @@ const WALL: { to: string; idx: string; titleKey: UIKey; key: string; unit: UIKey
     titleKey: 'char_title',
     key: 'characters',
     unit: 'home_wall_chars',
-    img: '/img/m/524f083c9774e606.webp?v=2',
+    img: '/img/m/932ce4ca194e7742.webp?v=2',
   },
   {
     to: '/story',
