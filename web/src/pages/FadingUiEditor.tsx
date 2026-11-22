@@ -228,6 +228,7 @@ export default function FadingUiEditor() {
   /** 正在画布上就地编辑的文字图层 id */
   const [editingText, setEditingText] = useState<string | null>(null)
   const blendRef = useRef<HTMLSelectElement>(null)
+  const groupBlendRef = useRef<HTMLSelectElement>(null)
   const [spaceDown, setSpaceDown] = useState(false)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [panning, setPanning] = useState(false)
@@ -251,6 +252,20 @@ export default function FadingUiEditor() {
     const b = Math.max(...groupMembers.map((l) => l.y + l.h))
     return { x, y, r, b }
   }, [groupMembers])
+
+  // 组混合模式下拉框：同样支持悬停滚轮切换
+  useEffect(() => {
+    const el = groupBlendRef.current
+    if (!el || !selectedGroup) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const i = BLENDS.indexOf(el.value)
+      const next = Math.max(0, Math.min(BLENDS.length - 1, i + (e.deltaY > 0 ? 1 : -1)))
+      if (BLENDS[next] !== el.value) patchGroup({ blend: BLENDS[next] })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [selectedGroup])
 
   // 混合模式下拉框：悬停时用滚轮切换（原生监听 + passive:false，避免页面跟着滚）
   useEffect(() => {
@@ -574,20 +589,19 @@ export default function FadingUiEditor() {
     apply((l) => ({ ...l, layers: [...l.layers, copy] }))
     selectOnly(copy.id)
   }
-  /** 复制所有选中图层，副本自动编为同一组 */
+  /** 复制所有选中图层：保留原图层各自的分组 */
   function duplicateSelected() {
     const ids = selectedIds()
     const src = layout.layers.filter((l) => ids.includes(l.id))
     if (!src.length) return
-    const groupName = `复制组 ${groupNames.length + 1}`
     const copies = src.map((m) => ({
       ...m, id: uid(), name: `${m.name} 副本`, x: m.x + 12, y: m.y + 12,
-      z: layout.layers.length + m.z, group: groupName,
+      z: layout.layers.length + m.z,
     })) as Layer[]
     apply((l) => ({ ...l, layers: [...l.layers, ...copies] }))
-    setSelected(copies[0].id)
+    selectOnly(copies[0].id)
     setMulti(copies.slice(1).map((c) => c.id))
-    showToast(`已复制 ${copies.length} 个图层，并编入「${groupName}」`)
+    showToast(`已复制 ${copies.length} 个图层`)
   }
   /** 批量调层级：选中的图层作为一整块移动 */
   function moveZ(ids: string[], dir: 'up' | 'down' | 'top' | 'bottom') {
@@ -611,6 +625,18 @@ export default function FadingUiEditor() {
   const groupNames = useMemo(() =>
     Array.from(new Set(layout.layers.map((l) => l.group).filter(Boolean))), [layout.layers])
 
+  /** 批量修改组内所有图层的属性（混合模式 / 透明度等） */
+  function patchGroup(patch: Partial<Layer>) {
+    if (!selectedGroup) return
+    apply((cur) => ({ ...cur, layers: cur.layers.map((x) =>
+      (x.group === selectedGroup ? { ...x, ...patch } as Layer : x)) }))
+  }
+  /** 只改组内图片图层的填充模式 */
+  function patchGroupImages(patch: Partial<ImageLayer>) {
+    if (!selectedGroup) return
+    apply((cur) => ({ ...cur, layers: cur.layers.map((x) =>
+      (x.group === selectedGroup && x.kind === 'image' ? { ...x, ...patch } as ImageLayer : x)) }))
+  }
   function renameGroup(oldName: string, newName: string) {
     if (!newName.trim() || newName === oldName) return
     apply((l) => ({ ...l, layers: l.layers.map((x) =>
@@ -1454,6 +1480,25 @@ export default function FadingUiEditor() {
                 <NumField label="宽" value={groupBox.r - groupBox.x} onChange={(v) => applyGroupBox({ ...groupBox, r: groupBox.x + Math.max(2, v) })} />
                 <NumField label="高" value={groupBox.b - groupBox.y} onChange={(v) => applyGroupBox({ ...groupBox, b: groupBox.y + Math.max(2, v) })} />
               </div>
+              <label className="fu-field"><span>组混合模式 · 悬停滚轮可切换</span>
+                <select ref={groupBlendRef} className="fu-input" title="悬停此处滚动滚轮即可切换组内所有图层的混合模式"
+                  value={groupMembers[0]?.blend || 'normal'}
+                  onChange={(e) => patchGroup({ blend: e.target.value })}>
+                  {BLENDS.map((b) => <option key={b} value={b}>{b}</option>)}
+                </select></label>
+              <label className="fu-field"><span>组透明度</span>
+                <input type="range" min="0" max="1" step="0.01" value={groupMembers[0]?.opacity ?? 1}
+                  onChange={(e) => patchGroup({ opacity: Number(e.target.value) })} />
+                <em>{Math.round((groupMembers[0]?.opacity ?? 1) * 100)}%</em></label>
+              <label className="fu-field"><span>组内图片填充模式</span>
+                <select className="fu-input" value={groupMembers.find((l) => l.kind === 'image')?.fit ?? 'fill'}
+                  onChange={(e) => patchGroupImages({ fit: e.target.value as ImageLayer['fit'] })}>
+                  <option value="fill">拉伸 fill</option>
+                  <option value="contain">适应 contain</option>
+                  <option value="cover">裁切 cover</option>
+                  <option value="sliced">九宫格 sliced</option>
+                  <option value="tiled">平铺 tiled</option>
+                </select></label>
               <div className="fu-zrow">
                 <button className="fu-btn" onClick={() => duplicateGroup(selectedGroup)}>复制整组</button>
                 <button className="fu-btn" onClick={() => ungroup(selectedGroup)}>解散组</button>
@@ -1665,7 +1710,8 @@ export default function FadingUiEditor() {
               <li>左侧「↺ 骨架模板」= 载入一份按原截图比例预摆好的剧情页脚手架（纸张、夹子、藤蔓、标题条、正文、选项条、状态栏…约 28 层），在它上面微调比从零开始快。会先弹窗确认，旧布局可 Ctrl+Z 找回。</li>
               <li><b>多选与编组</b>：图层面板里 <b>Ctrl + 左键</b> 多选，面板顶部点「＋编组」或按 <b>Ctrl+G</b> 即可把选中层编成组（「解组」解散）。多选后可一起删除、复制（副本自动成组）、对齐、调层级。单选时属性面板的「所属组」也能填名字编组。</li>
               <li><b>组整体变换</b>：点击图层面板的组名（📁）选中整组，画布上出现**整组虚线包围盒**；拖框内任意位置移动整组，8 个缩放手柄缩放整组，⟳ 旋转整组（中心十字是支点）。右侧属性面板切换为组属性。</li>
-              <li><b>编辑组内单层</b>：组框会盖住组内图层，选中组时请<b>双击框内某个图层</b>退出组模式并选中它（或直接点右侧图层面板里的行）；之后拖该层就只动它。未选中组时，拖图层本来就只移动单层。</li>
+              <li><b>组图层模式</b>：选中组后，属性面板可统一调整组内所有图层的混合模式（悬停滚轮可切换）、透明度，以及组内图片的填充模式（fill / contain / cover / sliced / tiled）。</li>
+              <li><b>编辑组内单层</b>：组框会盖住组内图层，选中组时请<b>双击框内某个图层</b>退出组模式并选中它（或直接点右侧图层面板里的行）；之后拖该层就只动它。未选中组时，拖图层本来就只移动单层。Ctrl+D 复制会保留原图层的分组，不会凭空新建组。</li>
               <li>「网格吸附」按步长对齐坐标；「智能吸附」拖动时贴齐其它图层的边 / 中心与画布中线，并显示红色参考线。「对齐」按钮把选中层或整组包围盒对齐到画布。撤销 / 重做支持 120 步（Ctrl+Z / Ctrl+Shift+Z）。「预览」隐藏所有控制点看最终效果。</li>
               <li><b>存到项目</b>写入 <code>build/fading_ui_layout.json</code>（dev 接口），换机器也不丢；<b>本地存档</b>存在浏览器里。</li>
               <li>拼好后点 <b>导出 JSON</b> 把文件发我，我就能按精确坐标/尺寸改 <code>fading.css</code>，不再靠截图猜。</li>
