@@ -194,7 +194,8 @@ python scripts/export_fading_ui.py            # --force 可覆盖
 | 路线锁定的 TrueEnd | 依据「需看完前记录结局」的设定与 locale 文案，选用 8101/8201；静态表未发现明确字段。 |
 | 背景图 | 小游戏无专用背景表，页面无 CG 时沿用上一幕并做模糊压暗。 |
 | BGM / SFX | 数据已导出（页面 `bgm`、选项 `sfx`），但当前未接入音频播放。 |
-| UI 布局 | CSS 按截图比例还原，非原版 Unity 布局文件直接转换。 |
+| UI 布局 | 游戏页仍是 CSS 按截图比例还原；新增了 dev-only 可视化编辑器用于精确拼图，产出的坐标/尺寸/九宫格参数可导出 JSON/CSS 供替换（见第 9 节）。 |
+| 九宫格 / 平铺 | 原版 Sprite 的 border 已导出（见第 9 节）；编辑器已支持 sliced（.9 图）/ tiled，但游戏页 CSS 尚未整体切换过去。 |
 
 ---
 
@@ -217,3 +218,41 @@ python scripts/export_fading_ui.py            # --force 可覆盖
 | nikke-web | `0f14f5d` | 初版页面接入 |
 | nikke-web | `acd5ea5` | 按真实条件解锁地点与路线 |
 | nikke-web | `2e8f9b5` | 精确 HINT 条件 + 清档按钮 |
+
+---
+
+## 9. UI 拼图编辑器（dev-only）
+
+靠截图和文字描述反复猜坐标效率太低，因此加了一个网页端可视化编辑器，用真实素材把画面「拼」出来。
+
+- 入口：`/game/fadingaffection/editor`（仅 `import.meta.env.DEV`，生产构建会被摇掉；游戏页顶部也有 dev 入口）
+- 完整操作说明：`docs/fading-ui-editor.md`
+- 原版九宫格机制调查：`docs/fading-ui-sprite-metadata.md`
+
+### 能力
+
+| 能力 | 说明 |
+|---|---|
+| 素材库 | 自动列出 `public/fading_ui/` 全部 244 张 PNG（按文件名前缀分组、搜索、悬停看原始尺寸与填充方式）。 |
+| 图层 | 图片 / 文字 / 色块；x/y/宽高/旋转/透明度/圆角/混合模式；拖入素材按元数据自动选填充方式。 |
+| 图层关系 | Ctrl 多选、编组/解组、拖动排序、拖进/拖出组；单选组时画布出现整组包围盒，可整组缩放/旋转。 |
+| 九宫格 | 原版 Sprite border 来自 bundle（如 `marian_bg_paper` 20/20/20/20）。顶部「自由 / .9 图」切换；.9 图模式下拖橙色切线直接改 border；Shift 等比缩放。 |
+| 视图 | 空格/中键平移、Ctrl+滚轮以鼠标为中心缩放、网格吸附 + 智能吸附（贴齐其它图层边/中心并显示参考线）、6 向对齐。 |
+| 编辑效率 | 双击文字就地编辑；撤销/重做 120 步；骨架模板一键载入 28 层预摆脚手架；本地存档 + 项目落盘。 |
+| 导出 | JSON（完整布局）+ CSS（`border-image` / `background-repeat` 等），供后续精确改 `fading.css`。 |
+
+### 数据链路
+
+```
+nikke_extract/scripts/export_fading_ui.py
+   ├─ Texture2D ──> public/fading_ui/*.png
+   └─ Sprite ─────> build/fading_ui_sprites.json（border/rect/pivot）
+                         │
+web/vite.config.ts  ──> public/data/fading_ui_manifest.json（合并 border + 平铺标记）
+                         │
+web/src/pages/FadingUiEditor.tsx  ──> 导出 JSON / CSS
+                         │
+                    build/fading_ui_layout.json（「存到项目」，可入库）
+```
+
+> 注意：带 border 的素材一律按 .9 图处理，不能整张按网格平铺；只有零 border 的无缝纹理（木纹、纸纹噪波、分隔笔刷）才用 tiled。

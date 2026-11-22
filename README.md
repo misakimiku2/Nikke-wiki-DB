@@ -108,9 +108,11 @@ node build/export_story_sms.mjs           # → public/data/story_sms.json 剧�
 
 # FADING AFFECTION 小游戏（在上游 nikke_extract 工程里执行，数据直接写到本站）
 # python ../nikke_extract/scripts/export_fadingaffection.py   # → public/data/fadingaffection.json
-# python ../nikke_extract/scripts/export_fading_ui.py         # → public/fading_ui/*.png（原版 UI 纹理）
+# python ../nikke_extract/scripts/export_fading_ui.py         # → public/fading_ui/*.png + build/fading_ui_sprites.json（含九宫格 border）
 # 对应前端路由 /game/fadingaffection（web/src/pages/FadingAffection.tsx + fading.css）
+# dev-only UI 拼图编辑器：/game/fadingaffection/editor（拖素材、编组、九宫格切线、导出 JSON/CSS）
 # 还原细节（数据表格式、UI 素材、解锁条件、已知近似）见 docs/fading-affection.md
+# 编辑器用法 docs/fading-ui-editor.md；原版九宫格机制 docs/fading-ui-sprite-metadata.md
 
 # 4.5 剧情卡封面（必须排在 export_web.py 之后：它会写回 story_index.json 的 cover）
 python build/build_story_covers.py            # 评分选图 + 生成 public/cover/

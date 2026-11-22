@@ -178,6 +178,7 @@ export default function FadingAffection() {
               <div className="fad-actions">
                 <button className="fad-tape-btn" onClick={() => setView('memories')}>记忆 {unlockedMemories.size}/{data.memories.length}</button>
                 <button className="fad-tape-btn" onClick={() => setView('endings')}>回想 {found.length}/{endings.length}</button>
+                {import.meta.env.DEV && <Link to="/game/fadingaffection/editor" className="fad-tape-btn">🛠 UI 编辑器</Link>}
                 <button className="fad-tape-btn fad-danger" onClick={() => {
                   if (window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) clearSave()
                 }}>⚠ 清除存档</button>
@@ -269,6 +270,7 @@ export default function FadingAffection() {
           <button className="fad-mini" onClick={() => setView('home')}>← 路线</button>
           <button className="fad-mini" onClick={() => setView('memories')}>记忆 {unlockedMemories.size}</button>
           <button className="fad-mini" onClick={() => setView('endings')}>回想 {found.length}</button>
+          {import.meta.env.DEV && <Link to="/game/fadingaffection/editor" className="fad-mini">UI 编辑</Link>}
           <button className="fad-mini" onClick={() => setMenu((v) => !v)}>☰</button>
           {menu && (
             <div className="fad-popover">

@@ -587,8 +587,128 @@ function coverUploadPlugin(): Plugin {
   }
 }
 
+/** FADING AFFECTION UI 编辑器：扫 public/fading_ui 的 PNG 生成素材清单，
+    编辑器据此列出全部原版 UI 纹理（含原始像素尺寸，拖入画布时按原尺寸摆放）。 */
+const FADING_UI_DIR = path.resolve(HERE, '../public/fading_ui')
+const FADING_UI_MANIFEST = path.resolve(HERE, '../public/data/fading_ui_manifest.json')
+/** 上游 export_fading_ui.py 导出的 Sprite 九宫格信息（border / rect / pivot） */
+const FADING_SPRITES = path.resolve(HERE, '../build/fading_ui_sprites.json')
+/** 只有「零 border 的无缝纹理」才按平铺处理。
+ *  重要：marian_bg_paper / marian_bg_book / marian_deco_line_* 等都有非零 border，
+ *  它们是九宫格（.9 图）素材，绝不能整张按网格平铺——四角和边缘必须保持原样。 */
+const FADING_TILED = /^(marian_ptn_|marian_texture_|marian_grd_2px$|marian_divider_0[23]$|marian_mask_map$|marian_shadow_line$)/i
+/** 编辑器「保存到项目」写这里，方便把拼好的布局入库；前端读取走 /api/fading-layout */
+const FADING_LAYOUT = path.resolve(HERE, '../build/fading_ui_layout.json')
+
+/** 只读 PNG 头 24 字节拿 IHDR 里的宽高，不引入图片解码依赖 */
+function pngSize(file: string): { w: number; h: number } {
+  try {
+    const buf = Buffer.alloc(24)
+    const fd = fs.openSync(file, 'r')
+    try { fs.readSync(fd, buf, 0, 24, 0) } finally { fs.closeSync(fd) }
+    if (buf.toString('ascii', 1, 4) !== 'PNG') return { w: 0, h: 0 }
+    return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) }
+  } catch {
+    return { w: 0, h: 0 }
+  }
+}
+
+function writeFadingUiManifest() {
+  let sprites: Record<string, { border?: number[]; rect?: number[]; pivot?: number[] }> = {}
+  try {
+    const raw = JSON.parse(fs.readFileSync(FADING_SPRITES, 'utf-8'))
+    sprites = raw.items || {}
+  } catch {
+    console.warn('[fading-ui] 没有 Sprite 元数据，九宫格功能不可用（运行 export_fading_ui.py 生成）')
+  }
+  let items: Array<{ n: string; w: number; h: number; border?: number[]; tiled?: boolean }> = []
+  try {
+    items = fs.readdirSync(FADING_UI_DIR)
+      .filter((f) => /\.png$/i.test(f) && !f.startsWith('.'))
+      .sort((a, b) => a.localeCompare(b))
+      .map((n) => {
+        const key = n.replace(/\.png$/i, '')
+        const sp = sprites[key]
+        const border = sp?.border?.map(Number) || [0, 0, 0, 0]
+        return {
+          n, ...pngSize(path.join(FADING_UI_DIR, n)),
+          border,
+          // 双保险：有 border 的素材一律不标记平铺
+          tiled: FADING_TILED.test(key) && border.every((v) => v === 0),
+        }
+      })
+  } catch (e) {
+    console.warn('[fading-ui] 扫描素材失败：', e)
+  }
+  fs.mkdirSync(path.dirname(FADING_UI_MANIFEST), { recursive: true })
+  fs.writeFileSync(FADING_UI_MANIFEST,
+    JSON.stringify({ count: items.length, items }, null, 2) + '\n', 'utf-8')
+}
+
+function fadingUiManifestPlugin(): Plugin {
+  return {
+    name: 'fading-ui-manifest',
+    configResolved() { writeFadingUiManifest() },
+    configureServer(server) {
+      server.watcher.add(FADING_UI_DIR)
+      server.watcher.add(FADING_SPRITES)
+      const onAssetChange = (file: string) => {
+        const abs = path.resolve(file)
+        if (abs.startsWith(FADING_UI_DIR + path.sep) || abs === FADING_SPRITES) {
+          writeFadingUiManifest()
+          server.ws.send({ type: 'full-reload' })
+        }
+      }
+      server.watcher.on('add', onAssetChange)
+      server.watcher.on('unlink', onAssetChange)
+      server.watcher.on('change', onAssetChange)
+    },
+  }
+}
+
+/** dev 接口：GET 读 build/fading_ui_layout.json，POST 全量写回。
+    与 /cg/albums 等编辑后台同款，仅 dev 存在；布局本身入 build/ 库。 */
+function fadingLayoutPlugin(): Plugin {
+  return {
+    name: 'fading-layout',
+    configureServer(server) {
+      server.middlewares.use('/api/fading-layout', (req, res) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8')
+        if (req.method === 'GET') {
+          try {
+            res.end(fs.readFileSync(FADING_LAYOUT, 'utf-8'))
+          } catch {
+            res.end(JSON.stringify({ ok: false, layout: null }))
+          }
+          return
+        }
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (c) => { body += c })
+          req.on('end', () => {
+            try {
+              const d = JSON.parse(body || '{}')
+              if (!d.layout || typeof d.layout !== 'object') throw new Error('缺少 layout')
+              fs.mkdirSync(path.dirname(FADING_LAYOUT), { recursive: true })
+              fs.writeFileSync(FADING_LAYOUT,
+                JSON.stringify(d.layout, null, 2) + '\n', 'utf-8')
+              res.end(JSON.stringify({ ok: true, path: 'build/fading_ui_layout.json' }))
+            } catch (e) {
+              res.statusCode = 400
+              res.end(JSON.stringify({ ok: false, error: String(e) }))
+            }
+          })
+          return
+        }
+        res.statusCode = 405
+        res.end(JSON.stringify({ ok: false }))
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), coverUploadPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets()],
+  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), coverUploadPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets(), fadingUiManifestPlugin(), fadingLayoutPlugin()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',

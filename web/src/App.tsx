@@ -13,6 +13,7 @@ import CgView from './pages/CgView'
 import CgAlbums from './pages/CgAlbums'
 import StoryCovers from './pages/StoryCovers'
 import FadingAffection from './pages/FadingAffection'
+import FadingUiEditor from './pages/FadingUiEditor'
 import { applyTheme, getInitialTheme, type Theme } from './theme'
 import { LANGS, useLang } from './lang'
 import { useUI, type UIKey } from './ui'
@@ -196,6 +197,9 @@ export default function App() {
         <Route path="/cg" element={<CgGallery />} />
         <Route path="/cg/:name" element={<CgView />} />
         <Route path="/game/fadingaffection" element={<FadingAffection />} />
+        {/* UI 拼图编辑器同样是 dev-only：把原版 UI 纹理拖到画布上肉眼拼位置，
+            导出 JSON / CSS 后再精确落到 fading.css，省去靠截图描述的往返 */}
+        {import.meta.env.DEV && <Route path="/game/fadingaffection/editor" element={<FadingUiEditor />} />}
         {/* 图集整理后台只存在于 dev：import.meta.env.DEV 在生产构建里被静态替换成
             false，这条路由（连同未用到的导入）会被整体摇掉，正式站点没有入口 */}
         {import.meta.env.DEV && <Route path="/cg/albums" element={<CgAlbums />} />}
