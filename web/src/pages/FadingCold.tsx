@@ -4,20 +4,23 @@
  * 主题跟随站点 <html data-theme>（light = 灰白纸张，dark = 冷钢灰）。
  */
 import type {
-  FadingData, FadingRoute, FadingPage, FadingStatus, FadingCost, FadingChoice, FadingFirst, FadingMemory,
+  FadingData, FadingRoute, FadingPage, FadingMemory,
 } from '../fadingData'
 import { fadingCgSrc } from '../fadingData'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import './fading-cold.css'
 
+/** 选项/标记的级联序号交给 CSS 变量 */
+const order = (i: number) => ({ '--i': String(i) }) as CSSProperties
+
 /* ---------------- 内联 SVG 图标（stroke 用 currentColor，自动跟随主题） ---------------- */
-type IconName = 'file' | 'target' | 'chip' | 'warn' | 'hp' | 'food' | 'erosion' | 'mem'
+type IconName = 'file' | 'target' | 'chip' | 'hp' | 'food' | 'erosion' | 'mem'
   | 'arrow' | 'lock' | 'star' | 'play' | 'refresh' | 'book' | 'close' | 'eye' | 'mappin' | 'back' | 'exit'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h4M9 12h6M9 16h6" /></>,
   target: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="M12 1v4M12 19v4M1 12h4M19 12h4" /></>,
   chip: <><rect x="5" y="5" width="14" height="14" rx="1" /><rect x="9" y="9" width="6" height="6" /><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3" /></>,
-  warn: <><path d="M12 3L2 20h20z" /><path d="M12 9v5M12 17h.01" /></>,
   hp: <path d="M12 21s-7-4.6-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 11c0 5.4-7 10-7 10z" />,
   food: <><path d="M4 11h16l-1.5 9h-13z" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></>,
   erosion: <><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /></>,
@@ -58,13 +61,13 @@ function RegionMap({ choices }: { choices: ColdChoice[] }) {
       <div className="cf-map-frame">
         <img src={MAP_SRC} alt="地区地图" />
         <span className="cf-map-label">FIELD MAP / 旧市地区域</span>
-        {choices.map((c) => {
+        {choices.map((c, i) => {
           const pos = REGION_POS[c.text] ?? { x: 50, y: 50 }
           return (
             <button
               key={c.key}
               className={`cf-marker ${c.locked ? 'locked' : ''}`}
-              style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
+              style={{ left: `${pos.x}%`, top: `${pos.y}%`, ...order(i) }}
               disabled={c.locked}
               onClick={() => c.onClick()}
               title={c.text}
@@ -80,13 +83,156 @@ function RegionMap({ choices }: { choices: ColdChoice[] }) {
   )
 }
 
+/** 打字机：约 42 字/秒逐字出现，全部出完才放行选项；点正文可立刻补完。
+ *  用 rAF 按已耗时间推算字数——被后台节流时不会累积错位，回到前台直接补到正确位置。 */
+const TYPE_MS = 24
+
+function useTypewriter(text: string, sceneKey: number) {
+  const [n, setN] = useState(text.length)
+  const stopped = useRef(false)
+  useEffect(() => {
+    stopped.current = false
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setN(text.length); return }
+    setN(0)
+    const t0 = performance.now()
+    let raf = 0
+    let guard = 0
+    const step = (now: number) => {
+      if (stopped.current) return
+      const v = Math.min(Math.floor((now - t0) / TYPE_MS), text.length)
+      setN(v)
+      if (v < text.length) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    /* 后台页面不跑 rAF，兜底把剩余文字补齐，免得选项永远出不来 */
+    guard = window.setTimeout(() => { stopped.current = true; setN(text.length) }, text.length * TYPE_MS + 400)
+    return () => { cancelAnimationFrame(raf); clearTimeout(guard) }
+  }, [text, sceneKey])
+  return {
+    shown: n >= text.length ? text : text.slice(0, n),
+    done: n >= text.length,
+    skip: () => { stopped.current = true; setN(text.length) },
+  }
+}
+
+/** 结局类型：按页号前缀（6xxx 死亡 / 7xxx 侵蚀 / 8xxx TRUE / 9xxx HIDDEN） */
+function endKind(id: number | null): string {
+  if (id == null) return 'death'
+  if (id >= 9000) return 'hidden'
+  if (id >= 8000) return 'true'
+  if (id >= 7000) return 'erosion'
+  return 'death'
+}
+
+/** 干扰方块：位置与尺寸都用百分比，既当可见色块，也当内容副本的遮罩矩形 */
+type Blk = { id: number; x: number; y: number; w: number; h: number; o: number; c: string; until: number }
+
+/** rAF + 时间片生成方块（setInterval 在后台窗口会被节流到秒级，实测差 60 倍）。
+ *  每块自己抽签：尺寸分大中小三档，寿命 60~300ms 各自不同；在场数量 1~13 也是随机重抽的。
+ *  整体上再套一层随机断续——亮 0.9~2.2s、灭 0.22~0.74s，灭时全部清空。 */
+function useBlocks(active: boolean, sceneKey: number): Blk[] {
+  const [blks, setBlks] = useState<Blk[]>([])
+  useEffect(() => {
+    if (!active || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setBlks([]); return }
+    const t0 = Date.now()
+    let id = 0, raf = 0, alive = true, on = true, phaseEnd = t0 + 900, want = 4, wantEnd = 0
+    const mk = (now: number): Blk => {
+      const pick = Math.random()                                  // 尺寸档位随机
+      const w = pick < 0.3 ? 26 + Math.random() * 46 : pick < 0.62 ? 9 + Math.random() * 18 : 2 + Math.random() * 7
+      const h = pick < 0.3 ? 2.2 + Math.random() * 4.6 : pick < 0.62 ? 1.1 + Math.random() * 2.6 : 0.5 + Math.random() * 1.4
+      const r = Math.random()
+      // 约 1/5 专门骑在面板四边上，可以溢出内容区去干扰边框线
+      const edge = Math.random() < 0.2
+      let x = 2 + Math.random() * (96 - w - 2)
+      let y = 2 + Math.random() * (96 - h - 2)
+      if (edge) {
+        const side = Math.floor(Math.random() * 4)
+        if (side === 0) x = -3
+        else if (side === 1) x = 99 - w
+        else if (side === 2) y = -3
+        else y = 99 - h
+      }
+      return {
+        id: ++id,
+        x, y,
+        w, h,
+        o: 0.45 + Math.random() * 0.5,
+        c: r < 0.2 ? 'r' : r < 0.45 ? 'g' : '',
+        until: now + 60 + Math.random() * 240,
+      }
+    }
+    const tick = () => {
+      if (!alive) return
+      const now = Date.now()
+      if (now >= phaseEnd) {
+        on = !on
+        phaseEnd = now + (on ? 900 + Math.random() * 1300 : 220 + Math.random() * 520)
+        if (!on) setBlks([])
+      }
+      if (on) {
+        // 在场数量本身也是随机的：隔 260~700ms 重新抽一次，有时一两块有时十几块
+        if (now >= wantEnd) { want = 1 + Math.floor(Math.random() * 13); wantEnd = now + 260 + Math.random() * 440 }
+        setBlks((prev) => {
+          const kept = prev.filter((b) => b.until > now)
+          if (kept.length === prev.length && kept.length >= want) return prev
+          while (kept.length < want) kept.push(mk(now))
+          return kept.length > 16 ? kept.slice(0, 16) : kept
+        })
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { alive = false; cancelAnimationFrame(raf) }
+  }, [active, sceneKey])
+  return blks
+}
+
+/** 方块矩形拼成 SVG 遮罩：只有这些矩形覆盖到的内容副本会显示出来。
+ *  骑边的方块坐标会溢出，遮罩按 0~100 裁一下，贴到面板边缘为止。 */
+function maskOf(bs: Blk[]): CSSProperties {
+  const cl = (v: number) => Math.max(0, Math.min(100, v))
+  const rects = bs.map((b) => {
+    const x = cl(b.x), y = cl(b.y), w = cl(b.x + b.w) - x, h = cl(b.y + b.h) - y
+    return w <= 0 || h <= 0 ? '' : `<rect x='${x.toFixed(1)}' y='${y.toFixed(1)}' `
+      + `width='${w.toFixed(1)}' height='${h.toFixed(1)}'/>`
+  }).join('')
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' `
+    + `preserveAspectRatio='none'><g fill='#fff'>${rects}</g></svg>`
+  const u = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
+  return {
+    maskImage: u, WebkitMaskImage: u, maskSize: '100% 100%',
+    WebkitMaskSize: '100% 100%', maskRepeat: 'no-repeat', WebkitMaskRepeat: 'no-repeat',
+  } as CSSProperties
+}
+
+/** 干扰层：位移滤镜定义（给内容副本用）+ 方块色块 + 一次性撕裂 + 噪波 */
+function EndFx({ kind, blks }: { kind: string; blks: Blk[] }) {
+  return (
+    <div className={`cf-endfx cf-endfx-${kind}`} aria-hidden="true">
+      <svg className="fx-defs" width="0" height="0">
+        <filter id="fx-tear" x="-10%" y="-10%" width="120%" height="120%">
+          {/* 横向几乎不变、纵向约 20px 一条 → 位移按粗水平条带整体错位，是撕裂不是磨砂 */}
+          <feTurbulence type="fractalNoise" baseFrequency="0.002 0.05" numOctaves="1" seed="3" result="n">
+            <animate attributeName="seed" values="2;9;17;4;12;6" dur="0.28s" repeatCount="indefinite" calcMode="discrete" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="n" xChannelSelector="R" yChannelSelector="G" scale="26" />
+        </filter>
+      </svg>
+      {blks.map((b) => (
+        <i key={b.id} className={`fx-blk ${b.c}`}
+          style={{ left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%`, opacity: b.o }} />
+      ))}
+      <i className="fx-slice" /><i className="fx-noise" />
+    </div>
+  )
+}
+
 /* ---------------- 组件 props ---------------- */
 export type ColdView = 'home' | 'game' | 'endings' | 'memories'
 export type ColdChoice = {
   key: string | number
   index: string
   text: string
-  cost?: string
   hint?: string
   locked?: boolean
   lockText?: string
@@ -102,8 +248,14 @@ export type FadingColdProps = {
   cgSrc: string | null
   cgAlt?: string
   isRegionSelect?: boolean
-  status: FadingStatus
-  statusMax: FadingStatus
+  /** 幕次：每换一幕 +1，用来重置淡入 / 打字 / 选项级联动画 */
+  sceneKey: number
+  /** 正在淡出的范围：page 只淡正文/CG/选项，view 淡整块正文区（外框、标题、状态栏不动） */
+  fade: 'none' | 'page' | 'view'
+  /** 回想/记忆页的返回目标：从游戏里点开就要回到同一页 */
+  backView: ColdView
+  /** Manager 表原样导出：items + init + max，状态不做增减 */
+  status: FadingData['status']
   choices: ColdChoice[]
   ending: { title: string; hint: string } | null
   endingId: number | null
@@ -111,31 +263,59 @@ export type FadingColdProps = {
   found: number[]
   endings: FadingPage[]
   memories: FadingMemory[]
-  unlockedMemories: Set<string>
+  unlockedMemories: Set<number>
+  /** 侵蚀度只在部分路线启用（原版路线 1/3 的侵蚀条是锁定的） */
+  erosionActive: boolean
   onStart: (r: FadingRoute) => void
   onNavigate: (v: ColdView) => void
   onRestart: () => void
   onBack: () => void
   canBack: boolean
+  /** 无选项页面的推进按钮（原版「点击画面继续」） */
+  canNext: boolean
+  onNext: () => void
   onChoice: (c: ColdChoice) => void
   onClearSave: () => void
   onMemClick: () => void
   routeUnlocked: (r: FadingRoute) => boolean
 }
 
-/** 状态栏：体力/粮食上排，侵蚀长条下排，内存右下（原版布局） */
-function StatusBar({ status, max, memCount, onMem }: { status: FadingStatus; max: FadingStatus; memCount: number; onMem: () => void }) {
-  const eros = Math.round((status.erosion / max.erosion) * 100)
+/** 状态栏：体力/粮食上排，侵蚀长条下排，内存右下（原版布局）。
+ *  数值与名称全部来自 Manager 表：粮食上限只有 1 份，是随身物品而不是消耗条。 */
+function StatusBar({ status, memCount, onMem, erosionActive }: {
+  status: FadingData['status']; memCount: number; onMem: () => void; erosionActive: boolean
+}) {
+  const find = (k: 'hp' | 'food' | 'erosion') => status.items.find((s) => s.key === k)
+  const hp = find('hp'), food = find('food'), eros = find('erosion')
+  const pct = eros?.max ? Math.round((status.init.erosion / eros.max) * 100) : 0
+  const mark = eros?.max && eros.second < eros.max
+    ? Math.round((eros.second / eros.max) * 100) : null
   return (
     <div className="sb sb-f">
       <div className="sb-row1">
-        <div className="sb-stat"><span className="sb-lb"><I n="hp" /> 体力</span><b>{status.hp}/{max.hp}</b></div>
-        <div className="sb-stat"><span className="sb-lb"><I n="food" /> 粮食</span><b>{status.food}/{max.food}</b></div>
+        <div className="sb-stat" title={hp ? `上限 ${hp.max}` : undefined}>
+          <span className="sb-lb"><I n="hp" /> {hp?.name || '体力'}</span>
+          <b>{status.init.hp}<small>/{hp?.max ?? status.max.hp}</small></b>
+        </div>
+        <div className="sb-stat" title={food ? `随身 ${food.max} 份` : undefined}>
+          <span className="sb-lb"><I n="food" /> {food?.name || '粮食'}</span>
+          <b>{status.init.food}<small>/{food?.max ?? status.max.food}</small></b>
+        </div>
       </div>
-      <div className="sb-row2">
-        <span className="sb-lb"><I n="erosion" /> 侵蚀</span>
-        <div className="sb-track"><i style={{ width: `${eros}%` }} /></div>
-        <span className="sb-pct">{eros}%</span>
+      <div className={`sb-row2 ${erosionActive ? '' : 'off'}`}>
+        {erosionActive ? (
+          <>
+            <span className="sb-lb"><I n="erosion" /> {eros?.name || '侵蚀度'}</span>
+            <div className="sb-track">
+              <i style={{ width: `${pct}%` }} />
+              {mark != null && <em style={{ left: `${mark}%` }} title={`达到 ${eros?.second} 进入侵蚀状态`} />}
+            </div>
+            <span className="sb-pct">{pct}%</span>
+          </>
+        ) : (
+          /* 未启用侵蚀的路线：整条斜纹槽，中间只写 LOCK，连「侵蚀度」三字都不出现 */
+          <div className="sb-track sb-track-lock"><span className="sb-lock-txt">LOCK</span></div>
+        )}
       </div>
       <button className="sb-mem" onClick={onMem}>
         <span className="sb-mem-top"><I n="mem" /> 内存 <b>{memCount}</b></span>
@@ -156,24 +336,22 @@ function GameNav({ canBack, onBack, onHome }: { canBack: boolean; onBack: () => 
 }
 
 export default function FadingCold(p: FadingColdProps) {
-  const { data, view, route, pageText, cgSrc, cgAlt, status, statusMax, choices, ending,
+  const { data, view, route, pageText, cgSrc, cgAlt, status, choices, ending,
     endingId, memoryUnlocked, found, endings, memories, unlockedMemories } = p
+  const typed = useTypewriter(pageText, p.sceneKey)
+  const blks = useBlocks(view === 'game' && !!ending, p.sceneKey)
 
   const cg = (name?: string, key?: string) => {
     const src = fadingCgSrc(data, name)
     return src ? <figure className="cf-fig"><img key={key} src={src} alt={name || ''} /><figcaption><PNGIcon kind="hex" /> <I n="file" /> PLATE</figcaption></figure> : null
   }
-  const endCg = (name?: string, key?: string) => {
-    const src = fadingCgSrc(data, name)
-    return src ? <figure className="cf-end-fig"><img key={key} src={src} alt={name || ''} /><figcaption><I n="file" /> PLATE FINAL</figcaption></figure> : null
-  }
 
   /* ---------- 首页 / 路线 ---------- */
   if (view === 'home') {
     return (
-      <div className="fad-cold-root">
+      <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
         <div id="cf"><div className="stage"><div className="cf cf-fill">
-          <div className="cf-frame"><div className="cf-inner cf-inner-fill">
+          <div className="cf-frame"><div className="cf-inner cf-inner-fill" key={p.view}>
             <div className="cf-home-head">
             <div className="cf-top">
               <span><I n="file" /> SILVERGUN PROJECT — ARCHIVE VOL. I</span>
@@ -193,7 +371,8 @@ export default function FadingCold(p: FadingColdProps) {
             <div className="cf-home-art" aria-hidden="true">{/* 预留：主视觉 CG 位（暂空） */}</div>
             <div className="cf-home-block">
             <p className="cf-lead">
-              三段记录，三种人生。选择会消耗体力与粮食，死亡并非终点——
+              三段记录，三种人生。体力、粮食、侵蚀度标记着玛丽亚的处境，
+              某些分支只有达成特定状态才会开启——死亡并非终点，
               留下的记忆是解锁新路线与新地点的钥匙。
             </p>
             <div className="cf-acts">
@@ -228,11 +407,13 @@ export default function FadingCold(p: FadingColdProps) {
   /* ---------- 回想 / 记忆 ---------- */
   if (view === 'endings' || view === 'memories') {
     return (
-      <div className="fad-cold-root">
+      <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
         <div id="cf"><div className="stage"><div className="cf cf-fill">
-          <div className="cf-frame"><div className="cf-inner cf-inner-fill">
+          <div className="cf-frame"><div className="cf-inner cf-inner-fill" key={p.view}>
             <div className="cf-doc-head">
-              <button className="cf-back" onClick={() => p.onNavigate('home')}><I n="arrow" /> 返回路线选择</button>
+              <button className="cf-back" onClick={() => p.onNavigate(p.backView)}>
+                <I n="arrow" /> {p.backView === 'game' ? '返回剧情' : '返回路线选择'}
+              </button>
               <div className="cf-list-head">
                 <h2>{view === 'endings' ? '回想' : '记忆'}</h2>
                 <small>{view === 'endings' ? `${found.length} / ${endings.length} ENDINGS` : `${unlockedMemories.size} / ${data.memories.length} MEMORIES`}</small>
@@ -263,13 +444,13 @@ export default function FadingCold(p: FadingColdProps) {
                   </p>
                   <div className="cf-mgrid">
                     {memories.map((m) => {
-                      const got = unlockedMemories.has(`${m.route}-${m.index}`)
+                      const got = unlockedMemories.has(m.id)
                       return (
-                        <div key={`${m.route}-${m.index}`} className={`cf-memo ${got ? '' : 'locked'}`}>
+                        <div key={m.id} className={`cf-memo ${got ? '' : 'locked'}`}>
                           <div className="cf-memo-id">R{m.route} · {String(m.index).padStart(2, '0')}</div>
                           <div className="cf-memo-name">{got ? m.name : '未储存的记忆'}</div>
                           <div className="cf-memo-short">{got ? m.short : '???'}</div>
-                          <div className="cf-memo-desc">{got ? m.desc : '在对应结局中死亡后解锁。'}</div>
+                          <div className="cf-memo-desc">{got ? m.desc : '这段记忆尚未找回。'}</div>
                         </div>
                       )
                     })}
@@ -285,25 +466,9 @@ export default function FadingCold(p: FadingColdProps) {
 
   /* ---------- 剧情页 ---------- */
   const routeNo = route?.no ?? 1
-  return (
-    <div className="fad-cold-root">
-      <div id="cf"><div className="stage"><div className="cf cf-fill">
-        <div className="cf-frame"><div className="cf-inner cf-inner-fill">
-          <div className="cf-bar">
-            <span><I n="arrow" /> CHAPTER {ROMAN[routeNo - 1] ?? routeNo} · {routeNo === 3 ? 'NO.7' : 'MARIA'}</span>
-            <span><I n="file" /> {route?.name || '记录'}</span>
-            <span className="cf-bar-right">
-              <b><I n="chip" /> MEM {unlockedMemories.size} / ARC {found.length}</b>
-              <GameNav canBack={p.canBack} onBack={p.onBack} onHome={() => p.onNavigate('home')} />
-            </span>
-          </div>
-          <div className="cf-game cf-game-fixed">
-            <div className="cf-head">
-              <div className="ix">{ROMAN[routeNo - 1] ?? routeNo}</div>
-              <h3>{route?.name || '记录'}</h3>
-              <div className="sub"><I n="target" /> SUBJECT {routeNo === 3 ? 'NO.7' : 'MARIA'} / {String(routeNo).padStart(3, '0')}</div>
-            </div>
-            <div className="cf-scroll">
+  /* 剧情正文抽成变量：结局页要在下面再渲染一份加位移滤镜的副本，用方块矩形当遮罩 */
+  const body = (
+    <>
             {p.isRegionSelect ? (
               <>
                 <RegionMap choices={choices} />
@@ -313,24 +478,31 @@ export default function FadingCold(p: FadingColdProps) {
             ) : (
               <>
                 {cg(cgAlt || undefined, cgSrc || undefined)}
-                <div className="cf-script">{pageText}</div>
+                <div className={`cf-script ${typed.done ? '' : 'typing'}`}>{typed.shown}</div>
               </>
             )}
-            <div className="cf-opts" style={p.isRegionSelect ? { display: 'none' } : undefined}>
-              {choices.map((c) => (
-                <button key={c.key} className="cf-opt" disabled={c.disabled} onClick={() => p.onChoice(c)}>
+            <div className={`cf-opts ${typed.done || p.isRegionSelect ? 'ready' : 'pending'}`}
+              style={p.isRegionSelect ? { display: 'none' } : undefined}>
+              {choices.map((c, i) => (
+                <button key={c.key} className="cf-opt" style={order(i)} disabled={c.disabled} onClick={() => p.onChoice(c)}>
                   <span className="ix">{c.index}</span>
                   <span className="tx">
                     {c.locked ? '???' : c.text}
                     {c.hint && !c.locked && <span className="cf-hint"><I n="eye" /> {c.hint}</span>}
                     {c.locked && c.lockText && <span className="cf-hint cf-hint-locked"><I n="lock" /> {c.lockText}</span>}
+                    {c.checked && <span className="cf-hint cf-hint-checked">Checked +1%</span>}
                   </span>
-                  {c.cost && <span className="cost"><I n="warn" /> {c.cost}</span>}
                   <span className="arrow"><I n="arrow" /></span>
                 </button>
               ))}
+              {p.canNext && !p.isRegionSelect && (
+                <button className="cf-opt cf-next" style={order(choices.length)} onClick={p.onNext}>
+                  <span className="tx">点击画面继续</span>
+                  <span className="arrow"><I n="arrow" /></span>
+                </button>
+              )}
               {ending && (
-                <div style={{ textAlign: 'center', marginTop: 18 }}>
+                <div className="cf-end-block" style={{ textAlign: 'center', marginTop: 18, ...order(choices.length) }}>
                   <div className="k" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, font: '500 9px/1 ui-monospace,monospace', letterSpacing: '.3em', color: 'var(--fred)' }}>
                     <I n="close" /> RECORD CLOSED · #{endingId}
                   </div>
@@ -348,10 +520,48 @@ export default function FadingCold(p: FadingColdProps) {
                 </div>
               )}
             </div>
-            </div>{/* /cf-scroll */}
-            <StatusBar status={status} max={statusMax} memCount={unlockedMemories.size} onMem={p.onMemClick} />
+    </>
+  )
+
+  /* 整块面板（章节栏 + 标题 + 正文 + 状态栏）抽成变量：结局页要在它上面再叠一份
+     加位移滤镜的副本，干扰范围覆盖整块面板而不只是正文 */
+  const panel = (
+    <>
+          <div className="cf-bar">
+        <span><I n="arrow" /> CHAPTER {ROMAN[routeNo - 1] ?? routeNo} · {routeNo === 3 ? 'NO.7' : 'MARIA'}</span>
+        <span><I n="file" /> {route?.name || '记录'}</span>
+        <span className="cf-bar-right">
+          <b><I n="chip" /> MEM {unlockedMemories.size} / ARC {found.length}</b>
+          <GameNav canBack={p.canBack} onBack={p.onBack} onHome={() => p.onNavigate('home')} />
+        </span>
+      </div>
+      <div className={`cf-game cf-game-fixed ${ending ? 'cf-end-' + endKind(endingId) : ''}`}>
+        <div className="cf-head">
+          <div className="ix">{ROMAN[routeNo - 1] ?? routeNo}</div>
+          <h3>{route?.name || '记录'}</h3>
+          <div className="sub"><I n="target" /> SUBJECT {routeNo === 3 ? 'NO.7' : 'MARIA'} / {String(routeNo).padStart(3, '0')}</div>
+        </div>
+        {/* key=sceneKey：每换一幕重挂载，让淡入 / CG 翻页 / 选项级联重新播放 */}
+        <div className="cf-scroll" key={p.sceneKey} onClick={typed.done ? undefined : typed.skip}>
+          {body}
+        </div>{/* /cf-scroll */}
+        <StatusBar status={status} memCount={unlockedMemories.size} onMem={p.onMemClick} erosionActive={p.erosionActive} />
+      </div>
+    </>
+  )
+
+  return (
+    <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
+      <div id="cf"><div className="stage"><div className="cf cf-fill">
+        <div className="cf-frame">
+          <div className="cf-inner cf-inner-fill" key={p.view}>
+            {panel}
+            {ending && <div className="cf-ghost" style={maskOf(blks)} aria-hidden="true">{panel}</div>}
+            {ending && <EndFx key={p.sceneKey} kind={endKind(endingId)} blks={blks} />}
           </div>
-        </div></div>
+          {/* 边框线自己也被干扰：骑边方块落在哪，哪一段边框就被位移 */}
+          {ending && <div className="cf-ghost-frame" style={maskOf(blks)} aria-hidden="true" />}
+        </div>
       </div></div></div>
     </div>
   )

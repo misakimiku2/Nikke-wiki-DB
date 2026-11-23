@@ -1,9 +1,14 @@
 /** FADING AFFECTION 活动小游戏的分支数据（由 nikke_extract/scripts/export_fadingaffection.py 导出） */
 
 export type UnlockReq = {
-  kind: 'memory' | 'ending'
-  page: number
+  /** memory = 需要指定记忆；ending = 需要看过指定结局；state = 状态门槛（粮食） */
+  kind: 'memory' | 'ending' | 'state'
+  /** 记忆 id（LootItemTable 记录 id）/ 结局页号 / 门槛值 */
+  id: number
+  page: number | null
+  /** 路线-序号，仅用于展示（记忆 id 与页号不同源，判定一律用 id） */
   memory?: string
+  memoryKind?: 'save' | 'deleted' | 'fragment'
   name: string
 }
 
@@ -18,21 +23,39 @@ export type FadingRoute = {
   intro: string
   introText: string
   unlock: string | null
+  /** 该路线是否启用侵蚀度：原作只为路线 2 写了侵蚀数值 */
+  erosion: boolean
 }
 
 export type FadingPage = {
   id: number
   key: string
   text: string
+  /** 页面表 st+9 字段的路线归属（1/2/3）；结局页同样带，比 id 前缀可靠 */
+  route?: number | null
   cg: string | null
   bgm: string | null
+  /** 抵达本页授予的记忆 id（0/缺省 = 不授予） */
+  grant?: number | null
   next: number | null
   links: number[]
   ending?: { title: string; hint: string }
 }
 
 export type FadingStatus = { hp: number; food: number; erosion: number }
-export type FadingCost = Partial<FadingStatus>
+
+/** Manager 表 83501 里的一条状态定义：数值原样带出，不在前端猜增减 */
+export type FadingStatusItem = {
+  key: 'hp' | 'food' | 'erosion'
+  /** Locale_Event 里的官方名称（体力 / 粮食 / 侵蚀度） */
+  name: string
+  nameKey: string
+  icon: string | null
+  /** 上限：体力 10、粮食 1、侵蚀度 100 */
+  max: number
+  /** 第二个数值：体力/粮食与 max 相同，侵蚀度为 50（教程「达到一定程度」） */
+  second: number
+}
 
 export type FadingChoice = {
   id: number
@@ -41,11 +64,11 @@ export type FadingChoice = {
   text: string
   hintKey: string | null
   hint: string
-  hintReq: UnlockReq | null
+  /** 解锁条件：与 hint 无关，172 条选项里 38 条带条件、只有 25 条带 hint */
+  req: UnlockReq | null
   sfx: string | null
   dest: number | null
   candidates: number[]
-  cost: FadingCost
 }
 
 export type FadingFirst = {
@@ -58,11 +81,16 @@ export type FadingFirst = {
 }
 
 export type FadingMemory = {
+  id: number
+  /** saveitem / deleteditem / fragmenteditem 三类 */
+  kind: 'save' | 'deleted' | 'fragment'
   route: number
   index: number
   name: string
   desc: string
   short: string
+  grantPage: number | null
+  grantPages: number[]
 }
 
 export type FadingData = {
@@ -70,7 +98,7 @@ export type FadingData = {
   event: string
   title: string
   subtitle: string
-  status: { init: FadingStatus; max: FadingStatus }
+  status: { items: FadingStatusItem[]; init: FadingStatus; max: FadingStatus }
   backgrounds: Record<string, string>
   memories: FadingMemory[]
   memoryByPage: Record<string, FadingMemory>
@@ -81,16 +109,27 @@ export type FadingData = {
   cgHashes: Record<string, string>
 }
 
-/** 结局页 -> 对应记忆（61xx -> 路线1 第 xx 条，62xx -> 路线2 第 xx 条） */
-export function memoryOfEnding(data: FadingData, endingId: number): FadingMemory | null {
-  const route = Math.floor(endingId / 100) - 60   // 61xx -> 1, 62xx -> 2
-  const idx = endingId % 100
-  if (route < 1 || route > 2) return null
-  return data.memories.find((m) => m.route === route && m.index === idx) ?? null
+/** Manager 表里的状态定义（官方名称 / 上限 / 第二数值） */
+export function statusItem(data: FadingData, key: FadingStatusItem['key']): FadingStatusItem | undefined {
+  return data.status.items.find((s) => s.key === key)
+}
+
+/** 抵达该页所授予的记忆（授予关系取自页面表字段，记忆 id 与页号不同源） */export function memoryGrantedHere(data: FadingData, pageId: number | null): FadingMemory | null {
+  if (pageId == null) return null
+  return data.memoryByPage[String(pageId)] ?? null
+}
+
+/** 已解锁的记忆 id：访问过的授予页反查（授予页既可能是普通页，也可能是结局页） */
+export function unlockedMemoryIds(data: FadingData, visited: Iterable<number>): Set<number> {
+  const s = new Set<number>()
+  for (const pid of visited) {
+    const m = data.memoryByPage[String(pid)]
+    if (m) s.add(m.id)
+  }
+  return s
 }
 
 let cache: FadingData | null = null
-
 export async function loadFadingData(): Promise<FadingData> {
   if (cache) return cache
   const r = await fetch('/data/fadingaffection.json', { cache: 'no-cache' })

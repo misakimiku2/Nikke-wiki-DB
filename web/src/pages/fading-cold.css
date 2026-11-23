@@ -11,7 +11,7 @@
 .cf-frame::before,.cf-frame::after{content:"";position:absolute;width:11px;height:11px;border:1px solid var(--fsteel);opacity:.7}
 .cf-frame::before{left:-5px;top:-5px;border-right:0;border-bottom:0}
 .cf-frame::after{right:-5px;bottom:-5px;border-left:0;border-top:0}
-.cf-inner{padding:30px 34px 32px}
+.cf-inner{position:relative;padding:30px 34px 32px}
 
 /* F 图标：内联 SVG，随主题变色 */
 .ico{display:inline-block;width:14px;height:14px;vertical-align:-2px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
@@ -67,15 +67,17 @@
 .cf-fig img{display:block;width:100%;aspect-ratio:1;height:auto;object-fit:cover;object-position:center;filter:grayscale(1) contrast(1.03)}
 .cf-fig figcaption{position:absolute;right:-1px;bottom:-16px;background:var(--fpanel);border:1px solid var(--fline);border-top:0;color:var(--fsteel);padding:4px 9px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em;display:flex;align-items:center;gap:5px}
 .cf-script{margin:26px 0 22px;padding-left:18px;border-left:2px solid var(--fline);font-size:14px;line-height:2.1;color:var(--fink);min-height:90px;white-space:pre-line}
-.cf-opts{display:flex;flex-direction:column;gap:9px}
-.cf-opt{display:flex;gap:13px;align-items:center;width:100%;text-align:left;cursor:pointer;padding:12px 16px;font-family:inherit;background:var(--fpanel);border:1px solid var(--fline);color:var(--fink);transition:.16s}
+.cf-opts{display:flex;flex-direction:column;align-items:center;gap:9px}
+.cf-opts .cf-end-block{width:100%}
+.cf-opt{display:flex;gap:13px;align-items:center;width:min(84%,540px);text-align:left;cursor:pointer;padding:12px 16px;font-family:inherit;background:var(--fpanel);border:1px solid var(--fline);color:var(--fink);transition:.16s}
 .cf-opt:hover:not(:disabled),.cf-opt:focus-visible{border-color:var(--fsteel);background:var(--fsteel);color:var(--fbg);transform:translateX(4px);box-shadow:0 4px 14px rgba(0,0,0,.28)}
-.cf-opt:hover:not(:disabled) .ix,.cf-opt:hover:not(:disabled) .cost,.cf-opt:hover:not(:disabled) .arrow,.cf-opt:hover:not(:disabled) .cf-hint{color:var(--fbg);border-color:var(--fbg);opacity:.92}
+.cf-opt:hover:not(:disabled) .ix,.cf-opt:hover:not(:disabled) .arrow,.cf-opt:hover:not(:disabled) .cf-hint,.cf-opt:hover:not(:disabled) .tx,.cf-opt:focus-visible .tx{color:var(--fbg);border-color:var(--fbg);opacity:.92}
 .cf-opt:disabled{opacity:.55;cursor:not-allowed}
 .cf-opt .ix{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid var(--fline);font:700 11px/1 ui-monospace,monospace;color:var(--fsteel);flex:none}
 .cf-opt .tx{flex:1;font-size:13px}
-.cf-opt .cost{font:500 9px/1 ui-monospace,monospace;letter-spacing:.05em;color:var(--fred);display:flex;align-items:center;gap:5px}
 .cf-opt .arrow{margin-left:6px;color:var(--fmut)}
+.cf-next{border-style:dashed;background:transparent}
+.cf-next .tx{color:var(--fmut);font-size:12px;letter-spacing:.06em}
 .cf-status{display:flex;gap:26px;margin-top:24px;padding-top:16px;border-top:1px solid var(--fline);font:500 10px/1 ui-monospace,monospace;letter-spacing:.1em;color:var(--fmut)}
 .cf-status b{color:var(--fsteel);font-size:13px;margin-left:8px}
 .cf-status .bar{display:inline-block;width:54px;height:2px;background:var(--fline);vertical-align:middle;margin-left:6px}
@@ -84,9 +86,6 @@
 
 /* F 结局 */
 .cf-end{text-align:center;padding:18px 26px 24px}
-.cf-end-fig{position:relative;width:min(100%,340px);margin:0 auto 24px;padding:7px;border:1px solid var(--fline);background:var(--fpanel)}
-.cf-end-fig img{display:block;width:100%;aspect-ratio:1;height:auto;object-fit:cover;object-position:center;filter:grayscale(1) contrast(1.05)}
-.cf-end-fig figcaption{position:absolute;right:-1px;bottom:-16px;background:var(--fpanel);border:1px solid var(--fline);border-top:0;color:var(--fsteel);padding:4px 9px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em}
 .cf-end .k{display:flex;align-items:center;justify-content:center;gap:8px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.3em;color:var(--fred)}
 .cf-end h3{margin:18px 0 14px;font:800 34px/1 "Arial Black",Helvetica,sans-serif;color:var(--fink)}
 .cf-end p{margin:0 auto;max-width:470px;font-size:12px;line-height:2.1;color:var(--fmut)}
@@ -106,11 +105,20 @@
 .sb-stat{display:flex;align-items:baseline;gap:8px}
 .sb-lb{font-size:10px;letter-spacing:.1em;opacity:.72;display:inline-flex;align-items:center;gap:5px}
 .sb-stat b{font-size:17px;font-weight:800;line-height:1}
+.sb-stat b small{font-size:11px;font-weight:600;opacity:.55}
 .sb-row2{display:flex;align-items:center;gap:11px;padding-right:150px}
 .sb-track{flex:1;height:11px;position:relative;background:rgba(127,127,127,.2);overflow:hidden}
 .sb-track i{display:block;height:100%;width:28%;background:var(--sb-red,#b32030);transition:width .3s}
 .sb-track::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 24px,rgba(0,0,0,.22) 24px 25px)}
+/* 侵蚀触发刻度：Manager 表给的第二个数值（0..100 量尺上的 50） */
+.sb-track em{position:absolute;top:0;bottom:0;width:2px;background:currentColor;opacity:.45;transform:translateX(-1px)}
 .sb-pct{font-size:12px;font-weight:800;min-width:34px;text-align:right}
+/* 侵蚀度未启用的路线：整条斜纹槽 + 居中 LOCK，不出现「侵蚀度」字样 */
+.sb-row2.off{padding-right:150px}
+.sb-track-lock{background:repeating-linear-gradient(45deg,rgba(127,127,127,.16) 0 6px,transparent 6px 12px)!important;flex:1;display:flex;align-items:center;justify-content:center}
+.sb-lock-txt{position:relative;z-index:1;font:700 9px/1 ui-monospace,monospace;letter-spacing:.36em;text-indent:.36em;opacity:.6}
+.sb-lock{display:inline-flex;align-items:center;gap:6px;min-width:34px;font-size:10px;font-weight:700;letter-spacing:.14em;opacity:.5}
+.sb-lock .icn-png{width:13px;height:13px;filter:grayscale(1) brightness(1.6)}
 .sb-mem{position:absolute;right:14px;bottom:11px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:800;letter-spacing:.06em;padding:7px 13px;line-height:1.15;border:1px solid currentColor;background:transparent;color:inherit;transition:.15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
 .sb-mem-top{display:flex;align-items:center;gap:5px;white-space:nowrap}
 .sb-mem:hover{background:rgba(127,127,127,.16)}
@@ -176,16 +184,25 @@
 /* 观察 / HINT 辅助（沿用数据里的 hint 机制） */
 .cf-hint{display:flex;align-items:center;gap:5px;font:600 10px/1.5 "PingFang SC",sans-serif;color:var(--fsteel);margin-top:5px}
 .cf-hint-locked{color:var(--fred)}
+.cf-hint-checked{color:var(--fmut);letter-spacing:.08em}
 .cf-cost-mini{font:600 9px/1 ui-monospace,monospace;color:var(--fred);margin-left:auto}
 
 @media (max-width:800px){
   .fad-cold-root{padding:12px 8px 40px}
-  .cf-inner{padding:20px 16px 24px}
+  .cf-inner{padding:20px 14px 24px}
   .cf-hero h1{font-size:38px}
-  .cf-routes{grid-template-columns:1fr}
+  /* 竖屏也保持横排三张记录卡：靠压缩内边距与字号容纳 */
+  .cf-routes{grid-template-columns:repeat(3,1fr);gap:6px}
+  .cf-rc{padding:12px 8px}
+  .cf-rc .ix{width:26px;height:26px;font-size:12px}
+  .cf-rc h4{margin:8px 0 6px;font-size:12px}
+  .cf-rc p{font-size:9px;line-height:1.6;min-height:44px}
+  .cf-rc .go{margin-top:8px;padding-top:8px;font-size:8px;letter-spacing:.08em}
   .cf-cols{grid-template-columns:1fr}
-  .sb-row2{padding-right:0;flex-wrap:wrap}
-  .sb-mem{position:static;margin-top:8px}
+  /* 状态栏：内存仍然钉在右下角，斜纹槽让出它的位置 */
+  .sb-row2,.sb-row2.off{padding-right:104px;gap:8px}
+  .sb-mem{right:10px;bottom:10px;padding:6px 10px;font-size:10px}
+  .sb-pct{min-width:30px}
 }
 
 /* ============================================================
@@ -239,32 +256,32 @@
   background:var(--fpanel);border:1px solid var(--fline);padding:5px 8px;
 }
 
-/* 地图标记 */
+/* 地图标记：菱形针 + 标签，配色全部走主题变量，深浅两套自动适配 */
 .cf-marker{
   position:absolute;z-index:5;transform:translate(-50%,-50%);
-  display:flex;flex-direction:column;align-items:center;gap:2px;
-  cursor:pointer;background:none;border:0;padding:0;color:var(--fsteel);
-  font-family:inherit;transition:transform .15s;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  cursor:pointer;background:none;border:0;padding:0;color:var(--fink);
+  font-family:inherit;transition:color .16s;
 }
-.cf-marker:hover:not(:disabled){transform:translate(-50%,-50%);filter:none}
-.cf-marker:hover:not(:disabled) .pin{background:#7ea6cc;border-color:#11171b;box-shadow:0 0 0 3px rgba(126,166,204,.4),0 4px 16px rgba(0,0,0,.55);color:#11171b}
-.cf-marker:hover:not(:disabled) .tag{background:#7ea6cc;color:#11171b;border-color:#11171b;box-shadow:0 0 12px rgba(126,166,204,.55)}
-.cf-marker:focus-visible .pin{outline:2px solid #a8d2f5;outline-offset:3px}
-.cf-marker:disabled{cursor:not-allowed;opacity:.7}
 .cf-marker .pin{
-  width:32px;height:32px;display:grid;place-items:center;
-  background:#7ea6cc;border:2px solid #4d7ba6;color:#fff;
-  transform:rotate(45deg);box-shadow:0 3px 10px rgba(0,0,0,.45);transition:background .16s,border-color .16s;
+  width:26px;height:26px;display:grid;place-items:center;
+  background:var(--fpanel);border:1px solid var(--fsteel);color:var(--fsteel);
+  transform:rotate(45deg);transition:background .16s,border-color .16s,color .16s,box-shadow .16s;
 }
-[data-theme="light"] .cf-marker .pin{background:#11171b;border-color:#11171b}
-.cf-marker .pin svg{width:19px;height:19px;transform:rotate(-45deg);stroke:currentColor;fill:none;stroke-width:1.8}
+.cf-marker .pin svg{width:15px;height:15px;transform:rotate(-45deg)}
 .cf-marker .tag{
-  font:700 11px/1 "PingFang SC",sans-serif;letter-spacing:.06em;
-  padding:5px 11px;background:var(--fsteel);color:var(--fbg);
+  font:600 10px/1 ui-monospace,monospace;letter-spacing:.18em;text-indent:.18em;
+  padding:4px 9px;background:var(--fpanel);color:var(--fink);
   border:1px solid var(--fline);white-space:nowrap;
+  transition:background .16s,color .16s,border-color .16s;
 }
-.cf-marker.locked .pin{background:#7d8590;border-color:#5c646d;color:#e6e6e6}
-.cf-marker.locked .tag{background:var(--fpanel);color:var(--fmut)}
+.cf-marker:hover:not(:disabled) .pin{background:var(--fsteel);color:var(--fbg);box-shadow:0 0 0 3px var(--fline)}
+.cf-marker:hover:not(:disabled) .tag{background:var(--fsteel);border-color:var(--fsteel);color:var(--fbg)}
+.cf-marker:focus-visible{outline:1px solid var(--fsteel);outline-offset:7px}
+.cf-marker:disabled{cursor:not-allowed}
+.cf-marker.locked{color:var(--fmut)}
+.cf-marker.locked .pin{border-style:dashed;color:var(--fmut)}
+.cf-marker.locked .tag{color:var(--fmut);border-style:dashed}
 .cf-marker .req{
   font:600 9px/1.4 "PingFang SC",sans-serif;color:var(--fred);
   background:var(--fpanel);border:1px solid var(--fline);padding:3px 7px;white-space:nowrap;
@@ -316,7 +333,7 @@
 /* —— 剧情页：章节标题与状态栏固定，正文滚动 —— */
 .cf-game-fixed{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 4px 0}
 .cf-game-fixed .cf-head{flex:none;margin-bottom:12px;padding-bottom:12px}
-.cf-scroll{flex:1;min-height:0;padding:2px 6px 6px 2px}
+.cf-scroll{position:relative;flex:1;min-height:0;padding:2px 6px 6px 2px}
 .cf-game-fixed .sb{flex:none;margin-top:10px}
 
 /* 小屏同样填满视口 */
@@ -339,3 +356,86 @@
 .cf-navbtn:hover:not(:disabled){color:var(--fbg);background:var(--fsteel);border-color:var(--fsteel)}
 .cf-navbtn:disabled{opacity:.35;cursor:not-allowed}
 .cf-navbtn .ico{width:15px;height:15px}
+
+/* 换幕：只淡出真正会变化的那一块 —— 换页淡正文区，换视图淡整块正文；
+   外框、章节标题、状态栏始终不动，不会整屏一闪。 */
+.cf-game .cf-scroll{transition:opacity .18s ease;animation:cf-scene-in .34s ease backwards}
+.fad-cold-root.fade-page .cf-scroll{opacity:0}
+.cf-inner{transition:opacity .18s ease;animation:cf-scene-in .3s ease backwards}
+.fad-cold-root.fade-view .cf-inner{opacity:0}
+/* CG 以左缘为轴摆入，像翻开的一页 */
+.cf-fig{transform-origin:left center;animation:cf-page-turn .6s cubic-bezier(.24,.68,.26,1) backwards;animation-delay:.14s}
+/* 打字中：末字后面挂一根下划线式光标，点击正文可立刻补完 */
+.cf-script.typing{cursor:pointer}
+.cf-script.typing::after{content:"";display:inline-block;width:.6em;height:2px;margin:0 0 .2em .14em;background:var(--fsteel);animation:cf-caret 1.1s steps(1) infinite}
+@keyframes cf-scene-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes cf-page-turn{
+  from{opacity:0;transform:perspective(1400px) rotateY(-58deg) scale(.97)}
+  to{opacity:1;transform:perspective(1400px) rotateY(0) scale(1)}
+}
+@keyframes cf-drop-in{from{opacity:0;transform:translateY(-9px)}to{opacity:1;transform:none}}
+@keyframes cf-caret{50%{opacity:0}}
+
+/* 选项级联：打字期间容器留空占位，文字出完才由 --i 自上而下依次淡入 */
+.cf-opts.pending{opacity:0;pointer-events:none}
+.cf-opts.ready>.cf-opt,.cf-opts.ready .cf-end-block{animation:cf-drop-in .32s ease backwards;animation-delay:calc(var(--i,0)*.08s)}
+/* 标记出现：关键帧必须带上 translate(-50%,-50%)，否则动画期间丢掉居中偏移，
+   看起来就是「从下往上跳一下」 */
+@keyframes cf-pin-in{from{opacity:0;transform:translate(-50%,-50%) scale(.82)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+.cf-marker{animation:cf-pin-in .36s cubic-bezier(.2,.8,.3,1) backwards;animation-delay:calc(var(--i,0)*.09s + .12s)}
+
+@media (prefers-reduced-motion:reduce){
+  .cf-inner,.cf-game .cf-scroll,.cf-fig,.cf-opts.ready>.cf-opt,
+  .cf-opts.ready .cf-end-block,.cf-marker{animation:none}
+  .cf-inner,.cf-game .cf-scroll{transition:none}
+  .cf-endfx i{animation:none}
+  .cf-ghost,.cf-ghost-frame{display:none}
+  .cf-end-death .cf-scroll,.cf-end-erosion .cf-scroll{animation:none}
+  .cf-end-block h3,figure img{animation:none}
+}
+
+/* ============ 结局页：破碎 / 电子扰乱 ============ */
+#cf{--fxline:rgba(214,222,228,.22);--fxglow:rgba(154,169,180,.6);--fxred:rgba(192,85,85,.6)}
+[data-theme="light"] #cf{--fxline:rgba(28,34,40,.22);--fxglow:rgba(93,106,116,.55);--fxred:rgba(156,34,56,.5)}
+.cf-game-fixed{position:relative}
+.cf-endfx{position:absolute;inset:0;z-index:6;pointer-events:none}
+.cf-endfx i{position:absolute;inset:0;display:block}
+
+/* 数字撕裂：几条亮带按 steps 跳动，1.5s 爆发完归零 */
+.cf-endfx .fx-slice{opacity:0;background:repeating-linear-gradient(180deg,transparent 0 30px,var(--fxline) 30px 32px,transparent 32px 64px);animation:fx-slice 1.5s steps(9) backwards}
+@keyframes fx-slice{
+  0%{opacity:1;transform:translate3d(-16px,0,0);clip-path:inset(6% 0 76% 0)}
+  18%{transform:translate3d(12px,-2px,0);clip-path:inset(54% 0 20% 0)}
+  34%{transform:translate3d(-8px,1px,0);clip-path:inset(26% 0 58% 0)}
+  52%{transform:translate3d(6px,0,0);clip-path:inset(72% 0 6% 0)}
+  70%{opacity:.5;transform:translate3d(-3px,0,0);clip-path:inset(0 0 0 0)}
+  100%{opacity:0;transform:none}
+}
+/* 噪波闪一下，overlay 混合让深浅主题都看得见 */
+.cf-endfx .fx-noise{mix-blend-mode:overlay;opacity:0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");animation:fx-noise 1.9s steps(5) forwards}
+@keyframes fx-noise{0%{opacity:.55;background-position:0 0}25%{opacity:.36;background-position:-40px 30px}55%{opacity:.2;background-position:30px -50px}100%{opacity:0;background-position:0 0}}
+
+/* 随机方块：位置 / 尺寸 / 寿命由 JS 给，颜色分三档，深浅主题用不同混合模式 */
+.cf-endfx .fx-defs{position:absolute;width:0;height:0;overflow:hidden}
+/* 方块只是标记（backdrop-filter 在这个内核里不渲染，包括 url() 与 invert()），
+   真正的扭曲来自 .cf-ghost：同一份正文的第二层副本加位移滤镜，用方块矩形当遮罩 */
+.cf-endfx .fx-blk{position:absolute;background:var(--fxline);box-shadow:0 0 0 1px var(--fxline)}
+.cf-endfx .fx-blk.g{background:var(--fxglow);box-shadow:0 0 0 1px var(--fxglow)}
+.cf-endfx .fx-blk.r{background:var(--fxred);box-shadow:0 0 0 1px var(--fxred)}
+/* 内容副本层：与 .cf-scroll 的 padding 对齐，只有遮罩矩形里可见 */
+/* 骑边方块还会把面板边框线一起撕掉：边框单独复制一层加同一个位移滤镜 */
+.cf-ghost-frame{position:absolute;inset:-2px;z-index:7;pointer-events:none;border:1px solid var(--fline);filter:url(#fx-tear)}
+.cf-ghost{position:absolute;inset:0;z-index:6;pointer-events:none;filter:url(#fx-tear);display:flex;flex-direction:column;padding:inherit}
+/* 副本只是给遮罩里的区域用，自己不要再跑一遍入场动画 */
+.cf-ghost *{animation:none}
+
+/* 画面本体：死亡 / 侵蚀结局进场震一下，侵蚀再叠一层偏色 */
+.cf-end-death .cf-scroll,.cf-end-erosion .cf-scroll{animation:fx-shake 1.3s cubic-bezier(.3,.8,.4,1) backwards}
+@keyframes fx-shake{0%,100%{transform:none}8%{transform:translate3d(-5px,2px,0)}18%{transform:translate3d(4px,-2px,0)}30%{transform:translate3d(-3px,1px,0)}44%{transform:translate3d(2px,0,0)}62%{transform:translate3d(-1px,0,0)}}
+.cf-end-erosion .cf-scroll{filter:hue-rotate(-14deg) saturate(1.3)}
+.cf-end-erosion .fx-slice{animation-duration:2.2s;opacity:.9}
+/* CG 错位、标题 RGB 分离 */
+.cf-end-death figure img,.cf-end-erosion figure img{animation:fx-img 1.5s steps(3) backwards}
+@keyframes fx-img{0%,100%{transform:none;filter:none}10%{transform:translateX(-4px);filter:brightness(1.25)}22%{transform:translateX(3px)}38%{transform:translateX(-2px);filter:none}56%{transform:translateX(1px)}72%{transform:none}}
+.cf-end-block h3{animation:fx-title 1.7s steps(4) backwards}
+@keyframes fx-title{0%{text-shadow:3px 0 var(--fxred),-3px 0 var(--fxglow);transform:translateX(-3px)}24%{text-shadow:-3px 0 var(--fxred),3px 0 var(--fxglow);transform:translateX(2px)}52%{text-shadow:1px 0 var(--fxred),-1px 0 var(--fxglow);transform:none}76%,100%{text-shadow:none;transform:none}}

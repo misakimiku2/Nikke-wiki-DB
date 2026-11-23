@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf, memoryOfEnding,
-  type FadingData, type FadingPage, type FadingRoute, type FadingStatus, type FadingCost, type FadingChoice,
+  loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf,
+  memoryGrantedHere, unlockedMemoryIds,
+  type FadingData, type FadingPage, type FadingRoute, type UnlockReq,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
 import FadingCold, { type ColdView, type ColdChoice } from './FadingCold'
@@ -12,8 +13,10 @@ const LS_ENDINGS = 'nikke_fading_endings_v1'
 const LS_CHECKED = 'nikke_fading_checked_v1'
 const LS_SEEN = 'nikke_fading_seen_v1'
 
-const STATUS_LABEL: Record<keyof FadingStatus, string> = { hp: '体力', food: '粮食', erosion: '侵蚀' }
 const CN_NUM = ['i.', 'ii.', 'iii.', 'iv.', 'v.', 'vi.', 'vii.', 'viii.', 'ix.', 'x.']
+
+/** 一幕淡出的时长（ms）——到点后落新页，新页自己做淡入 + 打字 */
+const LEAVE_MS = 200
 
 function loadArr(key: string): number[] {
   try {
@@ -22,19 +25,10 @@ function loadArr(key: string): number[] {
   } catch { return [] }
 }
 
-function costText(cost: FadingCost): string {
-  const parts: string[] = []
-  for (const k of ['hp', 'food', 'erosion'] as const) {
-    const v = cost[k] ?? 0
-    if (v) parts.push(`${STATUS_LABEL[k]} ${v > 0 ? '+' : ''}${v}`)
-  }
-  return parts.join(' · ')
-}
-
 /** 路线解锁：按数据里的 unlockRequirement（TrueEnd 结局）判断 */
 function routeUnlocked(route: FadingRoute, found: number[]): boolean {
   const req = route.unlockRequirement
-  return !req || (req.kind === 'ending' && found.includes(req.page))
+  return !req || (req.kind === 'ending' && found.includes(req.id))
 }
 
 export default function FadingAffection() {
@@ -44,52 +38,66 @@ export default function FadingAffection() {
   const [view, setView] = useState<ColdView>('home')
   const [route, setRoute] = useState<FadingRoute | null>(null)
   const [node, setNode] = useState<number | null>(null)
-  const [lastCg, setLastCg] = useState<string | null>(null)
-  const [status, setStatus] = useState<FadingStatus>({ hp: 10, food: 10, erosion: 0 })
   const [history, setHistory] = useState<{ id: number; text: string; title?: string }[]>([])
   const [found, setFound] = useState<number[]>(() => loadArr(LS_ENDINGS))
   const [checked, setChecked] = useState<number[]>(() => loadArr(LS_CHECKED))
   const [seen, setSeen] = useState<number[]>(() => loadArr(LS_SEEN))
+  /** 换幕状态：fade = 正在淡出的范围（page 只淡正文区，view 淡整块正文）；scene = 幕次 */
+  const [fade, setFade] = useState<'none' | 'page' | 'view'>('none')
+  const [scene, setScene] = useState(0)
+  /** 换幕计时句柄：pending = 正在淡出（期间屏蔽点击） */
+  const anim = useRef({ raf: 0, timer: 0, pending: false })
+  /** 打开内存/回想时所在的视图，用来回到原处（游戏中点开内存要能回到同一页） */
+  const [backView, setBackView] = useState<ColdView>('home')
 
   useEffect(() => {
-    loadFadingData().then((d) => { setData(d); setStatus({ ...d.status.init }) })
-      .catch((e) => setError(String(e)))
+    loadFadingData().then((d) => setData(d)).catch((e) => setError(String(e)))
   }, [])
   useEffect(() => { try { localStorage.setItem(LS_ENDINGS, JSON.stringify(found)) } catch { /* ignore */ } }, [found])
   useEffect(() => { try { localStorage.setItem(LS_CHECKED, JSON.stringify(checked)) } catch { /* ignore */ } }, [checked])
   useEffect(() => { try { localStorage.setItem(LS_SEEN, JSON.stringify(seen)) } catch { /* ignore */ } }, [seen])
+  useEffect(() => () => {
+    cancelAnimationFrame(anim.current.raf); clearTimeout(anim.current.timer)
+  }, [])
 
   const endings = useMemo(() => (data ? endingsOf(data) : []), [data])
   const page: FadingPage | null = node != null && data ? data.pages[String(node)] ?? null : null
   const isIntro = node != null && !!route && node === route.start
   const text = isIntro ? route?.introText || '' : page?.text || ''
-  const cgName = isIntro ? null : page?.cg || lastCg
+  /** CG 只在页面自带时显示；没有配图的页面（202/265）不再沿用上一幕 */
+  const cgName = isIntro ? null : page?.cg ?? null
   const cgSrc = data ? fadingCgSrc(data, cgName) : null
   const choices = data && node != null ? (isIntro ? [] : choicesFor(data, node)) : []
   const firsts = data && node != null && isIntro ? firstFor(data, node) : []
   const routeNo = route?.no ?? 0
   const ending = page?.ending
-  const memory = ending && data ? memoryOfEnding(data, node ?? 0) : null
+  /** 无选项的页面靠 next 推进（原版「点击画面继续」）；有选项时以选项为准 */
+  const autoNext = !isIntro && choices.length === 0 && !ending ? page?.next ?? null : null
+  const memory = data ? memoryGrantedHere(data, node) : null
 
-  const unlockedMemories = useMemo(() => {
-    if (!data) return new Set<string>()
-    const s = new Set<string>()
-    for (const id of found) { const m = memoryOfEnding(data, id); if (m) s.add(`${m.route}-${m.index}`) }
-    for (const id of seen) { const m = data.memoryByPage[String(id)]; if (m) s.add(`${m.route}-${m.index}`) }
-    return s
-  }, [data, found, seen])
+  /** 已解锁记忆：由访问过的「授予页」反查。判定用记忆 id——同一 route-序号在
+   *  已储存/已删除两类里会撞（如 1-1 既是存档「袭击」也是删除「储备库」）。 */
+  const unlockedMem = useMemo(
+    () => (data ? unlockedMemoryIds(data, [...seen, ...found]) : new Set<number>()),
+    [data, seen, found])
 
   function markSeen(id: number | null) {
     if (id == null) return
     setSeen((s) => (s.includes(id) ? s : [...s, id]))
   }
 
-  function hintUnlocked(c: FadingChoice): boolean {
-    const req = c.hintReq
+  /** 解锁条件取自选项表字段，与有没有 hint 无关（38 条带条件、仅 25 条带 hint） */
+  function reqMet(req: UnlockReq | null): boolean {
     if (!req) return true
-    if (req.kind === 'memory') return unlockedMemories.has(req.memory ?? '')
-    if (req.kind === 'ending') return found.includes(req.page)
-    return status.food >= 1
+    if (req.kind === 'memory') return unlockedMem.has(req.id)
+    if (req.kind === 'ending') return req.page != null && found.includes(req.page)
+    return (data?.status.init.food ?? 0) >= req.id
+  }
+
+  function reqLockText(req: UnlockReq): string {
+    if (req.kind === 'memory') return `需要【${req.name}】`
+    if (req.kind === 'ending') return `观看【${req.name}】结局后解锁`
+    return `需要${req.name}`
   }
 
   function clearSave() {
@@ -98,100 +106,104 @@ export default function FadingAffection() {
       try { localStorage.removeItem(k) } catch { /* ignore */ }
     })
     setFound([]); setChecked([]); setSeen([])
-    setHistory([]); setView('home'); setRoute(null); setNode(null); setLastCg(null)
+    setHistory([]); setView('home'); setRoute(null); setNode(null)
   }
 
   function start(r: FadingRoute) {
     if (!routeUnlocked(r, found)) return
-    setRoute(r); setNode(r.start); setLastCg(null)
-    markSeen(r.start)
-    setStatus(data ? { ...data.status.init } : { hp: 10, food: 10, erosion: 0 })
-    setHistory([]); setView('game')
+    transition(() => {
+      setRoute(r); setNode(r.start)
+      markSeen(r.start)
+      setHistory([]); setView('game')
+    }, 'view')
   }
 
-  function applyCost(cost: FadingCost): FadingStatus {
-    if (!data) return status
-    const max = data.status.max, next = { ...status }
-    for (const k of ['hp', 'food', 'erosion'] as const) {
-      next[k] = Math.max(0, Math.min(max[k], next[k] + (cost[k] ?? 0)))
-    }
-    return next
+  /** 小游戏内任何界面跳转都要走换幕；顺带记住来源，内存/回想看完能回到原处 */
+  function nav(v: ColdView) {
+    if (v === view) return
+    if (v === 'memories' || v === 'endings') setBackView(view)
+    transition(() => setView(v), 'view')
   }
 
-  function affordable(cost: FadingCost): boolean {
-    if (!data) return true
-    const max = data.status.max
-    return status.hp + (cost.hp ?? 0) >= 0
-      && status.food + (cost.food ?? 0) >= 0
-      && status.erosion + (cost.erosion ?? 0) <= max.erosion
-  }
-
-  function forcedEnding(st: FadingStatus): number | null {
-    if (st.hp <= 0 || st.food <= 0) return routeNo === 1 ? 6106 : routeNo === 2 ? 6205 : 6301
-    if (st.erosion >= (data?.status.max.erosion ?? 10)) return routeNo === 1 ? 6111 : routeNo === 2 ? 6207 : 6301
-    return null
-  }
-
-  function go(next: number | null, cost: FadingCost = {}, choiceId?: number) {
-    if (next == null || !data) return
-    const st = applyCost(cost); setStatus(st)
-    const target = forcedEnding(st) ?? next
-    setNode(target)
-    const p = data.pages[String(target)]
-    if (p?.cg) setLastCg(p.cg)
+  /**
+   * 推进到下一页。原版的状态（体力/粮食/侵蚀度）在静态表里没有任何增减量，
+   * 死亡/侵蚀结局都由表里的选项或页面 next 显式指向，所以这里不做数值判定。
+   */
+  function commit(next: number, choiceId?: number) {
+    if (!data) return
+    setNode(next)
+    const p = data.pages[String(next)]
     setHistory((h) => [...h, {
-      id: target, text: p?.text || '',
-      title: p?.ending?.title ?? (forcedEnding(st) ? '状态崩溃' : undefined),
+      id: next, text: p?.text || '', title: p?.ending?.title,
     }].slice(-120))
-    if (p?.ending) setFound((f) => (f.includes(target) ? f : [...f, target].sort((a, b) => a - b)))
+    if (p?.ending) setFound((f) => (f.includes(next) ? f : [...f, next].sort((a, b) => a - b)))
     if (choiceId != null) setChecked((c) => (c.includes(choiceId) ? c : [...c, choiceId]))
-    markSeen(target)
+    markSeen(next)
   }
 
-  /** 回退到上一个节点：从历史栈弹出，恢复该页的 CG */
+  /** 原作换幕：先淡出，LEAVE_MS 后落新内容再淡入。用 rAF 计时，节流时也不会卡在暗场。
+   *  kind 决定淡出范围：page = 只淡正文/CG/选项，view = 淡整块正文区（外框与状态栏不动）。 */
+  function transition(fn: () => void, kind: 'page' | 'view' = 'page') {
+    if (anim.current.pending) return
+    anim.current.pending = true
+    setFade(kind)
+    const done = () => {
+      if (!anim.current.pending) return
+      anim.current.pending = false
+      cancelAnimationFrame(anim.current.raf); clearTimeout(anim.current.timer)
+      fn()
+      setScene((s) => s + 1)
+      setFade('none')
+    }
+    const t0 = performance.now()
+    const step = (now: number) => {
+      if (now - t0 >= LEAVE_MS) { done(); return }
+      anim.current.raf = requestAnimationFrame(step)
+    }
+    anim.current.raf = requestAnimationFrame(step)
+    /* 页面在后台时 rAF 根本不跑，用定时器兜底提交，避免卡在暗场 */
+    anim.current.timer = window.setTimeout(done, LEAVE_MS + 150)
+  }
+
+  function go(next: number | null, choiceId?: number) {
+    if (next == null) return
+    transition(() => commit(next, choiceId))
+  }
+
+  /** 回退到上一个节点 */
   function goBack() {
     if (history.length === 0) return
     const prev = history[history.length - 2]
-    setHistory((h) => h.slice(0, -1))
-    if (!prev) { setNode(route?.start ?? null); setLastCg(null); return }
-    setNode(prev.id)
-    const p = data?.pages[String(prev.id)]
-    if (p?.cg) setLastCg(p.cg)
-    else setLastCg(null)
+    transition(() => {
+      setHistory((h) => h.slice(0, -1))
+      setNode(prev?.id ?? route?.start ?? null)
+    })
   }
 
   /* ---------- 把数据映射成展示组件需要的选项 ---------- */
   const coldChoices: ColdChoice[] = isIntro
     ? firsts.map((c, i) => {
-        const req = c.unlock
-        const locked = !!req && !(
-          req.kind === 'memory' ? unlockedMemories.has(req.memory ?? '') : found.includes(req.page)
-        )
+        const locked = !reqMet(c.unlock)
         return {
           key: c.key, index: CN_NUM[i] ?? `${i + 1}.`,
           text: c.text, locked,
-          lockText: locked ? (req?.kind === 'memory' ? `需要回忆【${req.name}】` : `观看【${req.name}】结局后解锁`) : undefined,
+          lockText: locked && c.unlock ? reqLockText(c.unlock) : undefined,
           disabled: locked,
           onClick: () => go(c.dest),
         }
       })
     : choices.map((c, i) => {
         const isChecked = checked.includes(c.id)
-        const hintLocked = !!c.hint && !hintUnlocked(c)
-        const can = !hintLocked && affordable(c.cost)
+        const locked = !reqMet(c.req)
         return {
           key: c.id, index: CN_NUM[i] ?? `${i + 1}.`,
           text: c.text,
-          cost: costText(c.cost) || undefined,
           hint: c.hint && !isChecked ? c.hint : undefined,
-          locked: hintLocked,
-          lockText: hintLocked
-            ? (c.hintReq?.kind === 'memory' ? `需要回忆【${c.hintReq.name}】`
-              : c.hintReq?.kind === 'ending' ? `观看【${c.hintReq.name}】结局后解锁` : '需要特定状态')
-            : undefined,
+          locked,
+          lockText: locked && c.req ? reqLockText(c.req) : undefined,
           checked: isChecked,
-          disabled: !can,
-          onClick: () => can && go(c.dest, c.cost, c.id),
+          disabled: locked,
+          onClick: () => !locked && go(c.dest, c.id),
         }
       })
 
@@ -207,8 +219,10 @@ export default function FadingAffection() {
       cgSrc={cgSrc}
       cgAlt={cgName || undefined}
       isRegionSelect={isIntro}
-      status={status}
-      statusMax={data.status.max}
+      fade={fade}
+      sceneKey={scene}
+      status={data.status}
+      erosionActive={!!route?.erosion}
       choices={coldChoices}
       ending={ending || null}
       endingId={node}
@@ -216,15 +230,18 @@ export default function FadingAffection() {
       found={found}
       endings={endings}
       memories={data.memories}
-      unlockedMemories={unlockedMemories}
+      unlockedMemories={unlockedMem}
       onStart={start}
-      onNavigate={setView}
+      onNavigate={nav}
+      backView={backView}
       onRestart={() => route && start(route)}
       onBack={goBack}
       canBack={history.length > 0}
+      canNext={autoNext != null}
+      onNext={() => go(autoNext)}
       onChoice={(c) => c.onClick()}
       onClearSave={clearSave}
-      onMemClick={() => setView('memories')}
+      onMemClick={() => nav('memories')}
       routeUnlocked={(r) => routeUnlocked(r, found)}
     />
   )
