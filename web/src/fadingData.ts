@@ -123,3 +123,21 @@ export function endingsOf(data: FadingData): FadingPage[] {
     .filter((p) => p.ending)
     .sort((a, b) => a.id - b.id)
 }
+
+/**
+ * 场景背景：小游戏无专用背景表，原版在无 CG 的页面沿用场景板并模糊压暗。
+ * 这里按页面 id 推导地点（xx = 路线1/2/3，下一位 1=旧市区、2=湖、3=新市区）：
+ *   1001/2001/3001 开场 → 废墟平原；11xx/21xx/31xx → 旧市区；12xx/22xx → 湖。
+ */
+export function locationBgSrc(data: FadingData, pageId: number | null): string | null {
+  if (pageId == null) return null
+  const key =
+    pageId === 1001 || pageId === 2001 || pageId === 3001 ? 'DestroyedStreet'
+      : (pageId >= 1100 && pageId < 1200) || (pageId >= 2100 && pageId < 2200) ? 'DestroyedStreet'
+        : (pageId >= 1200 && pageId < 1300) || (pageId >= 2200 && pageId < 2300) ? 'Lake'
+          : (pageId >= 2300 && pageId < 2400) ? 'City_d'
+            : pageId >= 3000 ? 'DestroyedStreet'
+              : 'DestroyedStreet'
+  const h = data.backgrounds[key]
+  return h ? `/img/l/${h}.webp` : null
+}

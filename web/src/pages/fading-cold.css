@@ -1,0 +1,341 @@
+/* F 双主题：跟随网站 data-theme（dark=冷钢灰工业 / light=灰白纸张还原原作） */
+#cf{--fbg:#0b0e10;--fpanel:#11171b;--fink:#d6dee4;--fmut:#85949f;--fline:#56646e;--fsteel:#9aa9b4;--fred:#c05555;--ffig:#0c1013}
+[data-theme="light"] #cf{--fbg:#dcdad2;--fpanel:#f2f0e9;--fink:#26251e;--fmut:#6e6a5e;--fline:#b9b5a8;--fsteel:#5d6a74;--fred:#9c2238;--ffig:#e6e3da}
+#cf .stage{background:radial-gradient(ellipse at 50% 0%,var(--fbg) 0%,#07090b 72%);transition:background .3s}
+[data-theme="light"] #cf .stage{background:radial-gradient(ellipse at 50% 0%,#e9e7e0 0%,#cfccc2 78%)}
+.cf{
+  width:760px;max-width:100%;position:relative;color:var(--fink);
+  font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+}
+.cf-frame{margin:14px;padding:1px;border:1px solid var(--fline);position:relative;background:var(--fpanel)}
+.cf-frame::before,.cf-frame::after{content:"";position:absolute;width:11px;height:11px;border:1px solid var(--fsteel);opacity:.7}
+.cf-frame::before{left:-5px;top:-5px;border-right:0;border-bottom:0}
+.cf-frame::after{right:-5px;bottom:-5px;border-left:0;border-top:0}
+.cf-inner{padding:30px 34px 32px}
+
+/* F 图标：内联 SVG，随主题变色 */
+.ico{display:inline-block;width:14px;height:14px;vertical-align:-2px;flex:none;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ico-lg{width:20px;height:20px}
+.ico-fill{fill:currentColor;stroke:none}
+
+/* F 首页 */
+.cf-top{display:flex;justify-content:space-between;align-items:center;padding-bottom:16px;border-bottom:1px solid var(--fline)}
+.cf-top span{font:600 9px/1 ui-monospace,monospace;letter-spacing:.28em;color:var(--fsteel)}
+.cf-top .cf-mark{display:flex;align-items:center;gap:7px;color:var(--fred)}
+.cf-hero{text-align:center;padding:34px 0 24px}
+.cf-hero .k{display:flex;align-items:center;justify-content:center;gap:9px;font:600 9px/1 ui-monospace,monospace;letter-spacing:.3em;color:var(--fmut)}
+.cf-hero h1{margin:18px 0 8px;font:900 52px/.92 "Arial Black",Helvetica,sans-serif;letter-spacing:-.02em;color:var(--fink);text-transform:uppercase}
+.cf-hero h1 em{display:block;font:400 30px/1.2 "PingFang SC",sans-serif;font-style:normal;letter-spacing:.18em;color:var(--fsteel)}
+.cf-rule{display:flex;align-items:center;gap:12px;margin:24px auto;max-width:340px}
+.cf-rule::before,.cf-rule::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,transparent,var(--fline))}
+.cf-rule::after{background:linear-gradient(90deg,var(--fline),transparent)}
+.cf-rule i{width:6px;height:6px;background:var(--fred);transform:rotate(45deg)}
+.cf-hero .id{display:flex;align-items:center;justify-content:center;gap:8px;font:600 10px/1 ui-monospace,monospace;letter-spacing:.22em;color:var(--fmut)}
+.cf-lead{max-width:500px;margin:22px auto 0;font-size:12px;line-height:2.1;color:var(--fmut);text-align:center}
+.cf-stats{display:flex;justify-content:center;gap:0;margin:26px 0;padding:16px 0;border-top:1px solid var(--fline);border-bottom:1px solid var(--fline)}
+.cf-stats div{padding:0 22px;border-right:1px solid var(--fline);text-align:center}
+.cf-stats div:last-child{border:0}
+.cf-stats b{font:800 22px/1 "Arial Black",Helvetica,sans-serif;color:var(--fsteel)}
+.cf-stats span{display:block;margin-top:7px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.16em;color:var(--fmut)}
+.cf-acts{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
+.cf-btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font:700 11px/1 inherit;letter-spacing:.1em;padding:11px 19px;background:transparent;border:1px solid var(--fline);color:var(--fink);transition:.16s}
+.cf-btn:hover{border-color:var(--fsteel);background:rgba(150,170,185,.08)}
+.cf-btn.on{border-color:var(--fsteel);background:var(--fsteel);color:var(--fbg)}
+.cf-routes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:30px}
+.cf-rc{padding:16px 14px;border:1px solid var(--fline);text-align:center;transition:.16s;position:relative}
+.cf-rc:hover{border-color:var(--fsteel);background:rgba(150,170,185,.05)}
+.cf-rc.lock{opacity:.45}
+.cf-rc .ix{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--fline);font:800 15px/1 "Arial Black",Helvetica,sans-serif;color:var(--fsteel);margin-bottom:4px}
+.cf-rc h4{margin:10px 0 7px;font-size:14px;font-weight:700;color:var(--fink)}
+.cf-rc p{margin:0;font-size:10px;line-height:1.7;color:var(--fmut);min-height:34px}
+.cf-rc .go{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid var(--fline);font:600 9px/1 ui-monospace,monospace;letter-spacing:.14em;color:var(--fsteel)}
+.cf-rc .badge{position:absolute;top:-7px;right:-7px;background:var(--fred);color:var(--fpanel);font:800 8px/1 ui-monospace,monospace;padding:4px 6px;letter-spacing:.1em}
+
+/* F 剧情页 */
+.cf-bar{display:flex;justify-content:space-between;align-items:center;padding:9px 20px;border-bottom:1px solid var(--fline);font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em;color:var(--fmut)}
+.cf-bar span{display:inline-flex;align-items:center;gap:6px}
+.cf-bar b{color:var(--fsteel);display:inline-flex;align-items:center;gap:6px}
+.cf-game{padding:24px 26px 26px}
+.cf-head{display:flex;align-items:baseline;gap:14px;padding-bottom:16px;border-bottom:1px solid var(--fline);margin-bottom:22px}
+.cf-head .ix{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;background:var(--fsteel);color:var(--fbg);font:800 17px/1 "Arial Black",Helvetica,sans-serif;flex:none}
+.cf-head h3{margin:0;font-size:22px;font-weight:700;color:var(--fink);flex:1}
+.cf-head .sub{font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em;color:var(--fmut)}
+.cf-fig{position:relative;width:min(100%,380px);margin:0 auto;padding:7px;border:1px solid var(--fline);background:var(--fpanel)}
+.cf-fig::before,.cf-fig::after{content:"";position:absolute;width:16px;height:16px;border:2px solid var(--fsteel);opacity:.65;pointer-events:none}
+.cf-fig::before{left:-2px;top:-2px;border-right:0;border-bottom:0}
+.cf-fig::after{right:-2px;bottom:-2px;border-left:0;border-top:0}
+.cf-fig img{display:block;width:100%;aspect-ratio:1;height:auto;object-fit:cover;object-position:center;filter:grayscale(1) contrast(1.03)}
+.cf-fig figcaption{position:absolute;right:-1px;bottom:-16px;background:var(--fpanel);border:1px solid var(--fline);border-top:0;color:var(--fsteel);padding:4px 9px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em;display:flex;align-items:center;gap:5px}
+.cf-script{margin:26px 0 22px;padding-left:18px;border-left:2px solid var(--fline);font-size:14px;line-height:2.1;color:var(--fink);min-height:90px;white-space:pre-line}
+.cf-opts{display:flex;flex-direction:column;gap:9px}
+.cf-opt{display:flex;gap:13px;align-items:center;width:100%;text-align:left;cursor:pointer;padding:12px 16px;font-family:inherit;background:var(--fpanel);border:1px solid var(--fline);color:var(--fink);transition:.16s}
+.cf-opt:hover:not(:disabled),.cf-opt:focus-visible{border-color:var(--fsteel);background:var(--fsteel);color:var(--fbg);transform:translateX(4px);box-shadow:0 4px 14px rgba(0,0,0,.28)}
+.cf-opt:hover:not(:disabled) .ix,.cf-opt:hover:not(:disabled) .cost,.cf-opt:hover:not(:disabled) .arrow,.cf-opt:hover:not(:disabled) .cf-hint{color:var(--fbg);border-color:var(--fbg);opacity:.92}
+.cf-opt:disabled{opacity:.55;cursor:not-allowed}
+.cf-opt .ix{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid var(--fline);font:700 11px/1 ui-monospace,monospace;color:var(--fsteel);flex:none}
+.cf-opt .tx{flex:1;font-size:13px}
+.cf-opt .cost{font:500 9px/1 ui-monospace,monospace;letter-spacing:.05em;color:var(--fred);display:flex;align-items:center;gap:5px}
+.cf-opt .arrow{margin-left:6px;color:var(--fmut)}
+.cf-status{display:flex;gap:26px;margin-top:24px;padding-top:16px;border-top:1px solid var(--fline);font:500 10px/1 ui-monospace,monospace;letter-spacing:.1em;color:var(--fmut)}
+.cf-status b{color:var(--fsteel);font-size:13px;margin-left:8px}
+.cf-status .bar{display:inline-block;width:54px;height:2px;background:var(--fline);vertical-align:middle;margin-left:6px}
+.cf-status .bar i{display:block;height:100%;width:100%;background:var(--fsteel)}
+.cf-status .bar.r i{width:28%;background:var(--fred)}
+
+/* F 结局 */
+.cf-end{text-align:center;padding:18px 26px 24px}
+.cf-end-fig{position:relative;width:min(100%,340px);margin:0 auto 24px;padding:7px;border:1px solid var(--fline);background:var(--fpanel)}
+.cf-end-fig img{display:block;width:100%;aspect-ratio:1;height:auto;object-fit:cover;object-position:center;filter:grayscale(1) contrast(1.05)}
+.cf-end-fig figcaption{position:absolute;right:-1px;bottom:-16px;background:var(--fpanel);border:1px solid var(--fline);border-top:0;color:var(--fsteel);padding:4px 9px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em}
+.cf-end .k{display:flex;align-items:center;justify-content:center;gap:8px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.3em;color:var(--fred)}
+.cf-end h3{margin:18px 0 14px;font:800 34px/1 "Arial Black",Helvetica,sans-serif;color:var(--fink)}
+.cf-end p{margin:0 auto;max-width:470px;font-size:12px;line-height:2.1;color:var(--fmut)}
+.cf-end .unlock{display:inline-flex;align-items:center;gap:8px;margin:20px 0;padding:9px 16px;border:1px solid var(--fline);color:var(--fsteel);font-size:12px}
+.cf-end .acts{display:flex;justify-content:center;gap:10px}
+
+/* F 状态栏主题化（用 ID 提高优先级，覆盖后面的通用 .sb-f） */
+#cf .sb-f{color:var(--fink);--sb-red:var(--fred);border-top-color:var(--fline);background:transparent}
+#cf .sb-f .sb-lb{opacity:.85}
+#cf .sb-f .sb-track{background:rgba(140,150,160,.3)}
+#cf .sb-f .sb-mem:hover{background:rgba(150,170,185,.12)}
+
+
+/* ============ 统一状态栏：体力/粮食上排 · 侵蚀长条下排 · 内存右下 ============ */
+.sb{position:relative;display:flex;flex-direction:column;gap:9px;margin-top:22px;padding:14px 16px 15px}
+.sb-row1{display:flex;gap:26px;align-items:baseline}
+.sb-stat{display:flex;align-items:baseline;gap:8px}
+.sb-lb{font-size:10px;letter-spacing:.1em;opacity:.72;display:inline-flex;align-items:center;gap:5px}
+.sb-stat b{font-size:17px;font-weight:800;line-height:1}
+.sb-row2{display:flex;align-items:center;gap:11px;padding-right:150px}
+.sb-track{flex:1;height:11px;position:relative;background:rgba(127,127,127,.2);overflow:hidden}
+.sb-track i{display:block;height:100%;width:28%;background:var(--sb-red,#b32030);transition:width .3s}
+.sb-track::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(90deg,transparent 0 24px,rgba(0,0,0,.22) 24px 25px)}
+.sb-pct{font-size:12px;font-weight:800;min-width:34px;text-align:right}
+.sb-mem{position:absolute;right:14px;bottom:11px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:800;letter-spacing:.06em;padding:7px 13px;line-height:1.15;border:1px solid currentColor;background:transparent;color:inherit;transition:.15s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.sb-mem-top{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.sb-mem:hover{background:rgba(127,127,127,.16)}
+.sb-mem small{display:block;font-size:8px;letter-spacing:.14em;opacity:.6}
+
+/* A 冷档案 */
+.sb-a{color:#2b3d33;--sb-red:#9c2238;margin:22px -40px 0;background:linear-gradient(180deg,#d8dccd,#c4ccbb);border-top:1px solid #aeb6a4}
+.sb-a .sb-track{background:rgba(30,40,35,.18)}
+/* B 静默终端 */
+.sb-b{color:var(--cy);--sb-red:var(--rd);border-top:1px solid #1e474c;background:rgba(132,232,221,.03)}
+.sb-b .sb-lb{color:var(--mut);opacity:1}
+.sb-b .sb-track{background:#16383d;border:1px solid #24545a}
+/* D 银幕 */
+.sb-d{color:var(--silver);--sb-red:var(--red);border-top:1px solid #444;background:rgba(255,255,255,.02)}
+.sb-d .sb-track{background:#2b2b2b;height:9px}
+/* E 瑞士红（暗色） */
+.sb-e{color:#e7e5df;--sb-red:#e2231a;border-top:2px solid #e2231a;background:transparent}
+.sb-e .sb-track{background:#333;height:12px}
+/* F 冷寂 */
+.sb-f{color:#cbd2d6;--sb-red:#c04747;border-top:1px solid #39434a;background:transparent}
+.sb-f .sb-track{background:#283036;height:9px}
+
+
+
+/* ============================================================
+   接入游戏的适配：外层舞台 / 顶部工具条 / 回想 / 记忆 / 响应式
+   ============================================================ */
+.fad-cold-root{min-height:calc(100vh - 64px);background:#080a0b;padding:20px 16px 40px;display:flex;flex-direction:column;align-items:center}
+[data-theme="light"] .fad-cold-root{background:#d5d2c9}
+.fad-cold-root>#cf{width:760px;max-width:100%;margin:auto 0}
+.fad-cold-top{width:760px;max-width:100%;margin:0 auto 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fad-cold-top .sp{flex:1}
+.fad-cold-top .fad-cbar{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:600 10px/1 ui-monospace,monospace;letter-spacing:.08em;padding:8px 12px;color:var(--fink);background:var(--fpanel);border:1px solid var(--fline);transition:.15s}
+.fad-cold-top .fad-cbar:hover{border-color:var(--fsteel)}
+.fad-cold-top .fad-cbar.on{background:var(--fsteel);color:var(--fbg);border-color:var(--fsteel)}
+.fad-cold-top .fad-cbar.danger{color:var(--fred);border-color:var(--fred)}
+
+/* 回想 / 记忆 档案页 */
+.cf-list{min-height:0}
+.cf-list-head{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--fline);padding-bottom:14px;margin-bottom:20px}
+.cf-list-head h2{margin:0;font:800 28px/1 "Arial Black",Helvetica,sans-serif;color:var(--fink)}
+.cf-list-head small{font:600 10px/1 ui-monospace,monospace;letter-spacing:.12em;color:var(--fmut)}
+.cf-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.cf-tile{border:1px solid var(--fline);background:var(--fpanel);transition:.15s;overflow:hidden}
+.cf-tile:hover{border-color:var(--fsteel);transform:translateY(-2px)}
+.cf-tile.locked{opacity:.48}
+.cf-tile-img{aspect-ratio:1;background:var(--ffig);display:flex;align-items:center;justify-content:center;color:var(--fmut);font-size:26px}
+.cf-tile-img img{width:100%;height:100%;object-fit:cover;filter:grayscale(1)}
+.cf-tile-meta{padding:9px 11px}
+.cf-tile-id{font:700 9px/1 ui-monospace,monospace;color:var(--fred);letter-spacing:.1em}
+.cf-tile-name{font-size:12px;font-weight:700;margin:6px 0 4px;color:var(--fink)}
+.cf-tile-hint{font-size:10px;line-height:1.6;color:var(--fmut)}
+.cf-mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:11px}
+.cf-memo{padding:13px 15px;border:1px solid var(--fline);background:var(--fpanel);border-left:3px solid var(--fsteel)}
+.cf-memo.locked{opacity:.45;border-left-color:var(--fmut)}
+.cf-memo-id{font:700 9px/1 ui-monospace,monospace;letter-spacing:.12em;color:var(--fred)}
+.cf-memo-name{font-size:13px;font-weight:800;margin:7px 0 3px;color:var(--fink)}
+.cf-memo-short{font-size:11px;color:var(--fsteel);margin-bottom:6px}
+.cf-memo-desc{font-size:10px;line-height:1.7;color:var(--fmut);white-space:pre-line}
+.cf-empty{text-align:center;padding:60px 20px;color:var(--fmut);font-size:13px}
+.cf-back{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.08em;padding:8px 13px;color:var(--fink);background:var(--fpanel);border:1px solid var(--fline);margin-bottom:16px}
+
+/* 观察 / HINT 辅助（沿用数据里的 hint 机制） */
+.cf-hint{display:flex;align-items:center;gap:5px;font:600 10px/1.5 "PingFang SC",sans-serif;color:var(--fsteel);margin-top:5px}
+.cf-hint-locked{color:var(--fred)}
+.cf-cost-mini{font:600 9px/1 ui-monospace,monospace;color:var(--fred);margin-left:auto}
+
+@media (max-width:800px){
+  .fad-cold-root{padding:12px 8px 40px}
+  .cf-inner{padding:20px 16px 24px}
+  .cf-hero h1{font-size:38px}
+  .cf-routes{grid-template-columns:1fr}
+  .cf-cols{grid-template-columns:1fr}
+  .sb-row2{padding-right:0;flex-wrap:wrap}
+  .sb-mem{position:static;margin-top:8px}
+}
+
+/* ============================================================
+   原版图标挂载：用 CSS mask 把白色 PNG 当遮罩，颜色跟随 currentColor
+   深色主题=白图标，浅色主题=深灰图标，自动适配，零违和。
+   ============================================================ */
+.icn-png{display:inline-block;width:17px;height:17px;flex:none;vertical-align:-4px;background-color:currentColor;opacity:.9;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;-webkit-mask-size:contain;mask-size:contain}
+.icn-png.hp{-webkit-mask-image:url('/fading_icons/icn_marian_hp.png');mask-image:url('/fading_icons/icn_marian_hp.png')}
+.icn-png.food{-webkit-mask-image:url('/fading_icons/icn_marian_food.png');mask-image:url('/fading_icons/icn_marian_food.png')}
+.icn-png.erosion{-webkit-mask-image:url('/fading_icons/icn_marian_erosion.png');mask-image:url('/fading_icons/icn_marian_erosion.png')}
+.icn-png.lock{-webkit-mask-image:url('/fading_icons/marian_icn_lock.png');mask-image:url('/fading_icons/marian_icn_lock.png')}
+.icn-png.mem{-webkit-mask-image:url('/fading_icons/marian_icn_memory.png');mask-image:url('/fading_icons/marian_icn_memory.png')}
+.icn-png.arrow{-webkit-mask-image:url('/fading_icons/marian_icn_arrow_01.png');mask-image:url('/fading_icons/marian_icn_arrow_01.png')}
+.icn-png.hex{-webkit-mask-image:url('/fading_icons/ele_hexgaon_stroke.png');mask-image:url('/fading_icons/ele_hexgaon_stroke.png')}
+.icn-png.new{width:34px;height:15px;background:none;-webkit-mask:none;mask:none;background-image:url('/fading_icons/marian_icn_new.png');background-repeat:no-repeat;background-position:center;background-size:contain}
+
+/* 原版图标为半透明白描边，浅色主题加深以确保可读 */
+[data-theme="light"] .icn-png{opacity:1;background-color:#26251e}
+[data-theme="light"] #cf .sb-lb .icn-png{background-color:#1c1b17}
+
+/* ============================================================
+   场景背景：无 CG 的页面沿用场景板（原版机制：模糊压暗）
+   灰度 + 低饱和 + 模糊 + 压暗，融入档案/冷寂调性，不抢文字
+   ============================================================ */
+.cf-scene{position:relative;width:min(100%,380px);margin:0 auto 22px;padding:7px;border:1px solid var(--fline);background:var(--fpanel);overflow:hidden}
+.cf-scene::before,.cf-scene::after{content:"";position:absolute;width:16px;height:16px;border:2px solid var(--fsteel);opacity:.6;pointer-events:none;z-index:2}
+.cf-scene::before{left:-2px;top:-2px;border-right:0;border-bottom:0}
+.cf-scene::after{right:-2px;bottom:-2px;border-left:0;border-top:0}
+.cf-scene img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;filter:grayscale(1) contrast(.9) brightness(.62) blur(1.5px)}
+.cf-scene::after{border-color:var(--fsteel)}
+.cf-scene-tag{position:absolute;left:14px;bottom:14px;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:5px 9px;background:rgba(10,12,14,.72);color:#e8eef2;border:1px solid rgba(255,255,255,.25);font:600 8px/1 ui-monospace,monospace;letter-spacing:.16em}
+[data-theme="light"] .cf-scene-tag{background:rgba(30,28,24,.78);color:#f2f0e9}
+[data-theme="light"] .cf-scene img{filter:grayscale(.85) contrast(.92) brightness(.72) blur(1.5px)}
+
+/* ============================================================
+   开场地区选择地图（原版 map_fadingaffection + 叠加标记）
+   ============================================================ */
+.cf-map{
+  position:relative;width:min(100%,420px);margin:14px auto 22px;
+  border:1px solid var(--fline);background:var(--fpanel);padding:8px;
+}
+.cf-map-frame{position:relative;overflow:hidden;background:var(--ffig)}
+.cf-map-frame img{display:block;width:100%;aspect-ratio:852/1024;height:auto;object-fit:contain;filter:grayscale(1) contrast(1.04)}
+[data-theme="light"] .cf-map-frame img{filter:grayscale(1) contrast(.92) opacity(.82)}
+.cf-map::before,.cf-map::after{content:"";position:absolute;width:14px;height:14px;border:2px solid var(--fsteel);opacity:.7;pointer-events:none;z-index:3}
+.cf-map::before{left:-2px;top:-2px;border-right:0;border-bottom:0}
+.cf-map::after{right:-2px;bottom:-2px;border-left:0;border-top:0}
+.cf-map-label{
+  position:absolute;left:10px;top:9px;z-index:4;
+  font:600 9px/1 ui-monospace,monospace;letter-spacing:.16em;color:var(--fmut);
+  background:var(--fpanel);border:1px solid var(--fline);padding:5px 8px;
+}
+
+/* 地图标记 */
+.cf-marker{
+  position:absolute;z-index:5;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  cursor:pointer;background:none;border:0;padding:0;color:var(--fsteel);
+  font-family:inherit;transition:transform .15s;
+}
+.cf-marker:hover:not(:disabled){transform:translate(-50%,-50%);filter:none}
+.cf-marker:hover:not(:disabled) .pin{background:#7ea6cc;border-color:#11171b;box-shadow:0 0 0 3px rgba(126,166,204,.4),0 4px 16px rgba(0,0,0,.55);color:#11171b}
+.cf-marker:hover:not(:disabled) .tag{background:#7ea6cc;color:#11171b;border-color:#11171b;box-shadow:0 0 12px rgba(126,166,204,.55)}
+.cf-marker:focus-visible .pin{outline:2px solid #a8d2f5;outline-offset:3px}
+.cf-marker:disabled{cursor:not-allowed;opacity:.7}
+.cf-marker .pin{
+  width:32px;height:32px;display:grid;place-items:center;
+  background:#7ea6cc;border:2px solid #4d7ba6;color:#fff;
+  transform:rotate(45deg);box-shadow:0 3px 10px rgba(0,0,0,.45);transition:background .16s,border-color .16s;
+}
+[data-theme="light"] .cf-marker .pin{background:#11171b;border-color:#11171b}
+.cf-marker .pin svg{width:19px;height:19px;transform:rotate(-45deg);stroke:currentColor;fill:none;stroke-width:1.8}
+.cf-marker .tag{
+  font:700 11px/1 "PingFang SC",sans-serif;letter-spacing:.06em;
+  padding:5px 11px;background:var(--fsteel);color:var(--fbg);
+  border:1px solid var(--fline);white-space:nowrap;
+}
+.cf-marker.locked .pin{background:#7d8590;border-color:#5c646d;color:#e6e6e6}
+.cf-marker.locked .tag{background:var(--fpanel);color:var(--fmut)}
+.cf-marker .req{
+  font:600 9px/1.4 "PingFang SC",sans-serif;color:var(--fred);
+  background:var(--fpanel);border:1px solid var(--fline);padding:3px 7px;white-space:nowrap;
+}
+.cf-map-hint{text-align:center;font:500 10px/1.6 "PingFang SC",sans-serif;color:var(--fmut);margin:-10px 0 6px}
+
+/* ============================================================
+   统一「游戏视口」：面板撑满视口，页眉固定、正文滚动
+   主菜单 / 回想 / 记忆 / 剧情页共用（.cf-fill 标记该视图）
+   ============================================================ */
+.fad-cold-root:has(.cf-fill){height:calc(100vh - 64px);min-height:540px;padding:10px 16px 12px;overflow:hidden}
+.fad-cold-root:has(.cf-fill)>#cf{flex:1;min-height:0;height:auto;margin:0;width:760px;max-width:100%}
+#cf .stage:has(.cf-fill){height:100%;padding:0;display:flex}
+#cf .stage:has(.cf-fill)>.cf{height:100%;display:flex;min-height:0}
+#cf .stage:has(.cf-fill) .cf-frame{flex:1;min-height:0;margin:0;display:flex}
+#cf .stage:has(.cf-fill) .cf-inner{flex:1;min-height:0;display:flex;flex-direction:column;padding:18px 30px 14px}
+
+/* 滚动容器共用细滚动条 */
+.cf-scroll,.cf-home-body,.cf-list{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:var(--fline) transparent}
+.cf-scroll::-webkit-scrollbar,.cf-home-body::-webkit-scrollbar,.cf-list::-webkit-scrollbar{width:6px}
+.cf-scroll::-webkit-scrollbar-thumb,.cf-home-body::-webkit-scrollbar-thumb,.cf-list::-webkit-scrollbar-thumb{background:var(--fline)}
+.cf-scroll::-webkit-scrollbar-track,.cf-home-body::-webkit-scrollbar-track,.cf-list::-webkit-scrollbar-track{background:transparent}
+
+/* —— 主菜单：项目条 / 标题 / 导语固定，按钮与三条记录滚动 —— */
+.cf-home-head{flex:none}
+.cf-home-head .cf-hero{padding:22px 0 16px}
+.cf-home-head .cf-rule{margin:18px auto}
+.cf-home-body{flex:1;min-height:0;padding:0 4px;display:flex;flex-direction:column}
+/* 预留主视觉 CG 位：标题区与内容块之间的整片留白都归它（现在为空） */
+.cf-home-art{flex:1 1 auto;min-height:0;margin:8px 0 0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.cf-home-art img{display:block;max-width:100%;max-height:100%;object-fit:contain}
+
+/* 内容块（导语 + 按钮 + 三条记录）整体贴底 */
+.cf-home-block{flex:none;padding-top:10px;border-top:1px solid var(--fline)}
+.cf-home-block .cf-lead{margin:12px auto 0;line-height:1.95}
+.cf-home-block .cf-acts{flex:none;margin-top:10px}
+.cf-home-block .cf-routes{height:min(240px,24vh);margin:14px 0 0;grid-auto-rows:1fr}
+/* 矮视口（笔记本）再收一档，保证整块内容在首屏内 */
+@media (max-height:899px){.cf-home-block .cf-routes{height:min(232px,24vh)}}
+.cf-home-body .cf-rc{display:flex;flex-direction:column;justify-content:center;padding-bottom:12px}
+.cf-home-body .cf-rc .go{margin-top:auto}
+
+/* —— 回想 / 记忆：返回按钮与标题固定，卡面网格滚动 —— */
+.cf-doc-head{flex:none}
+.cf-doc-head .cf-back{margin-bottom:14px}
+.cf-doc-head .cf-list-head{margin-bottom:0}
+.cf-list{flex:1;min-height:0;padding:18px 6px 4px 0}
+
+/* —— 剧情页：章节标题与状态栏固定，正文滚动 —— */
+.cf-game-fixed{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 4px 0}
+.cf-game-fixed .cf-head{flex:none;margin-bottom:12px;padding-bottom:12px}
+.cf-scroll{flex:1;min-height:0;padding:2px 6px 6px 2px}
+.cf-game-fixed .sb{flex:none;margin-top:10px}
+
+/* 小屏同样填满视口 */
+@media (max-width:800px){
+  .fad-cold-root:has(.cf-fill){height:calc(100dvh - 56px);min-height:0;padding:8px 6px}
+  #cf .stage:has(.cf-fill) .cf-inner{padding:14px 14px 10px}
+  .cf-home-block .cf-routes{height:auto;grid-auto-rows:auto}
+}
+
+/* 主菜单清除存档（图标按钮，放右上角） */
+.cf-top-right{display:inline-flex;align-items:center;gap:14px}
+.cf-clear{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;font:600 9px/1 ui-monospace,monospace;letter-spacing:.1em;padding:5px 9px;color:var(--fred);background:transparent;border:1px solid var(--fred);transition:background .15s}
+.cf-clear:hover{background:rgba(160,60,60,.14)}
+.cf-clear .ico{width:13px;height:13px}
+
+/* 游戏内右上角导航按钮（回退 / 主菜单），对应原版两枚图标 */
+.cf-bar-right{display:inline-flex;align-items:center;gap:12px}
+.cf-gamenav{display:inline-flex;gap:6px}
+.cf-navbtn{display:grid;place-items:center;width:28px;height:26px;cursor:pointer;padding:0;color:var(--fsteel);background:var(--fpanel);border:1px solid var(--fline);border-radius:3px;transition:.15s}
+.cf-navbtn:hover:not(:disabled){color:var(--fbg);background:var(--fsteel);border-color:var(--fsteel)}
+.cf-navbtn:disabled{opacity:.35;cursor:not-allowed}
+.cf-navbtn .ico{width:15px;height:15px}

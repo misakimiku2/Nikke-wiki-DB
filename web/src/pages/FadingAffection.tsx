@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf, memoryOfEnding,
   type FadingData, type FadingPage, type FadingRoute, type FadingStatus, type FadingCost, type FadingChoice,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
-import './fading.css'
+import FadingCold, { type ColdView, type ColdChoice } from './FadingCold'
 
-type View = 'home' | 'game' | 'endings' | 'memories'
-type HistoryEntry = { id: number; text: string; title?: string }
+/* 所有游戏逻辑沿用原实现；UI 已替换为 F 冷寂双主题（FadingCold） */
 
 const LS_ENDINGS = 'nikke_fading_endings_v1'
 const LS_CHECKED = 'nikke_fading_checked_v1'
 const LS_SEEN = 'nikke_fading_seen_v1'
 
 const STATUS_LABEL: Record<keyof FadingStatus, string> = { hp: '体力', food: '粮食', erosion: '侵蚀' }
+const CN_NUM = ['i.', 'ii.', 'iii.', 'iv.', 'v.', 'vi.', 'vii.', 'viii.', 'ix.', 'x.']
 
 function loadArr(key: string): number[] {
   try {
@@ -42,17 +41,15 @@ export default function FadingAffection() {
   usePageTitle('FADING AFFECTION · 渐逝的爱意')
   const [data, setData] = useState<FadingData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [view, setView] = useState<View>('home')
+  const [view, setView] = useState<ColdView>('home')
   const [route, setRoute] = useState<FadingRoute | null>(null)
   const [node, setNode] = useState<number | null>(null)
   const [lastCg, setLastCg] = useState<string | null>(null)
   const [status, setStatus] = useState<FadingStatus>({ hp: 10, food: 10, erosion: 0 })
-  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [history, setHistory] = useState<{ id: number; text: string; title?: string }[]>([])
   const [found, setFound] = useState<number[]>(() => loadArr(LS_ENDINGS))
   const [checked, setChecked] = useState<number[]>(() => loadArr(LS_CHECKED))
   const [seen, setSeen] = useState<number[]>(() => loadArr(LS_SEEN))
-  const [observe, setObserve] = useState<number | null>(null)
-  const [menu, setMenu] = useState(false)
 
   useEffect(() => {
     loadFadingData().then((d) => { setData(d); setStatus({ ...d.status.init }) })
@@ -67,14 +64,17 @@ export default function FadingAffection() {
   const isIntro = node != null && !!route && node === route.start
   const text = isIntro ? route?.introText || '' : page?.text || ''
   const cgName = isIntro ? null : page?.cg || lastCg
+  const cgSrc = data ? fadingCgSrc(data, cgName) : null
   const choices = data && node != null ? (isIntro ? [] : choicesFor(data, node)) : []
   const firsts = data && node != null && isIntro ? firstFor(data, node) : []
   const routeNo = route?.no ?? 0
+  const ending = page?.ending
+  const memory = ending && data ? memoryOfEnding(data, node ?? 0) : null
+
   const unlockedMemories = useMemo(() => {
     if (!data) return new Set<string>()
     const s = new Set<string>()
     for (const id of found) { const m = memoryOfEnding(data, id); if (m) s.add(`${m.route}-${m.index}`) }
-    // 记忆由「抵达对应页面」获得（LootItemTable: page -> saveitem）
     for (const id of seen) { const m = data.memoryByPage[String(id)]; if (m) s.add(`${m.route}-${m.index}`) }
     return s
   }, [data, found, seen])
@@ -84,21 +84,21 @@ export default function FadingAffection() {
     setSeen((s) => (s.includes(id) ? s : [...s, id]))
   }
 
-  /** HINT 条的真实触发条件：每条带提示的选项各有独立条件 */
   function hintUnlocked(c: FadingChoice): boolean {
     const req = c.hintReq
     if (!req) return true
     if (req.kind === 'memory') return unlockedMemories.has(req.memory ?? '')
     if (req.kind === 'ending') return found.includes(req.page)
-    return status.food >= 1   // 状态类条件（如「粮食先省着点吃」）
+    return status.food >= 1
   }
 
   function clearSave() {
-    [LS_ENDINGS, LS_CHECKED, LS_SEEN].forEach((k) => {
+    if (!window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) return
+    ;[LS_ENDINGS, LS_CHECKED, LS_SEEN].forEach((k) => {
       try { localStorage.removeItem(k) } catch { /* ignore */ }
     })
     setFound([]); setChecked([]); setSeen([])
-    setHistory([]); setMenu(false); setView('home'); setRoute(null); setNode(null)
+    setHistory([]); setView('home'); setRoute(null); setNode(null); setLastCg(null)
   }
 
   function start(r: FadingRoute) {
@@ -106,7 +106,7 @@ export default function FadingAffection() {
     setRoute(r); setNode(r.start); setLastCg(null)
     markSeen(r.start)
     setStatus(data ? { ...data.status.init } : { hp: 10, food: 10, erosion: 0 })
-    setHistory([]); setObserve(null); setView('game'); setMenu(false)
+    setHistory([]); setView('game')
   }
 
   function applyCost(cost: FadingCost): FadingStatus {
@@ -136,7 +136,7 @@ export default function FadingAffection() {
     if (next == null || !data) return
     const st = applyCost(cost); setStatus(st)
     const target = forcedEnding(st) ?? next
-    setNode(target); setObserve(null); markSeen(target)
+    setNode(target)
     const p = data.pages[String(target)]
     if (p?.cg) setLastCg(p.cg)
     setHistory((h) => [...h, {
@@ -145,279 +145,87 @@ export default function FadingAffection() {
     }].slice(-120))
     if (p?.ending) setFound((f) => (f.includes(target) ? f : [...f, target].sort((a, b) => a - b)))
     if (choiceId != null) setChecked((c) => (c.includes(choiceId) ? c : [...c, choiceId]))
+    markSeen(target)
   }
 
-  const cgSrc = data ? fadingCgSrc(data, cgName) : null
-  const ending = page?.ending
-  const memory = ending && data ? memoryOfEnding(data, node ?? 0) : null
-
-  if (error) return <div className="fad-root"><div className="fad-empty">数据加载失败：{error}</div></div>
-  if (!data) return <div className="fad-root"><div className="fad-empty">正在读取活动数据…</div></div>
-
-  /* ---------------- 首页 / 路线选择 ---------------- */
-  if (view === 'home') {
-    return (
-      <div className="fad-root">
-        <div className="fad-home">
-          <Link to="/story" className="fad-back">← 返回剧情列表</Link>
-          <header className="fad-home-hero">
-            <div className="fad-home-doc">
-              <div className="fad-kicker">SILVERGUN PROJECT · RESEARCH DEPARTMENT</div>
-              <img className="fad-logo" src="/fading_ui/marian_intro_title.png" alt="FADING AFFECTION" />
-              <div className="fad-doc-id">MARIA — {found.length ? 'RESTORED' : 'INITIALIZE'}</div>
-              <p className="fad-lead">
-                三段记录，三种人生。选择会消耗体力与粮食，死亡并非终点——
-                留下的记忆是解锁新路线与新地点的钥匙。
-              </p>
-              <div className="fad-stats">
-                <span><b>{data.routes.length}</b> 条路线</span>
-                <span><b>{Object.keys(data.pages).length}</b> 个节点</span>
-                <span><b>{endings.length}</b> 种结局</span>
-                <span><b>{data.memories.length}</b> 段记忆</span>
-              </div>
-              <div className="fad-actions">
-                <button className="fad-tape-btn" onClick={() => setView('memories')}>记忆 {unlockedMemories.size}/{data.memories.length}</button>
-                <button className="fad-tape-btn" onClick={() => setView('endings')}>回想 {found.length}/{endings.length}</button>
-                {import.meta.env.DEV && <Link to="/game/fadingaffection/editor" className="fad-tape-btn">🛠 UI 编辑器</Link>}
-                <button className="fad-tape-btn fad-danger" onClick={() => {
-                  if (window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) clearSave()
-                }}>⚠ 清除存档</button>
-              </div>
-            </div>
-          </header>
-          <h2 className="fad-section-title">选择路线</h2>
-          <div className="fad-routes">
-            {data.routes.map((r) => {
-              const ok = routeUnlocked(r, found)
-              const req = r.unlockRequirement
-              return (
-                <button key={r.no} className={`fad-route ${ok ? '' : 'locked'}`} disabled={!ok} onClick={() => start(r)}>
-                  <div className="fad-route-no">RECORD {String(r.no).padStart(2, '0')}</div>
-                  <div className="fad-route-name">{ok ? r.name : 'NO SIGNAL'}</div>
-                  <div className="fad-route-desc">{ok ? r.desc : `观看【${req?.name ?? '前一条记录的结局'}】后解锁`}</div>
-                  <div className="fad-route-foot">
-                    <span>{ok ? (r.unlock ? `开放于 ${r.unlock.slice(0, 10)}` : '活动首日开放') : 'LOCKED'}</span>
-                    <span className="fad-route-go">{ok ? '开始 →' : '🔒'}</span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-          <p className="fad-note">路线解锁、结局进度与记忆保存在本机浏览器。界面为原作纸张档案风格的 CSS 还原。</p>
-        </div>
-      </div>
-    )
+  /** 回退到上一个节点：从历史栈弹出，恢复该页的 CG */
+  function goBack() {
+    if (history.length === 0) return
+    const prev = history[history.length - 2]
+    setHistory((h) => h.slice(0, -1))
+    if (!prev) { setNode(route?.start ?? null); setLastCg(null); return }
+    setNode(prev.id)
+    const p = data?.pages[String(prev.id)]
+    if (p?.cg) setLastCg(p.cg)
+    else setLastCg(null)
   }
 
-  /* ---------------- 结局图鉴 / 记忆档案 ---------------- */
-  if (view === 'endings' || view === 'memories') {
-    return (
-      <div className="fad-root">
-        <div className="fad-home">
-          <button className="fad-back" onClick={() => setView('home')}>← 返回路线选择</button>
-          {view === 'endings' ? (
-            <>
-              <h1 className="fad-title-sm">回想 <small>{found.length} / {endings.length}</small></h1>
-              <div className="fad-endings">
-                {endings.map((p) => {
-                  const got = found.includes(p.id)
-                  const src = fadingCgSrc(data, p.cg)
-                  return (
-                    <div key={p.id} className={`fad-ending ${got ? 'got' : 'locked'}`}>
-                      <div className="fad-ending-img">{src && got ? <img src={src} alt="" loading="lazy" /> : <span>?</span>}</div>
-                      <div className="fad-ending-meta">
-                        <div className="fad-ending-id">#{String(p.id).slice(-4)}</div>
-                        <div className="fad-ending-name">{got ? p.ending?.title : '尚未收录的结局'}</div>
-                        <div className="fad-ending-hint">{got ? p.ending?.hint : '继续探索以解锁'}</div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          ) : (
-            <>
-              <h1 className="fad-title-sm">记忆 <small>{unlockedMemories.size} / {data.memories.length}</small></h1>
-              <p className="fad-note">记录在 NIMPH 里的记忆，是开启新路线的钥匙。</p>
-              <div className="fad-memories">
-                {data.memories.map((m) => {
-                  const got = unlockedMemories.has(`${m.route}-${m.index}`)
-                  return (
-                    <div key={`${m.route}-${m.index}`} className={`fad-memory ${got ? 'got' : 'locked'}`}>
-                      <div className="fad-memory-id">R{m.route} · {String(m.index).padStart(2, '0')}</div>
-                      <div className="fad-memory-name">{got ? m.name : '未储存的记忆'}</div>
-                      <div className="fad-memory-short">{got ? m.short : '???'}</div>
-                      <div className="fad-memory-desc">{got ? m.desc : '在对应结局中死亡后解锁。'}</div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    )
-  }
+  /* ---------- 把数据映射成展示组件需要的选项 ---------- */
+  const coldChoices: ColdChoice[] = isIntro
+    ? firsts.map((c, i) => {
+        const req = c.unlock
+        const locked = !!req && !(
+          req.kind === 'memory' ? unlockedMemories.has(req.memory ?? '') : found.includes(req.page)
+        )
+        return {
+          key: c.key, index: CN_NUM[i] ?? `${i + 1}.`,
+          text: c.text, locked,
+          lockText: locked ? (req?.kind === 'memory' ? `需要回忆【${req.name}】` : `观看【${req.name}】结局后解锁`) : undefined,
+          disabled: locked,
+          onClick: () => go(c.dest),
+        }
+      })
+    : choices.map((c, i) => {
+        const isChecked = checked.includes(c.id)
+        const hintLocked = !!c.hint && !hintUnlocked(c)
+        const can = !hintLocked && affordable(c.cost)
+        return {
+          key: c.id, index: CN_NUM[i] ?? `${i + 1}.`,
+          text: c.text,
+          cost: costText(c.cost) || undefined,
+          hint: c.hint && !isChecked ? c.hint : undefined,
+          locked: hintLocked,
+          lockText: hintLocked
+            ? (c.hintReq?.kind === 'memory' ? `需要回忆【${c.hintReq.name}】`
+              : c.hintReq?.kind === 'ending' ? `观看【${c.hintReq.name}】结局后解锁` : '需要特定状态')
+            : undefined,
+          checked: isChecked,
+          disabled: !can,
+          onClick: () => can && go(c.dest, c.cost, c.id),
+        }
+      })
 
-  /* ---------------- 纸张档案游戏画面 ---------------- */
-  const statusMax = data.status.max
-  const stamp = routeNo === 1 ? 'MARIA' : routeNo === 2 ? 'MARIA-n' : 'No.7'
+  if (error) return <div style={{ padding: 80, textAlign: 'center', color: '#ccc' }}>数据加载失败：{error}</div>
+  if (!data) return <div style={{ padding: 80, textAlign: 'center', color: '#ccc' }}>正在读取活动数据…</div>
+
   return (
-    <div className="fad-root fad-playing">
-      <div className="fad-desk">
-        {/* 菜单条 */}
-        <div className="fad-deskbar">
-          <button className="fad-mini" onClick={() => setView('home')}>← 路线</button>
-          <button className="fad-mini" onClick={() => setView('memories')}>记忆 {unlockedMemories.size}</button>
-          <button className="fad-mini" onClick={() => setView('endings')}>回想 {found.length}</button>
-          {import.meta.env.DEV && <Link to="/game/fadingaffection/editor" className="fad-mini">UI 编辑</Link>}
-          <button className="fad-mini" onClick={() => setMenu((v) => !v)}>☰</button>
-          {menu && (
-            <div className="fad-popover">
-              <div>状态：{costText(status)}</div>
-              <button className="fad-mini" onClick={() => { setHistory([]); route && start(route) }}>重新记录</button>
-              <div className="fad-popover-tip">已记录 {history.length} 步 · 已访问 {seen.length} 页</div>
-              <button className="fad-mini fad-danger" onClick={() => {
-                if (window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) clearSave()
-              }}>⚠ 清除存档（开发用）</button>
-            </div>
-          )}
-        </div>
-
-        <div className="fad-doc">
-          <div className="fad-doc-clip" aria-hidden />
-          <div className="fad-doc-leaf left" aria-hidden />
-          <div className="fad-doc-leaf right" aria-hidden />
-          <div className="fad-bullet b1" aria-hidden /><div className="fad-bullet b2" aria-hidden />
-          <div className="fad-bullet b3" aria-hidden /><div className="fad-hole h1" aria-hidden />
-          <div className="fad-hole h2" aria-hidden />
-
-          {/* 页眉 */}
-          <div className="fad-doc-head">
-            <div className="fad-doc-tag">{stamp}</div>
-            <div className="fad-doc-title">{route?.name}</div>
-            <div className="fad-doc-stamp">{routeNo === 3 ? 'IN ACTION' : `MARIA - ${routeNo}`}</div>
-            <div className="fad-doc-nav">
-              <button disabled={history.length === 0} onClick={() => {
-                const prev = history[history.length - 2]
-                if (!prev) return
-                setHistory((h) => h.slice(0, -1)); setNode(prev.id)
-                const p = data.pages[String(prev.id)]; if (p?.cg) setLastCg(p.cg)
-              }}>◀</button>
-              <button onClick={() => route && start(route)}>⏎</button>
-            </div>
-          </div>
-
-          <div className="fad-doc-body">
-            {cgSrc && (
-              <div className="fad-frame">
-                <img key={cgName || ''} src={cgSrc} alt={cgName || ''} />
-                <span className="fad-frame-tag">Script</span>
-              </div>
-            )}
-            <div className="fad-script-tag">Script</div>
-            <div className="fad-script">{text}</div>
-
-            {isIntro ? (
-              <div className="fad-choices">
-                {firsts.map((c) => {
-                  const req = c.unlock
-                  const locked = !!req && !(
-                    req.kind === 'memory'
-                      ? unlockedMemories.has(req.memory ?? '')
-                      : found.includes(req.page)
-                  )
-                  return (
-                    <button key={c.key} className={`fad-choice ${locked ? 'locked' : ''}`} disabled={locked} onClick={() => go(c.dest)}>
-                      <span className="fad-choice-main">{locked ? '???' : c.text}</span>
-                      {locked && <span className="fad-choice-req">
-                        {req?.kind === 'memory' ? `需要回忆【${req.name}】` : `观看【${req?.name}】结局后解锁`}
-                      </span>}
-                    </button>
-                  )
-                })}
-              </div>
-            ) : choices.length ? (
-              <div className="fad-choices">
-                {choices.map((c) => {
-                  const isChecked = checked.includes(c.id)
-                  const hintLocked = !!c.hint && !hintUnlocked(c)
-                  const can = !hintLocked && affordable(c.cost)
-                  const cost = costText(c.cost)
-                  return (
-                    <button key={c.id} className={`fad-choice ${hintLocked ? 'locked' : ''} ${isChecked ? 'checked' : ''} ${c.hint ? 'withhint' : ''}`}
-                      disabled={!can} onClick={() => can && go(c.dest, c.cost, c.id)}>
-                      {isChecked && <span className="fad-checked">Checked</span>}
-                      {hintLocked ? (
-                        <>
-                          <span className="fad-choice-main">???</span>
-                          <span className="fad-choice-req">
-                            {c.hintReq?.kind === 'memory'
-                              ? `需要回忆【${c.hintReq.name}】`
-                              : c.hintReq?.kind === 'ending'
-                                ? `观看【${c.hintReq.name}】结局后解锁`
-                                : '需要特定状态'}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          {c.hint && <span className="fad-hint-badge">HINT</span>}
-                          <span className="fad-choice-main">{c.text}</span>
-                          {c.hint && <span className="fad-hint-text">{c.hint}</span>}
-                          {c.hint && !isChecked && (
-                            <span className="fad-observe" onClick={(e) => { e.stopPropagation(); setObserve(observe === c.id ? null : c.id) }}>
-                              观察【{observe === c.id ? '记忆' : '???'}】
-                            </span>
-                          )}
-                          {cost && <span className="fad-choice-cost">{cost}</span>}
-                          {isChecked && <span className="fad-plus">👁 +1%</span>}
-                          {!can && !hintLocked && <span className="fad-choice-req">状态不足，无法执行</span>}
-                        </>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            ) : ending ? (
-              <div className="fad-ending-panel">
-                <div className="fad-ending-label">RECORD CLOSED · {found.includes(node ?? 0) ? '结局已收录' : '新结局'}</div>
-                <div className="fad-ending-title">{ending.title}</div>
-                <div className="fad-ending-tip">{ending.hint}</div>
-                {memory && <div className="fad-memory-unlock">◆ 解锁记忆：{memory.name}</div>}
-                <div className="fad-actions">
-                  <button className="fad-btn" onClick={() => route && start(route)}>重新记录</button>
-                  <button className="fad-btn fad-btn-ghost" onClick={() => setView('endings')}>回想</button>
-                </div>
-              </div>
-            ) : page?.next ? (
-              <div className="fad-next" onClick={() => go(page.next)}>点击画面继续 ▸</div>
-            ) : null}
-          </div>
-
-          {/* 底部状态栏 */}
-          <div className="fad-doc-foot">
-            <div className="fad-status">
-              <div className="fad-status-cell">
-                <span className="fad-status-name">体力</span>
-                <span className="fad-status-val">💙 {status.hp}/{statusMax.hp}</span>
-              </div>
-              <div className="fad-status-cell">
-                <span className="fad-status-name">粮食</span>
-                <span className="fad-status-val">🍖 {status.food}</span>
-              </div>
-              <button className="fad-memory-card" onClick={() => setView('memories')}>内存 <span>{unlockedMemories.size}</span></button>
-            </div>
-            <div className="fad-erosion">
-              <span className="fad-erosion-eye">👁</span>
-              <span className="fad-erosion-name">侵蚀程度</span>
-              <div className="fad-erosion-track"><div style={{ width: `${(status.erosion / statusMax.erosion) * 100}%` }} /></div>
-              <span className="fad-erosion-num">{Math.round((status.erosion / statusMax.erosion) * 100)}%</span>
-            </div>
-            <div className="fad-access">ACCESS DENIED</div>
-          </div>
-        </div>
-        <p className="fad-footer-note">逆向自 EventTextAdvPlus 静态表 · 纸张档案 UI 为 CSS 风格还原 · {data.version}</p>
-      </div>
-    </div>
+    <FadingCold
+      data={data}
+      view={view}
+      route={route}
+      pageText={text}
+      cgSrc={cgSrc}
+      cgAlt={cgName || undefined}
+      isRegionSelect={isIntro}
+      status={status}
+      statusMax={data.status.max}
+      choices={coldChoices}
+      ending={ending || null}
+      endingId={node}
+      memoryUnlocked={memory}
+      found={found}
+      endings={endings}
+      memories={data.memories}
+      unlockedMemories={unlockedMemories}
+      onStart={start}
+      onNavigate={setView}
+      onRestart={() => route && start(route)}
+      onBack={goBack}
+      canBack={history.length > 0}
+      onChoice={(c) => c.onClick()}
+      onClearSave={clearSave}
+      onMemClick={() => setView('memories')}
+      routeUnlocked={(r) => routeUnlocked(r, found)}
+    />
   )
 }

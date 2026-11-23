@@ -256,3 +256,143 @@ web/src/pages/FadingUiEditor.tsx  ──> 导出 JSON / CSS
 ```
 
 > 注意：带 border 的素材一律按 .9 图处理，不能整张按网格平铺；只有零 border 的无缝纹理（木纹、纸纹噪波、分隔笔刷）才用 tiled。
+
+---
+
+## 10. 原版 UI 布局逆向（替代肉眼拼图）
+
+编辑器的坐标终究是猜的。实际上 prefab bundle 里完整保存了每个 UI 节点的
+`RectTransform`（锚点 / pivot / sizeDelta / anchoredPosition / scale）与 `Image`
+（Sprite 引用 / Image.Type / m_Color），可以直接导出、按原版坐标还原。
+
+### 10.1 数据链路
+
+```
+nikke_extract/scripts/export_fading_ui_layout.py
+   └─ 读取 core bundle 14105–14112 的 RectTransform / Image / Sprite
+        └─ build/fading_ui_layout/<screen>.json       （紧凑版，剔除 inactive 变体）
+           build/fading_ui_layout/<screen>.full.json  （完整树，含各按钮 normal/checked/hint 状态）
+                │
+web/vite.config.ts fadingPrefabsPlugin ──> public/data/fading_prefabs/<screen>.json
+                │
+web/src/fadingPrefab.ts   类型 / 加载 / Unity 坐标 → CSS 换算
+web/src/pages/FadingPrefab.tsx  递归渲染器（动态文本、选项按原坐标摆放）
+```
+
+重建：`python scripts/export_fading_ui_layout.py`（上游工程根目录）。
+
+### 10.2 关键还原规则
+
+| Unity | web |
+|---|---|
+| 锚点（stretch 时用锚点矩形**中心**） | `calc(百分比 + px)` 定位，外层固定设计画布 1080×1920 后整体等比缩放 |
+| `Image.Type` Simple | `background-size: 100% 100%` |
+| `Image.Type` Sliced | `border-image`，border 顺序 Unity `[L,B,R,T]` → CSS `[T,R,B,L]` |
+| `Image.Type` Tiled | `background-repeat: repeat` |
+| `Image.m_Color`（正片叠底染色） | CSS `mask-image` + `background-color`（渐变叠层会把透明区染成实心块，不能用） |
+| 父节点 `scale` | 递归 Frame 变换，子节点坐标按累计缩放展开 |
+| 运行时克隆的 `item_page` 选项模板 | 单独导出骨架，web 按 `btn_scenario_select_01..05` 原坐标放动态选项 |
+
+### 10.3 当前状态
+
+- **剧情页（14111）已接入**：`FadingAffection.tsx` 游戏画面默认走 prefab 还原；
+  顶部可切「横屏 / 竖屏 / 旧版 UI」。横屏把同一套锚点放进 1920×1080 重新推导，
+  无需横屏 prefab 也能自适应。
+- prefab 里 `scenario_marian` / `scenario_commander` 两套纸张变体都在，按路线切换
+  （路线 2 用 commander 版）。
+- `board_hp_alert_vignette` / `board_shadow` / `board_transition` 是运行时才显示的
+  整屏特效层，渲染器默认隐藏，否则会盖住正文。
+- 其它界面（路线选择 14110、主菜单 14105、结局 14100、回想 14108）已具备导出能力，
+  运行 `export_fading_ui_layout.py` 全量导出后即可按同样方式接入，尚未逐屏替换 CSS。
+- **2026-11-23 更新**：游戏页现已改由第 11 节的「F 冷寂」UI 接管（纯 CSS，不再走 prefab 渲染）；
+  `FadingPrefab.tsx` 保留为独立预览组件，目前未挂路由。
+
+---
+
+## 11. 前端 UI 重制（F · 冷寂）
+
+> 2026-11-23。目标：**除 CG 外不使用任何游戏 UI 位图**，全部用 CSS + 内联 SVG 重绘；
+> 并提供浅色 / 深色两套主题，跟随站点 `data-theme` 切换。
+
+### 11.1 文件分工
+
+| 文件 | 职责 |
+|---|---|
+| `web/src/pages/FadingCold.tsx` | 纯展示组件，`view: home / game / endings / memories`，不含任何存档与解锁判断 |
+| `web/src/pages/fading-cold.css` | 全部样式；配色走 CSS 变量 `--fbg / --fpanel / --fink / --fline / --fmut / --fsteel / --fred / --ffig` |
+| `web/src/pages/FadingAffection.tsx` | 只保留逻辑：存档、路线解锁、cost 结算、强制结局、HINT、历史栈；渲染交给 `FadingCold` |
+| `web/src/theme.ts` | `getInitialTheme` / `applyTheme`，`localStorage` 键 `nikke-theme`，支持 `?theme=light|dark` |
+| `ui-concepts.html` | 五套概念稿（A 冷档案 / B 静默终端 / D 银幕 / E 瑞士红 / F 冷寂）单文件存档 |
+
+主题变量挂在 `<html data-theme>` 上，`#cf` 内部再按 `[data-theme="light"] #cf` 覆盖一套，
+所以同一个组件在两种主题下都只认语义变量，不需要写两遍颜色。
+
+### 11.2 布局：一套「游戏画布」
+
+四个视图共用 `.cf-fill` 标记：
+
+```css
+.fad-cold-root:has(.cf-fill){height:calc(100vh - 64px);overflow:hidden}
+```
+
+外层撑满视口 → `.cf-frame` → `.cf-inner` 逐层 `flex:1;min-height:0`，内部再分「固定页眉 + 滚动正文」。
+
+| 视图 | 固定页眉 | 滚动区 |
+|---|---|---|
+| 主菜单 | 项目条 + `FADING AFFECTION` + 副题 | 导语 + 按钮组 + 三条记录 |
+| 回想 | ← 返回路线选择、标题 + `x/35 ENDINGS` | 结局卡网格 |
+| 记忆 | ← 返回、标题 + `x/40 MEMORIES` | 记忆条目网格 |
+| 剧情 | 章节栏 + 章节标题 | 正文 / CG / 选项；体力栏固定在页脚 |
+
+主菜单内部再分三段（对应设计稿的"切点"）：
+
+```
+.cf-home-head   项目条 + 大标题 + 副题            flex:none
+.cf-home-art    主视觉 CG 预留槽（当前为空）        flex:1 1 auto
+.cf-home-block  导语 + 按钮 + 三条记录，贴底        flex:none，1px 上边框即切点线
+```
+
+`.cf-home-art` 已写好 `img{max-width:100%;max-height:100%;object-fit:contain}`，
+选定 CG 后直接往这个节点里塞 `<img>` 即可，横图竖图都不会溢出。
+
+卡片高度 `height:min(240px,24vh)`，矮视口（`max-height:899px`）收到 `min(232px,24vh)`。
+实测：
+
+| 视口 | 面板高 | 卡片高 | CG 槽高 |
+|---|---|---|---|
+| 1280×900 | 814 | 216 | 165 |
+| 1280×1280 | 1194 | 240 | 521 |
+| 1280×760 | 674 | 182 | 59 |
+| 430×860（单列） | — | 174×3，正文可滚 720 | 0 |
+
+### 11.3 图形系统
+
+- **内联 SVG 图标**：`ICO` 表 + `<I n="…" />` 组件，共 15 个（`hp / food / erosion / mem / lock / arrow / star / play / refresh / book / close / eye / mappin / back / home`）。
+- **原版 PNG 只用 4 处**：NEW 角标、锁、箭头、CG `PLATE FINAL` 六边形水印。原图不透明像素只有 9~17%，
+  直接当图片用太淡，因此统一走 `.icn-png{background-color:currentColor;mask-image:…}` 染色。
+- **地图**：`public/fading_icons/map_mono.png` / `map_color.png`（取自原版 `map_fadingaffection_*`），
+  三个标记：旧市区 (19%,62%)、湖 (41%,39%)、新市区 (74%,30%)；标记为 45° 菱形 + 白色 `mappin` SVG，
+  浅色主题默认 `#11171B`、悬停 `#7EA6CC`，不放大。
+- **状态栏三行**：体力 + 粮食 / 侵蚀长条（`padding-right:150px` 让出内存按钮）/ 内存（右下角两行）。
+
+### 11.4 已知取舍
+
+- 视口很高时 CG 槽会留出大片空白（1280 高约 520px），这是**故意**留给主视觉的位置，等图。
+- 760 高的笔记本上槽只剩 59px——优先保证标题、按钮、三张卡片都在首屏，不产生滚动。
+- 若还要更多空白，只能把记录卡改成「序号 + 标题并排」的紧凑型，可再挤出 60~80px，暂未采用。
+
+### 11.5 构建
+
+| 命令 | 用途 | 耗时 |
+|---|---|---|
+| `npm run dev` | 日常调试，不复制素材（`public/` 直接当静态目录读） | 秒级 |
+| `npm run build:quick` | 只验代码：`tsc -b` + `VITE_NO_PUBLIC=1 vite build` | 12~26s |
+| `npm run build` | 发布：复制 2.1G 素材 + 预渲染 2933 页 | 视磁盘而定 |
+
+`build_quick.mjs` 存在的意义：`publicDir` 指向上级 `public/`，全量构建每次都把整份素材重写到 `dist`，
+日常验证完全没必要，也不利于 SSD 寿命。
+
+### 11.6 交付包
+
+`handoff/fading-affection/`（86 MB：166 节点 `layout-flat.md`、244 张 UI PNG、12 张 CG、概念稿截图）
+是给外部 AI 的参考资料，**不入库**，仅本地保留。
