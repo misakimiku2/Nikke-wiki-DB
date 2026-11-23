@@ -599,6 +599,10 @@ const FADING_SPRITES = path.resolve(HERE, '../build/fading_ui_sprites.json')
 const FADING_TILED = /^(marian_ptn_|marian_texture_|marian_grd_2px$|marian_divider_0[23]$|marian_mask_map$|marian_shadow_line$)/i
 /** 编辑器「保存到项目」写这里，方便把拼好的布局入库；前端读取走 /api/fading-layout */
 const FADING_LAYOUT = path.resolve(HERE, '../build/fading_ui_layout.json')
+/** 上游 export_fading_ui_layout.py 导出的各界面 prefab 布局树（紧凑版，已剔除 inactive 变体）。
+ *  build/ 入库，dev / build 前同步进 public/data/fading_prefabs/，前端按 /data/fading_prefabs/<screen>.json 取。 */
+const FADING_PREFABS_SRC = path.resolve(HERE, '../build/fading_ui_layout')
+const FADING_PREFABS_DST = path.resolve(HERE, '../public/data/fading_prefabs')
 
 /** 只读 PNG 头 24 字节拿 IHDR 里的宽高，不引入图片解码依赖 */
 function pngSize(file: string): { w: number; h: number } {
@@ -666,6 +670,40 @@ function fadingUiManifestPlugin(): Plugin {
   }
 }
 
+/** 把 build/fading_ui_layout/*.json（不含 .full.json）同步到 public/data/fading_prefabs/。
+ *  与 site-files / spine-overrides 同款：build/ 入库、public/ 被 gitignore，
+ *  dev 启动时与 build 前各同步一次，改了源文件即时刷新。 */
+function fadingPrefabsPlugin(): Plugin {
+  const sync = () => {
+    try {
+      if (!fs.existsSync(FADING_PREFABS_SRC)) return
+      fs.mkdirSync(FADING_PREFABS_DST, { recursive: true })
+      for (const f of fs.readdirSync(FADING_PREFABS_SRC)) {
+        if (!f.endsWith('.json') || f.endsWith('.full.json')) continue
+        fs.copyFileSync(path.join(FADING_PREFABS_SRC, f), path.join(FADING_PREFABS_DST, f))
+      }
+    } catch (e) {
+      console.warn('[fading-prefabs] 同步失败：', e)
+    }
+  }
+  return {
+    name: 'fading-prefabs',
+    configResolved() { sync() },
+    configureServer(server) {
+      if (!fs.existsSync(FADING_PREFABS_SRC)) return
+      server.watcher.add(FADING_PREFABS_SRC)
+      const onChange = (file: string) => {
+        if (path.resolve(file).startsWith(FADING_PREFABS_SRC + path.sep)) {
+          sync()
+          server.ws.send({ type: 'full-reload' })
+        }
+      }
+      server.watcher.on('change', onChange)
+      server.watcher.on('add', onChange)
+    },
+  }
+}
+
 /** dev 接口：GET 读 build/fading_ui_layout.json，POST 全量写回。
     与 /cg/albums 等编辑后台同款，仅 dev 存在；布局本身入 build/ 库。 */
 function fadingLayoutPlugin(): Plugin {
@@ -708,7 +746,7 @@ function fadingLayoutPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), coverUploadPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets(), fadingUiManifestPlugin(), fadingLayoutPlugin()],
+  plugins: [react(), cgFlagsPlugin(), cgMergesPlugin(), storyCoverEditsPlugin(), coverUploadPlugin(), spineOverridesPlugin(), siteFilesPlugin(), cleanDistAssets(), fadingUiManifestPlugin(), fadingPrefabsPlugin(), fadingLayoutPlugin()],
   // 数据和图片都在上一级 public/，直接拿来做静态目录。
   // 只改前端代码、不想重新拷 2.1G 素材时，用 VITE_NO_PUBLIC=1 只构建 assets。
   publicDir: process.env.VITE_NO_PUBLIC ? false : '../public',

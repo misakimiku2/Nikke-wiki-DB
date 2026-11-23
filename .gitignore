@@ -41,3 +41,9 @@ desktop.ini
 *.log
 *.tmp
 *.bak
+
+# 交付包（给外部 AI 的参考资料，86 MB，仅本地保留）
+/handoff/
+
+# prefab 完整树（6.9 MB，含各按钮 normal/checked/hint 状态；由 export_fading_ui_layout.py 重建）
+build/fading_ui_layout/*.full.json
