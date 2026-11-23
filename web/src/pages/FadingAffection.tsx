@@ -146,11 +146,13 @@ export default function FadingAffection() {
   /** 主菜单曲只跟着主菜单——点关卡卡片进选地点就淡掉，但只淡音量不暂停，
    *  进度一直在走，所以回到主菜单是从当前位置接上（原作行为），不是每次从头放。
    *  从主菜单打开的内存/回想仍然算在主菜单里，靠 backView 判断。
+   *  关卡选择屏也算主菜单——原版是点了关卡卡片进「选地点」才把这首淡掉的。
    *  从剧情打开的内存/回想是浮层，底下那层 BGM 与音床都不动。 */
   useEffect(() => {
-    const onMenu = view === 'home' || ((view === 'memories' || view === 'endings') && backView === 'home')
+    const onMenu = view === 'home' || view === 'routes'
+      || ((view === 'memories' || view === 'endings') && (backView === 'home' || backView === 'routes'))
     sound.current?.setShell(MENU_BGM, onMenu)
-    if (view === 'home') { sound.current?.playBgm(null); sound.current?.playAmbient(null); return }
+    if (view === 'home' || view === 'routes') { sound.current?.playBgm(null); sound.current?.playAmbient(null); return }
     if (view !== 'game') return
     sound.current?.playBgm(bgm)
     sound.current?.playAmbient(ambientKeyFor(node))
@@ -208,6 +210,7 @@ export default function FadingAffection() {
     if (v === view) return
     if (v === 'memories' || v === 'endings') { setBackView(view); ui('uis_mini_fad_recall') }
     else if (v === 'home') ui('uis_mini_fad_out')
+    else if (v === 'routes') ui('uis_mini_fad_routeselect_start')
     else ui('uis_mini_fad_back')
     transition(() => setView(v), 'view')
   }

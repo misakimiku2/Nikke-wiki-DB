@@ -1,6 +1,6 @@
 /* F 双主题：跟随网站 data-theme（dark=冷钢灰工业 / light=灰白纸张还原原作） */
-#cf{--fbg:#0b0e10;--fpanel:#11171b;--fink:#d6dee4;--fmut:#85949f;--fline:#56646e;--fsteel:#9aa9b4;--fred:#c05555;--ffig:#0c1013}
-[data-theme="light"] #cf{--fbg:#dcdad2;--fpanel:#f2f0e9;--fink:#26251e;--fmut:#6e6a5e;--fline:#b9b5a8;--fsteel:#5d6a74;--fred:#9c2238;--ffig:#e6e3da}
+#cf{--fbg:#0b0e10;--fpanel:#11171b;--fink:#d6dee4;--fmut:#85949f;--fline:#56646e;--fsteel:#9aa9b4;--fred:#c05555;--ffig:#0c1013;--rc-scrim:rgba(17,23,27,.93);--end-ink:invert(1) hue-rotate(180deg);--home-bg-scrim:linear-gradient(180deg,rgba(11,14,16,.55) 0%,rgba(17,23,27,.78) 46%,rgba(17,23,27,.94) 100%);--fred-ui:#e0767f}
+[data-theme="light"] #cf{--fbg:#dcdad2;--fpanel:#f2f0e9;--fink:#26251e;--fmut:#6e6a5e;--fline:#b9b5a8;--fsteel:#5d6a74;--fred:#9c2238;--ffig:#e6e3da;--rc-scrim:rgba(242,240,233,.94);--end-ink:none;--home-bg-scrim:linear-gradient(180deg,rgba(220,218,210,.42) 0%,rgba(242,240,233,.74) 46%,rgba(242,240,233,.93) 100%);--fred-ui:#9c2238}
 #cf .stage{background:radial-gradient(ellipse at 50% 0%,var(--fbg) 0%,#07090b 72%);transition:background .3s}
 [data-theme="light"] #cf .stage{background:radial-gradient(ellipse at 50% 0%,#e9e7e0 0%,#cfccc2 78%)}
 .cf{
@@ -42,13 +42,19 @@
 .cf-btn:hover{border-color:var(--fsteel);background:rgba(150,170,185,.08)}
 .cf-btn.on{border-color:var(--fsteel);background:var(--fsteel);color:var(--fbg)}
 .cf-routes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:30px}
-.cf-rc{padding:16px 14px;border:1px solid var(--fline);text-align:center;transition:.16s;position:relative}
-.cf-rc:hover{border-color:var(--fsteel);background:rgba(150,170,185,.05)}
-.cf-rc.lock{opacity:.45}
-.cf-rc .ix{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--fline);font:800 15px/1 "Arial Black",Helvetica,sans-serif;color:var(--fsteel);margin-bottom:4px}
-.cf-rc h4{margin:10px 0 7px;font-size:14px;font-weight:700;color:var(--fink)}
-.cf-rc p{margin:0;font-size:10px;line-height:1.7;color:var(--fmut);min-height:34px}
-.cf-rc .go{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding-top:10px;border-top:1px solid var(--fline);font:600 9px/1 ui-monospace,monospace;letter-spacing:.14em;color:var(--fsteel)}
+/* 关卡卡片：原版背景就是 marian_routeselect_0X 水彩插画，文字压在渐隐到面板色的渐层上 */
+.cf-rc{padding:0;border:1px solid var(--fline);text-align:center;transition:.16s;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;min-height:236px}
+.cf-rc-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 32%;transition:transform .22s,filter .2s}
+.cf-rc-scrim{position:absolute;left:0;right:0;bottom:0;height:64%;background:linear-gradient(180deg,transparent 0,var(--rc-scrim) 58%)}
+.cf-rc-body{position:relative;z-index:1;padding:8px 12px 11px}
+.cf-rc:hover:not(.lock){border-color:var(--fsteel)}
+.cf-rc:hover:not(.lock) .cf-rc-art{transform:scale(1.04)}
+/* 锁定态只压插画和文字层，整卡透明度会让浅色插画直接消失 */
+.cf-rc.lock .cf-rc-art{filter:grayscale(1) brightness(.5) contrast(1.2)}
+.cf-rc.lock .cf-rc-body{opacity:.62}
+.cf-rc h4{margin:6px 0 4px;font-size:13px;font-weight:700;color:var(--fink)}
+.cf-rc p{margin:0;font-size:10px;line-height:1.55;color:var(--fmut)}
+.cf-rc .go{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:8px;padding-top:7px;border-top:1px solid var(--fline);font:600 9px/1 ui-monospace,monospace;letter-spacing:.14em;color:var(--fsteel)}
 .cf-rc .badge{position:absolute;top:-7px;right:-7px;background:var(--fred);color:var(--fpanel);font:800 8px/1 ui-monospace,monospace;padding:4px 6px;letter-spacing:.1em}
 
 /* F 剧情页 */
@@ -76,8 +82,12 @@
 .cf-opt .ix{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid var(--fline);font:700 11px/1 ui-monospace,monospace;color:var(--fsteel);flex:none}
 .cf-opt .tx{flex:1;font-size:13px}
 .cf-opt .arrow{margin-left:6px;color:var(--fmut)}
-.cf-next{border-style:dashed;background:transparent}
-.cf-next .tx{color:var(--fmut);font-size:12px;letter-spacing:.06em}
+/* 「点击画面继续」不是分支，做成正文下方一行轻提示：无框、无序号格、无选项底色 */
+.cf-next{display:inline-flex;align-items:center;gap:9px;cursor:pointer;padding:6px 12px;background:none;border:0;font-family:inherit;color:var(--fmut);transition:.15s}
+.cf-next:hover{color:var(--fink)}
+.cf-next .tx{font:500 10px/1 ui-monospace,monospace;letter-spacing:.2em}
+.cf-next .arrow{display:inline-flex;color:inherit}
+.cf-next .arrow svg{width:13px;height:13px}
 .cf-status{display:flex;gap:26px;margin-top:24px;padding-top:16px;border-top:1px solid var(--fline);font:500 10px/1 ui-monospace,monospace;letter-spacing:.1em;color:var(--fmut)}
 .cf-status b{color:var(--fsteel);font-size:13px;margin-left:8px}
 .cf-status .bar{display:inline-block;width:54px;height:2px;background:var(--fline);vertical-align:middle;margin-left:6px}
@@ -91,19 +101,34 @@
 .cf-end p{margin:0 auto;max-width:470px;font-size:12px;line-height:2.1;color:var(--fmut)}
 .cf-end .unlock{display:inline-flex;align-items:center;gap:8px;margin:20px 0;padding:9px 16px;border:1px solid var(--fline);color:var(--fsteel);font-size:12px}
 .cf-end .acts{display:flex;justify-content:center;gap:10px}
+/* 结局字标：素材自带透明，直接压在页面上。四张实测不透明像素全是深色墨迹
+   （亮度 <80），浅色主题就是原样；深色主题用 invert+hue-rotate 提亮并保住色相。 */
+.cf-end-mark{display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:2px}
+.cf-end-mark img{display:block;width:min(238px,56%);height:auto;filter:var(--end-ink)}
+.cf-end-mark .no{font:500 9px/1 ui-monospace,monospace;letter-spacing:.3em;color:var(--fmut)}
 
 /* F 状态栏主题化（用 ID 提高优先级，覆盖后面的通用 .sb-f） */
-#cf .sb-f{color:var(--fink);--sb-red:var(--fred);border-top-color:var(--fline);background:transparent}
+#cf .sb-f{color:var(--fink);--sb-red:var(--fred);background:transparent;display:flex;flex-direction:row;align-items:center;gap:16px;padding:10px 16px 15px;border-top:0}
+/* 分割线不再用 border-top：它只画到内存按钮左侧，且离下面的图标正好 10px */
+#cf .sb-f::before{content:"";position:absolute;left:16px;right:182px;top:0;height:1px;background:var(--fline)}
+#cf .sb-f .sb-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:9px}
+#cf .sb-f .sb-row1{align-items:center;gap:22px}
+#cf .sb-f .sb-stat{align-items:center;gap:9px}
+/* 长条槽要给浮动的内存按钮让位：按钮左边缘在 sb 右内侧 166px 处，
+   与分割线右端（sb 右侧 182px）留同样的余量，两者才不会被按钮压住。 */
+#cf .sb-f .sb-row2,#cf .sb-f .sb-row2.off{padding-right:166px}
 #cf .sb-f .sb-lb{opacity:.85}
 #cf .sb-f .sb-track{background:rgba(140,150,160,.3)}
 #cf .sb-f .sb-mem:hover{background:rgba(150,170,185,.12)}
+#cf .sb-f .sb-mem-card:hover{background:none}
 
 
 /* ============ 统一状态栏：体力/粮食上排 · 侵蚀长条下排 · 内存右下 ============ */
 .sb{position:relative;display:flex;flex-direction:column;gap:9px;margin-top:22px;padding:14px 16px 15px}
 .sb-row1{display:flex;gap:26px;align-items:baseline}
 .sb-stat{display:flex;align-items:baseline;gap:8px}
-.sb-lb{font-size:10px;letter-spacing:.1em;opacity:.72;display:inline-flex;align-items:center;gap:5px}
+.sb-lb{font-size:10px;letter-spacing:.1em;opacity:.72;display:inline-flex;align-items:center;gap:7px}
+.sb-lb .icn-png{width:27px;height:27px;vertical-align:-9px}
 .sb-stat b{font-size:17px;font-weight:800;line-height:1}
 .sb-stat b small{font-size:11px;font-weight:600;opacity:.55}
 .sb-row2{display:flex;align-items:center;gap:11px;padding-right:150px}
@@ -123,6 +148,16 @@
 .sb-mem-top{display:flex;align-items:center;gap:5px;white-space:nowrap}
 .sb-mem:hover{background:rgba(127,127,127,.16)}
 .sb-mem small{display:block;font-size:8px;letter-spacing:.14em;opacity:.6}
+/* 内存按钮 = 原版那张 NIMPH 记忆卡本体（btn_marian_memory 三套皮肤）。
+   不在页脚里，是浮在剧情区右下角的按钮；「内存」压在卡面平坦标签区的中心
+   （接触片占右侧约 82% 之后，标签区中心实测约 x 41%），字色跟着皮肤走。 */
+.sb-mem-card{position:absolute;right:18px;bottom:10px;z-index:5;width:150px;padding:0;border:0;background:none;display:block;color:inherit;cursor:pointer}
+.sb-mem-card img{display:block;width:100%;height:auto;aspect-ratio:352/184;object-fit:contain;filter:drop-shadow(0 3px 8px rgba(0,0,0,.5));transition:.15s}
+.sb-mem-card:hover img{filter:drop-shadow(0 5px 14px rgba(0,0,0,.6)) brightness(1.12)}
+.sb-mem-card:active img{transform:translateY(1px)}
+.sb-mem-lb{position:absolute;left:41%;top:45%;transform:translate(-50%,-50%);font-size:20px;font-weight:800;letter-spacing:.06em;line-height:1;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.35)}
+.sb-mem-erosion .sb-mem-lb{color:#2b2a24;text-shadow:none}
+.sb-mem-marian .sb-mem-lb,.sb-mem-commander .sb-mem-lb{color:#eae7de}
 
 /* A 冷档案 */
 .sb-a{color:#2b3d33;--sb-red:#9c2238;margin:22px -40px 0;background:linear-gradient(180deg,#d8dccd,#c4ccbb);border-top:1px solid #aeb6a4}
@@ -191,16 +226,17 @@
   .fad-cold-root{padding:12px 8px 40px}
   .cf-inner{padding:20px 14px 24px}
   .cf-hero h1{font-size:38px}
-  /* 竖屏也保持横排三张记录卡：靠压缩内边距与字号容纳 */
+  /* 顶栏那串长标题在 430px 下会折三行，只留档案号 */
+  .cf-top-full{display:none}
+  /* 竖屏也保持横排三张记录卡：每张只有约 122px 宽，描述句塞不下，直接不显示 */
   .cf-routes{grid-template-columns:repeat(3,1fr);gap:6px}
-  .cf-rc{padding:12px 8px}
-  .cf-rc .ix{width:26px;height:26px;font-size:12px}
-  .cf-rc h4{margin:8px 0 6px;font-size:12px}
-  .cf-rc p{font-size:9px;line-height:1.6;min-height:44px}
-  .cf-rc .go{margin-top:8px;padding-top:8px;font-size:8px;letter-spacing:.08em}
+  .cf-rc{padding:0;min-height:196px}
+  .cf-rc h4{margin:6px 0 4px;font-size:11px}
+  .cf-rc p{display:none}
+  .cf-rc .go{margin-top:6px;padding-top:6px;font-size:8px;letter-spacing:.08em}
   .cf-cols{grid-template-columns:1fr}
-  /* 状态栏：内存仍然钉在右下角，斜纹槽让出它的位置 */
-  .sb-row2,.sb-row2.off{padding-right:104px;gap:8px}
+  /* 内存卡浮在右下角，斜纹槽按同一宽度让位 */
+  .sb-row2,.sb-row2.off{padding-right:166px;gap:8px}
   .sb-mem{right:10px;bottom:10px;padding:6px 10px;font-size:10px}
   .sb-pct{min-width:30px}
 }
@@ -217,7 +253,8 @@
 .icn-png.mem{-webkit-mask-image:url('/fading_icons/marian_icn_memory.png');mask-image:url('/fading_icons/marian_icn_memory.png')}
 .icn-png.arrow{-webkit-mask-image:url('/fading_icons/marian_icn_arrow_01.png');mask-image:url('/fading_icons/marian_icn_arrow_01.png')}
 .icn-png.hex{-webkit-mask-image:url('/fading_icons/ele_hexgaon_stroke.png');mask-image:url('/fading_icons/ele_hexgaon_stroke.png')}
-.icn-png.new{width:34px;height:15px;background:none;-webkit-mask:none;mask:none;background-image:url('/fading_icons/marian_icn_new.png');background-repeat:no-repeat;background-position:center;background-size:contain}
+/* NEW 角标自绘，不用 marian_icn_new.png：压在卡片右上角，红底反色 */
+.cf-rc-new{position:absolute;top:-1px;right:-1px;z-index:2;background:var(--fred);color:var(--fbg);font:800 8px/1 ui-monospace,monospace;letter-spacing:.18em;padding:4px 6px}
 
 /* 原版图标为半透明白描边，浅色主题加深以确保可读 */
 [data-theme="light"] .icn-png{opacity:1;background-color:#26251e}
@@ -300,10 +337,13 @@
 #cf .stage:has(.cf-fill) .cf-inner{flex:1;min-height:0;display:flex;flex-direction:column;padding:18px 30px 14px}
 
 /* 滚动容器共用细滚动条 */
-.cf-scroll,.cf-home-body,.cf-list{overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:var(--fline) transparent}
-.cf-scroll::-webkit-scrollbar,.cf-home-body::-webkit-scrollbar,.cf-list::-webkit-scrollbar{width:6px}
-.cf-scroll::-webkit-scrollbar-thumb,.cf-home-body::-webkit-scrollbar-thumb,.cf-list::-webkit-scrollbar-thumb{background:var(--fline)}
-.cf-scroll::-webkit-scrollbar-track,.cf-home-body::-webkit-scrollbar-track,.cf-list::-webkit-scrollbar-track{background:transparent}
+/* 关掉 scroll anchoring：正文逐字变长时，浏览器会拿下方仍占位的选项块（.pending 只是
+   opacity:0，照样与视口相交）当锚点，于是打字过程中整块视图被往下推。原版是原地出字。 */
+.cf-scroll,.cf-home-body,.cf-list{overflow-y:auto;overflow-x:hidden;overflow-anchor:none}
+/* 小游戏里一律不显示滚动条（滚动本身保留）。
+   scrollbar-width 不是可继承属性，所以得用后代选择器逐个命中，不能只写在根上。 */
+.fad-cold-root,.fad-cold-root *{scrollbar-width:none;-ms-overflow-style:none}
+.fad-cold-root *::-webkit-scrollbar{width:0;height:0;display:none;background:transparent}
 
 /* —— 主菜单：项目条 / 标题 / 导语固定，按钮与三条记录滚动 —— */
 .cf-home-head{flex:none}
@@ -318,10 +358,33 @@
 .cf-home-block{flex:none;padding-top:10px;border-top:1px solid var(--fline)}
 .cf-home-block .cf-lead{margin:12px auto 0;line-height:1.95}
 .cf-home-block .cf-acts{flex:none;margin-top:10px}
-.cf-home-block .cf-routes{height:min(240px,24vh);margin:14px 0 0;grid-auto-rows:1fr}
+.cf-home-block .cf-routes{height:clamp(248px,34vh,320px);margin:14px 0 0;grid-auto-rows:1fr}
+/* 进关卡屏时卡片自上而下级联出现（.cf-inner 按 view 重挂载，所以每次进都会重播） */
+.cf-home-block .cf-routes .cf-rc{animation:cf-rc-in .34s ease backwards;animation-delay:calc(var(--i,0)*.07s)}
+@keyframes cf-rc-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+/* 首页借的原版素材只留一张：藤蔓搭在左上角 */
+.cf-home-leaf{position:absolute;left:-4px;top:-2px;width:126px;height:auto;opacity:.6;pointer-events:none;z-index:2}
+[data-theme="light"] .cf-home-leaf{opacity:.48}
+
+/* ============ 主菜单动态 CG ============
+   图层是原版 intro prefab 的分层静态图，整屏铺在面板底下，正文压在上面。
+   原版的动效来自粒子 + Spine 骨骼，这里只做到雾/光/镜头的缓慢位移近似。 */
+.cf-home-bg{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+.cf-home-bg::after{content:"";position:absolute;inset:0;background:var(--home-bg-scrim)}
+.cf-intro-stage{position:absolute;left:50%;top:50%;transform-origin:50% 50%}
+.cf-intro-stage img{display:block;object-fit:fill}
+.cf-home-head,.cf-home-body{position:relative;z-index:1}
+@keyframes in-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+@keyframes in-fog-drift{0%,100%{transform:translateX(-2.5%) scale(1)}50%{transform:translateX(2.5%) scale(1.06)}}
+@keyframes in-light-pulse{0%,100%{opacity:.45}50%{opacity:.95}}
+.cf-intro-stage .in-breathe{animation:in-breathe 34s ease-in-out infinite}
+.cf-intro-stage .in-fog{animation:in-fog-drift 26s ease-in-out infinite}
+.cf-intro-stage .in-light{animation:in-light-pulse 11s ease-in-out infinite}
+.cf-intro.no-fx .cf-intro-stage img{animation:none}
 /* 矮视口（笔记本）再收一档，保证整块内容在首屏内 */
-@media (max-height:899px){.cf-home-block .cf-routes{height:min(232px,24vh)}}
-.cf-home-body .cf-rc{display:flex;flex-direction:column;justify-content:center;padding-bottom:12px}
+@media (max-height:899px){.cf-home-block .cf-routes{height:min(268px,32vh)}}
+.cf-home-body .cf-rc{display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:0}
 .cf-home-body .cf-rc .go{margin-top:auto}
 
 /* —— 回想 / 记忆：返回按钮与标题固定，卡面网格滚动 —— */
@@ -331,7 +394,7 @@
 .cf-list{flex:1;min-height:0;padding:18px 6px 4px 0}
 
 /* —— 剧情页：章节标题与状态栏固定，正文滚动 —— */
-.cf-game-fixed{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 4px 0}
+.cf-game-fixed{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;padding:0 4px 0}
 .cf-game-fixed .cf-head{flex:none;margin-bottom:12px;padding-bottom:12px}
 .cf-scroll{position:relative;flex:1;min-height:0;padding:2px 6px 6px 2px}
 .cf-game-fixed .sb{flex:none;margin-top:10px}
@@ -341,13 +404,18 @@
   .fad-cold-root:has(.cf-fill){height:calc(100dvh - 56px);min-height:0;padding:8px 6px}
   #cf .stage:has(.cf-fill) .cf-inner{padding:14px 14px 10px}
   .cf-home-block .cf-routes{height:auto;grid-auto-rows:auto}
+  /* 内存卡浮在剧情区右下角，正文要多滚出它那一截才不被压住（写在基础规则之后才生效） */
+  .cf-scroll{padding:2px 6px 26px 2px}
 }
 
 /* 主菜单清除存档（图标按钮，放右上角） */
 .cf-top-right{display:inline-flex;align-items:center;gap:14px}
-.cf-clear{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;font:600 9px/1 ui-monospace,monospace;letter-spacing:.1em;padding:5px 9px;color:var(--fred);background:transparent;border:1px solid var(--fred);transition:background .15s}
-.cf-clear:hover{background:rgba(160,60,60,.14)}
-.cf-clear .ico{width:13px;height:13px}
+/* 清除存档：纯删除图标，与静音/导航按钮同规格。
+   底色必须是实面板色——它浮在动态 CG 上，透明底会让红色被背景吃掉看不清。
+   深色主题另走 --fred-ui（比正文红更亮一档），浅色主题维持原红。 */
+.cf-clear{display:grid;place-items:center;width:28px;height:26px;cursor:pointer;padding:0;color:var(--fred-ui);background:var(--fpanel);border:1px solid var(--fred-ui);border-radius:3px;transition:.15s}
+.cf-clear:hover{color:var(--fbg);background:var(--fred-ui);border-color:var(--fred-ui)}
+.cf-clear .ico{width:14px;height:14px}
 
 /* 游戏内右上角导航按钮（回退 / 主菜单），对应原版两枚图标 */
 .cf-bar-right{display:inline-flex;align-items:center;gap:12px}
@@ -378,7 +446,7 @@
 
 /* 选项级联：打字期间容器留空占位，文字出完才由 --i 自上而下依次淡入 */
 .cf-opts.pending{opacity:0;pointer-events:none}
-.cf-opts.ready>.cf-opt,.cf-opts.ready .cf-end-block{animation:cf-drop-in .32s ease backwards;animation-delay:calc(var(--i,0)*.08s)}
+.cf-opts.ready>.cf-opt,.cf-opts.ready>.cf-next,.cf-opts.ready .cf-end-block{animation:cf-drop-in .32s ease backwards;animation-delay:calc(var(--i,0)*.08s)}
 /* 标记出现：关键帧必须带上 translate(-50%,-50%)，否则动画期间丢掉居中偏移，
    看起来就是「从下往上跳一下」 */
 @keyframes cf-pin-in{from{opacity:0;transform:translate(-50%,-50%) scale(.82)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
@@ -444,3 +512,36 @@
 .cf-sound{display:grid;place-items:center;width:28px;height:26px;cursor:pointer;padding:0;color:var(--fsteel);background:var(--fpanel);border:1px solid var(--fline);border-radius:3px;transition:.15s}
 .cf-sound:hover{color:var(--fbg);background:var(--fsteel);border-color:var(--fsteel)}
 .cf-sound .ico{width:15px;height:15px}
+
+/* ============ 竖屏：顶部区与内存卡 ============
+   360×740 实测正文从 y=220 才开始（占屏 30%）：章节栏折三行、标题折三行，
+   内存卡 150px 又吃掉页脚 49%。这里去掉与章节栏重复的信息，把顶部压成单行。
+   写在文件末尾，是为了稳定盖过前面各段的同名规则。 */
+@media (max-width:800px){
+  /* 路线名和下面的大标题是同一句话，竖屏只留大标题。
+     必须带 .cf-bar 前缀：.cf-bar span{display:inline-flex} 的特异性比单类名高。 */
+  .cf-bar .cf-bar-route{display:none}
+  .cf-bar{gap:8px;font-size:8px;letter-spacing:.06em;padding:6px 12px}
+  .cf-bar span,.cf-bar b{gap:5px}
+  .cf-bar-right{gap:8px}
+  /* SUBJECT 行与章节栏的 CHAPTER · MARIA 重复，竖屏去掉；标题字号收到不折行 */
+  .cf-head{padding-bottom:10px;margin-bottom:12px}
+  .cf-head h3{font-size:17px}
+  .cf-head .sub{display:none}
+  .cf-head .ix{width:30px;height:30px;font-size:14px}
+  /* 内存卡缩到 110px，斜纹槽让位宽度同步降下来。
+     同样必须带 #cf .sb-f 前缀，否则被前面那条 166px 的同名规则压住。 */
+  .sb-mem-card{width:110px;right:10px;bottom:8px}
+  .sb-mem-lb{font-size:15px}
+  #cf .sb-f .sb-row2,#cf .sb-f .sb-row2.off{padding-right:110px}
+  /* 分割线的 right 是相对 .sb 边框盒算的，比槽的 padding 多出一层 16px 内边距，
+     所以这里要 110+16=126 才能和槽停在同一个 x（334-126=208，离卡 10px）。 */
+  #cf .sb-f::before{right:126px}
+  /* 顶栏：MMXXVI 竖屏去掉；档案号收紧字距并不折行。
+     右侧只剩静音 + 删除两枚图标后，整行 143+70 远小于可用 316。 */
+  .cf-top .cf-mark{display:none}
+  .cf-top-id{white-space:nowrap;letter-spacing:.14em}
+  /* 三个动作按钮挤进一行：360 下原文 121+128+128+间隙=397 > 可用 308，必然折两行 */
+  .cf-acts{gap:8px}
+  .cf-btn{padding:9px 12px;font-size:10px;letter-spacing:.06em;gap:7px}
+}
