@@ -163,6 +163,15 @@ export function endingsOf(data: FadingData): FadingPage[] {
     .sort((a, b) => a.id - b.id)
 }
 
+/** 地点推导（与 locationBgSrc 同一套页面号规则）：x001 是开场平原，
+ *  下一位 1=旧市区、2=湖、3=新市区。环境音床按这个选。 */
+export function locationOf(pageId: number | null): 'plain' | 'old' | 'lake' | 'city' | null {
+  if (pageId == null) return null
+  if (pageId % 1000 === 1) return 'plain'
+  const d = Math.floor(pageId / 100) % 10
+  return d === 1 ? 'old' : d === 2 ? 'lake' : d === 3 ? 'city' : 'plain'
+}
+
 /**
  * 场景背景：小游戏无专用背景表，原版在无 CG 的页面沿用场景板并模糊压暗。
  * 这里按页面 id 推导地点（xx = 路线1/2/3，下一位 1=旧市区、2=湖、3=新市区）：

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf,
-  memoryGrantedHere, unlockedMemoryIds,
+  memoryGrantedHere, unlockedMemoryIds, locationOf,
   type FadingData, type FadingPage, type FadingRoute, type UnlockReq,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
+import { FadingAudio, loadFadingAudio, type FadingAudioMap } from '../fadingAudio'
 import FadingCold, { type ColdView, type ColdChoice } from './FadingCold'
 
 /* 所有游戏逻辑沿用原实现；UI 已替换为 F 冷寂双主题（FadingCold） */
@@ -12,6 +13,46 @@ import FadingCold, { type ColdView, type ColdChoice } from './FadingCold'
 const LS_ENDINGS = 'nikke_fading_endings_v1'
 const LS_CHECKED = 'nikke_fading_checked_v1'
 const LS_SEEN = 'nikke_fading_seen_v1'
+const LS_MUTE = 'nikke_fading_mute'
+
+/** 环境音床的选择。EventTextAdvPlus 八张表里没有任何音频字段（ambient 关键字零命中），
+ *  所以按场景文本自己写明的「时间 + 地点」来定；每条床的音色是频谱实测出来的：
+ *  fade 53% 能量在 400Hz 以下 = 废墟风声；night 3kHz 以上有虫鸣音调 = 夜；
+ *  river 76% 落在 0.4~3kHz = 水声；citymoving 84% 在 400Hz 以下 = 车流低频。
+ *  默认按页号百位取地点（1 旧市区 / 2 湖泊 / 3 新市区，路线 1、2 的编号就是这么分的），
+ *  路线 3 的页号全是 31xx、地点却在同一批编号里换，所以再叠一张按下表文本覆盖的区间表。 */
+const AMBIENT_OVER: [number, number, string][] = [
+  [1132, 1140, 'night'],   // 1132「太阳完全西沉」、1136「伸手不见五指」，到 1141「阳光从窗外洒落进来」结束
+  [3112, 3113, 'night'],   // 3112「时间来到夜晚」
+  [3114, 3129, 'river'],   // 3114「沿着小径走了又走，7号终于抵达湖边」
+  [3130, 3137, 'citymoving'], // 3130「朝新市区跑去」、3132「被称为新市区的城市，入口染上晚霞」
+  [3138, 3146, 'night'],   // 3138「弥漫的尘埃映着月光」起的教堂夜戏
+]
+
+export function ambientKeyFor(node: number | null): string | null {
+  if (node == null) return null
+  if (node >= 7000 && node < 8000) return 'ambient_fadingaffection_erosion'
+  const ov = AMBIENT_OVER.find(([a, b]) => node >= a && node <= b)
+  if (ov) return `ambient_fad_${ov[2]}`
+  const loc = locationOf(node)
+  if (loc === 'lake') return 'ambient_fad_river'
+  if (loc === 'city') return 'ambient_fad_citymoving'
+  return 'ambient_fad_fade'
+}
+
+/** 开场选地点的三条专用音效（旧市区 / 湖 / 新市区） */
+const FIRSTSELECT: Record<string, string> = {
+  旧市区: 'uis_mini_fad_special_firstselect_city',
+  湖: 'uis_mini_fad_special_firstselect_river',
+  新市区: 'uis_mini_fad_special_firstselect_newcity',
+}
+
+/** 主菜单曲 = `event_bgm_maria-n_smile`。
+ *  出处是 `JukeboxListTable.mpk`：它的每一行按「音频 key → 曲名 → 作曲者」排列，
+ *  该行的曲名分词是 Want/make/you/Smile、署名 NieN，即 「I Want to make you Smile」，
+ *  与游戏内收录一致（对照：裸名的 `event_bgm_marian` 是另一首 Marian / Cosmograph）。
+ *  只在主菜单有声——点关卡卡片进选地点就淡掉，但进度继续走，回来时从当前位置接上。 */
+const MENU_BGM = 'event_bgm_maria-n_smile'
 
 const CN_NUM = ['i.', 'ii.', 'iii.', 'iv.', 'v.', 'vi.', 'vii.', 'viii.', 'ix.', 'x.']
 
@@ -49,15 +90,29 @@ export default function FadingAffection() {
   const anim = useRef({ raf: 0, timer: 0, pending: false })
   /** 打开内存/回想时所在的视图，用来回到原处（游戏中点开内存要能回到同一页） */
   const [backView, setBackView] = useState<ColdView>('home')
+  /** 音频：清单 + 播放器实例 + 静音开关（静音状态存本地） */
+  const [audioMap, setAudioMap] = useState<FadingAudioMap | null>(null)
+  const [muted, setMuted] = useState(() => {
+    try { return localStorage.getItem(LS_MUTE) === '1' } catch { return false }
+  })
+  const sound = useRef<FadingAudio | null>(null)
 
   useEffect(() => {
     loadFadingData().then((d) => setData(d)).catch((e) => setError(String(e)))
+    loadFadingAudio().then(setAudioMap).catch(() => setAudioMap({}))
   }, [])
+  useEffect(() => { if (audioMap && !sound.current) sound.current = new FadingAudio(audioMap) }, [audioMap])
+  useEffect(() => {
+    sound.current?.setMuted(muted)
+    try { localStorage.setItem(LS_MUTE, muted ? '1' : '0') } catch { /* ignore */ }
+  }, [muted])
   useEffect(() => { try { localStorage.setItem(LS_ENDINGS, JSON.stringify(found)) } catch { /* ignore */ } }, [found])
   useEffect(() => { try { localStorage.setItem(LS_CHECKED, JSON.stringify(checked)) } catch { /* ignore */ } }, [checked])
   useEffect(() => { try { localStorage.setItem(LS_SEEN, JSON.stringify(seen)) } catch { /* ignore */ } }, [seen])
   useEffect(() => () => {
     cancelAnimationFrame(anim.current.raf); clearTimeout(anim.current.timer)
+    /* 切到站内其它页面时小游戏已经卸载，循环层得一起停，不然 BGM 会一直响 */
+    sound.current?.stopBgm()
   }, [])
 
   const endings = useMemo(() => (data ? endingsOf(data) : []), [data])
@@ -74,6 +129,35 @@ export default function FadingAffection() {
   /** 无选项的页面靠 next 推进（原版「点击画面继续」）；有选项时以选项为准 */
   const autoNext = !isIntro && choices.length === 0 && !ending ? page?.next ?? null : null
   const memory = data ? memoryGrantedHere(data, node) : null
+
+  /** 本页该放哪首 BGM：页面自己写了 bgm 就用它，没写就沿走过的路径往前回溯到最近一首。
+   *  不能按「上一次播放了什么」来继承——从结局页点「重新记录」或顶部的「返回上一节点」时，
+   *  上一次响的是结局曲，那样写结局音乐就会一直留着。回溯不到就是不放音乐
+   *  （选地点那屏只有风声环境音，原作不在这里放曲子）。 */
+  const bgm = useMemo(() => {
+    if (page?.bgm) return page.bgm
+    for (let i = history.length - 2; i >= 0; i--) {
+      const b = data?.pages[String(history[i].id)]?.bgm
+      if (b) return b
+    }
+    return null
+  }, [data, page, history])
+
+  /** 主菜单曲只跟着主菜单——点关卡卡片进选地点就淡掉，但只淡音量不暂停，
+   *  进度一直在走，所以回到主菜单是从当前位置接上（原作行为），不是每次从头放。
+   *  从主菜单打开的内存/回想仍然算在主菜单里，靠 backView 判断。
+   *  从剧情打开的内存/回想是浮层，底下那层 BGM 与音床都不动。 */
+  useEffect(() => {
+    const onMenu = view === 'home' || ((view === 'memories' || view === 'endings') && backView === 'home')
+    sound.current?.setShell(MENU_BGM, onMenu)
+    if (view === 'home') { sound.current?.playBgm(null); sound.current?.playAmbient(null); return }
+    if (view !== 'game') return
+    sound.current?.playBgm(bgm)
+    sound.current?.playAmbient(ambientKeyFor(node))
+    /* audioMap 进来之前 sound 还是空的，首屏那次会空放，所以清单也要当依赖 */
+  }, [view, bgm, node, audioMap, backView])
+
+  const ui = (key: string) => sound.current?.playUi(key)
 
   /** 已解锁记忆：由访问过的「授予页」反查。判定用记忆 id——同一 route-序号在
    *  已储存/已删除两类里会撞（如 1-1 既是存档「袭击」也是删除「储备库」）。 */
@@ -111,6 +195,7 @@ export default function FadingAffection() {
 
   function start(r: FadingRoute) {
     if (!routeUnlocked(r, found)) return
+    ui('uis_mini_fad_routeselect_start')
     transition(() => {
       setRoute(r); setNode(r.start)
       markSeen(r.start)
@@ -121,7 +206,9 @@ export default function FadingAffection() {
   /** 小游戏内任何界面跳转都要走换幕；顺带记住来源，内存/回想看完能回到原处 */
   function nav(v: ColdView) {
     if (v === view) return
-    if (v === 'memories' || v === 'endings') setBackView(view)
+    if (v === 'memories' || v === 'endings') { setBackView(view); ui('uis_mini_fad_recall') }
+    else if (v === 'home') ui('uis_mini_fad_out')
+    else ui('uis_mini_fad_back')
     transition(() => setView(v), 'view')
   }
 
@@ -174,6 +261,7 @@ export default function FadingAffection() {
   function goBack() {
     if (history.length === 0) return
     const prev = history[history.length - 2]
+    ui('uis_mini_fad_back')
     transition(() => {
       setHistory((h) => h.slice(0, -1))
       setNode(prev?.id ?? route?.start ?? null)
@@ -189,7 +277,7 @@ export default function FadingAffection() {
           text: c.text, locked,
           lockText: locked && c.unlock ? reqLockText(c.unlock) : undefined,
           disabled: locked,
-          onClick: () => go(c.dest),
+          onClick: () => { ui(FIRSTSELECT[c.text] || 'uis_mini_fad_special_firstselect'); go(c.dest) },
         }
       })
     : choices.map((c, i) => {
@@ -203,7 +291,13 @@ export default function FadingAffection() {
           lockText: locked && c.req ? reqLockText(c.req) : undefined,
           checked: isChecked,
           disabled: locked,
-          onClick: () => !locked && go(c.dest, c.id),
+          onClick: () => {
+            if (locked) return
+            /* 172 条选项里只有 74 条在表里带 sfx（剧情音），点哪条都要有一声按钮音兜底 */
+            ui('uis_mini_fad_btn')
+            sound.current?.playSfx(c.sfx)
+            go(c.dest, c.id)
+          },
         }
       })
 
@@ -238,10 +332,13 @@ export default function FadingAffection() {
       onBack={goBack}
       canBack={history.length > 0}
       canNext={autoNext != null}
-      onNext={() => go(autoNext)}
+      onNext={() => { ui('uis_mini_fad_btn'); go(autoNext) }}
       onChoice={(c) => c.onClick()}
       onClearSave={clearSave}
       onMemClick={() => nav('memories')}
+      muted={muted}
+      onToggleMute={() => setMuted((m) => { if (m) ui('uis_mini_fad_btn'); return !m })}
+      onType={() => sound.current?.playTyping()}
       routeUnlocked={(r) => routeUnlocked(r, found)}
     />
   )

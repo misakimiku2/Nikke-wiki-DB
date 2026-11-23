@@ -439,3 +439,8 @@
 @keyframes fx-img{0%,100%{transform:none;filter:none}10%{transform:translateX(-4px);filter:brightness(1.25)}22%{transform:translateX(3px)}38%{transform:translateX(-2px);filter:none}56%{transform:translateX(1px)}72%{transform:none}}
 .cf-end-block h3{animation:fx-title 1.7s steps(4) backwards}
 @keyframes fx-title{0%{text-shadow:3px 0 var(--fxred),-3px 0 var(--fxglow);transform:translateX(-3px)}24%{text-shadow:-3px 0 var(--fxred),3px 0 var(--fxglow);transform:translateX(2px)}52%{text-shadow:1px 0 var(--fxred),-1px 0 var(--fxglow);transform:none}76%,100%{text-shadow:none;transform:none}}
+
+/* 静音开关（与游戏内导航按钮同规格） */
+.cf-sound{display:grid;place-items:center;width:28px;height:26px;cursor:pointer;padding:0;color:var(--fsteel);background:var(--fpanel);border:1px solid var(--fline);border-radius:3px;transition:.15s}
+.cf-sound:hover{color:var(--fbg);background:var(--fsteel);border-color:var(--fsteel)}
+.cf-sound .ico{width:15px;height:15px}

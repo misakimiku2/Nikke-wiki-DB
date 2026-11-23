@@ -155,6 +155,21 @@ Manager 表 83501 的真实数值：
 顺带修正：早期文档写「Manager 表只为体力/粮食写了数值，侵蚀条目在图标后即结束」是错的——
 侵蚀同样有 100/50 两个数值，只是它的条目排在最后、图标之后即记录末尾。
 
+### 2.5 页面 BGM 的 tag 不止 -26/-25（2026-11-24 修正）
+
+接音频时发现导出 JSON 只有 9 个 distinct BGM，而页面表里出现了 20 个 `event_bgm_maria-n_*`。
+逐条对齐后确认：**每条页面记录只有一条 BGM 字段，但它挂的负 tag 从 -21 到 -34 都出现过**
+（分布：-26 63 次、-31 18、-25 13、-24 7、-21 5、-22/-29 各 3、-27 3、-23 2、-28 1、-34 2）。
+原先 `parse_pages` 只查 `-26/-25`，120 条带 BGM 的页面只收到 76 条，另外 44 页在网页上等于没配乐。
+
+改法：先按常用 tag 找，找不到就退回「扫全部字符串字段、按值前缀 `event_bgm_` 判定」。
+重跑后 `带 bgm 的页面 = 120 / 265`、`distinct = 20`。选项表的 SFX 不受影响（16 个全对得上）。
+
+另外 `event_bgm_maria-n_daughter` / `plzstayalive` 这两个 key 在包里**没有同名音轨**：
+正式内容是 96s / 74s 的 `_loop`，另有一个 0.7s / 1.2s 的 `_intro` 碎片单独打包。
+导出器因此改成「把全部候选 bundle 摊开，按 同名 > `_loop` > 其它派生 > `_intro` 择优，
+同级取更长」，而不是一命中就返回。
+
 ---
 
 ## 3. UI 素材
@@ -261,7 +276,7 @@ python scripts/export_fading_ui.py            # --force 可覆盖
 | 解锁条件 | 已改为读选项/页面表的定长字段（见 2.3）。**早期版本只在带 hint 的选项上判定条件**，导致路线 1 第一页的「寻找藏身之处」被误认为可直接点。 |
 | 路线锁定的 TrueEnd | 依据「需看完前记录结局」的设定与 locale 文案，选用 8101/8201；静态表未发现明确字段。 |
 | 背景图 | 小游戏无专用背景表。**2026-11-24 起不再沿用上一幕 CG**：只有页面表自带 `cg` 的页面才出图（265 页里 202 页无配图，直接留空；35 个结局页全部自带 CG，不受影响）。 |
-| BGM / SFX | 数据已导出（页面 `bgm`、选项 `sfx`），但当前未接入音频播放。 |
+| BGM / SFX | **已接入播放**（2026-11-24，见 11.10）：共 58 条音频（bgm 20 / sfx 16 / ui 15 / typing 1 / ambient 6），导出器 `build/export_fading_audio.py`。表内只有 `page.bgm` 与 `choice.sfx` 两类；UI 音 `uis_mini_fad_*`、打字音、环境音 `ambient_fad_*` 都不在任何静态表里（由 prefab / 客户端代码驱动），key 列表与「地点→环境音」的对应是**按命名推断**写死在导出器与前端常量里的，不是表字段证据。载荷是 FMOD FSB5，UnityPy 直接解出 WAV 后 ffmpeg 转 ogg。
 | UI 布局 | 游戏页仍是 CSS 按截图比例还原；新增了 dev-only 可视化编辑器用于精确拼图，产出的坐标/尺寸/九宫格参数可导出 JSON/CSS 供替换（见第 9 节）。 |
 | 九宫格 / 平铺 | 原版 Sprite 的 border 已导出（见第 9 节）；编辑器已支持 sliced（.9 图）/ tiled，但游戏页 CSS 尚未整体切换过去。 |
 
@@ -598,3 +613,182 @@ web/src/pages/FadingPrefab.tsx  递归渲染器（动态文本、选项按原坐
 - **竖屏（≤800px）**：三张记录卡保持横排三列（`.cf-routes{repeat(3,1fr)}` + 压缩内边距与字号），
   内存按钮仍然 `position:absolute` 钉右下角，斜纹槽用 `padding-right:104px` 让位。
   实测 430×860：列宽 122×3、`.sb-mem` 距右 10px / 距底 10px。
+
+### 11.10 音频集成（2026-11-24）
+
+小游戏原本只有 `page.bgm` / `choice.sfx` 两个字符串，没有任何音频文件。现在补齐了链路：
+
+```
+游戏资源池 catalog（已解密缓存 nikke_extract/catalogs/*.ndb.dec）
+   └─ build/export_fading_audio.py
+        ├─ 从 public/data/fadingaffection.json 收集 25 个 key（9 BGM + 16 SFX）
+        ├─ 按 audiogroup[_子类]_assets_<key>_<md5>.bundle 在 catalog 里精确查 file_id
+        │    BGM 在 dp 池，SFX 在 core 池（audiogroupscenario / audiogroupui）
+        ├─ v2.rebuild 重建 bundle → UnityPy 取 AudioClip.samples（FSB5 已能直接解出 WAV）
+        └─ ffmpeg libvorbis -q:a 5 → public/fading_audio/<key>.ogg + public/data/fading_audio.json
+```
+
+- 现在共 **59 条**：bgm 20 / sfx 16 / ui 15 / typing 1 / write 1 / ambient 6，全部命中。
+  表外那三类是 `uis_mini_fad_*`（本小游戏专用 UI 音）与 `ambient_fad_*`（环境音床），
+  静态表里没有引用、由 prefab / 客户端代码驱动，所以写死在导出器的 `UI_KEYS` / `AMBIENT_KEYS` 里。
+- BGM **不做单声道下混**（`export_char_voices.py` 里的 `normalize_wav` 是给雪碧图拼接用的），
+  直接把原始 WAV 交给 ffmpeg，保留立体声。
+- 播放层在 `web/src/fadingAudio.ts`：一条循环 BGM（切换时 0.38s 淡出、0.9s 淡入到 0.75 音量）
+  + 一次性 SFX（0.85 音量）。页面 `bgm` 为空时保持上一首，与原版持续播放一致；
+  离开剧情视图停 BGM。
+- 静音按钮 `.cf-sound` 在主菜单右上角与剧情页章节栏右侧，状态存 `localStorage` 键
+  `nikke_fading_mute`。浏览器可能拒绝非手势触发的播放，`play()` 的 rejection 统一吞掉，
+  下一次点击自然带上声音。
+- 播放层分六类音量：BGM 0.75、环境音 0.5、SFX 0.85、UI 0.8、打字 0.45、笔刷 0.5；
+  BGM 与环境音各自独立循环，换条目做 0.38s 淡出 / 0.9s 交叉淡入。
+- **两类"文字出现"的声音要分清**（第一版搞错了）：
+  - 打字机咔哒 = `nv_textwriter`（52ms 的极短单音，全游戏剧情通用），由 `useTypewriter`
+    的 reveal 回调触发，播放层按 70ms 限频——实测一页揭示打 30 下。
+  - 书写笔刷 = `uis_mini_fad_scenario_up`（1.1s），它不是打字音，只是偶尔伴随文字出现，
+    所以改成「距上次 ≥1.2s 且 45% 概率」才放——实测同一页只出现 3 下。
+  原先把笔刷当咔哒用，听感就是"一直在写字"而不是"打字机"。
+- **环境音床必须做响度归一化**：六条 `ambient_fad_*` 的原始响度差了近 20 dB
+  （`fade` -21.2 dBFS、`river` -40.7 dBFS），固定音量放的话安静那几条等于没声音——
+  表现就是"选地图时有环境音，点进去就没了"。导出器对 `kind == "ambient"` 加
+  `-af loudnorm=I=-20:TP=-1.5:LRA=11`，重导后六条落在 -15.8 ~ -23.2 dBFS（差 7 dB），
+  前端 `VOL.ambient = 0.5` 就够用。BGM / SFX 不动，它们本来就是混音成品。
+- **环境音床按「时间 + 地点」选**：`FadingAffection.tsx` 的 `ambientKeyFor(pageId)`。
+  默认按页号百位取地点（1=旧市区、2=湖泊、3=新市区，路线 1、2 的编号就是这么分的；x001 是开场平原），
+  再叠一张 `AMBIENT_OVER` 区间表覆盖文本自己写明时间与地点的段落——路线 3 全是 31xx，
+  地点却在同一批编号里从旧市区走到湖边再进新市区，光看页号必然错。
+  侵蚀结局页（7xxx）用 `ambient_fadingaffection_erosion`。
+  六条床的音色是频谱实测的：`fade` 53% 能量在 400Hz 以下 = 宽带风声；`night` 3kHz 以上有虫鸣音调；
+  `river`/`birdriver` 76% 落在 0.4~3kHz = 水声（后者多鸟鸣）；`citymoving` 84% 在 400Hz 以下 = 车流低频。
+  表里没有任何地点/时间到音频的映射字段（八张 EventTextAdvPlus 表 `ambient` 零命中），
+  所以这段是文本证据 + 音色的推断，不对就改 `AMBIENT_OVER` 一处。
+- **UI 音**：开始记录 `routeselect_start`、选地点 `special_firstselect_city|river|newcity`、
+  选项点击一律先放 `uis_mini_fad_btn`（172 条选项里只有 74 条在表里带 `sfx`，
+  其余点了没声就是缺这一层），带 `sfx` 的两声一起放、「点击画面继续」`btn`、回退 `back`、
+  退出主菜单 `out`、内存/回想 `recall`、取消静音 `btn`。
+- 实测（给 `window.Audio` 打桩记录每次 `new Audio(src)`）：地图页与点进旧市区之后都是
+  `ambient_fad_fade` 在循环（同一条床不换，所以翻页不再重请求）；开内存、关内存、翻页都不重起音床，
+  只有回首页才停。选项点击命中 `uis_mini_fad_btn` + `sfx_scn_footstepdirt`，
+  回退、内存、返回各自的 UI 音也都命中。
+- 重跑：`set FFMPEG=... && python build/export_fading_audio.py`（幂等，只补缺失；`--force` 全量）。
+
+### 11.11 环境音接不上循环、放错段落（2026-11-24 追加）
+
+用户实听反馈四条，逐条落到证据上：
+
+1. **环境音循环末尾听得出断口。** 六条 `ambient_fad_*` 是 4~13s 的实地录音，不是成品 loop，
+   `HTMLAudioElement.loop` 会把结尾硬接到开头。导出器改成先 `loudnorm`、再做一次拼接：
+   把开头 F 秒叠到淡出后的尾部（`atrim` + `acrossfade`，输出长度 L-F），这样循环点两侧
+   落在素材的同一时刻。顺序不能反——loudnorm 是动态增益，放在拼接之后会把循环点两侧
+   拉成不同电平（erosion 实测仍差 9 倍）。
+   **F 和淡化曲线不是拍脑袋**：在素材上把 (0.8/1.2/1.8/2.5s) × (qsin/tri) 各试一遍，
+   判据是 `seam_cost` —— 把成品首尾相接，量接缝处 ±33ms 的二阶差分相对全片中位数。
+   不能用头尾电平：erosion 是 ±10 dB、2.3Hz 的脉动低频，头 100ms 落在波峰还是波谷全看运气。
+   「不拼」也当候选参与，citymoving 原素材本来就接得上（1.00x）所以没拼。
+   六条最终落在 0.96 ~ 1.23x（1 附近 = 接缝和素材本身一样平）。
+2. **旧市区开场放了夜里的虫鸣。** 原来按页号百位推地点、`old → night` 是纯猜。
+   页号百位只编码地点不编码时间，而文本里明确写了天黑/天亮：1132「太阳完全西沉」、
+   1136「伸手不见五指」到 1141「阳光从窗外洒落进来」才是夜段，开场那段是白天废墟，
+   跟选地图时同一条风声床。频谱实测确认 `fade` 53% 能量在 400Hz 以下（宽带风声）、
+   `night` 在 3kHz 以上有虫鸣音调，所以 `old → fade`、夜段进 `AMBIENT_OVER`。
+3. **路线 3 的地点在页号里看不出来。** 3xxx 全是 31xx，百位恒为 1，但剧情从旧市区
+   （3101）→ 夜里徘徊（3112）→ 湖边（3114）→ 新市区（3130、3132 晚霞）→ 教堂夜戏（3138 月光），
+   所以这些段落按页面文本自己写明的地点/时间覆盖，区间和出处写在 `AMBIENT_OVER` 注释里。
+   死亡页 6xxx 有两个来源的（6109 ← 1134 夜 / 2304 白天，6111 同理）无法定论，按地点给床。
+4. **点了选项没声。** 172 条选项只有 74 条带表里的 `sfx`，剩下 98 条点了完全静音，
+   补一层 `uis_mini_fad_btn` 通用按钮音，带 `sfx` 的两声一起放。
+
+顺带修掉一个「看不见的打字音」：`useTypewriter` 原先以 `sceneKey` 作依赖，换视图时幕次 +1
+会让正文重新逐字出现，而正文此时已经不在屏上——点「返回主菜单」就听到一串咔哒加笔刷音。
+改成只跟 `text` 走：文本没变就不重打。副作用正好是对上了原作行为——从内存回到剧情页直接给全文。
+同一条理由也让音床不再被内存往返打断：`view` 为 memories/endings 时不 `stopBgm`，只有回首页才停。
+
+### 11.12 主菜单 BGM 与结局音乐赖着不走（2026-11-24 追加）
+
+**两个 bug 同一个根因。** 之前把「页面没写 bgm 就沿用上一首」实现成了播放层的
+「key 为空就什么都不做」（`FadingAudio.playBgm`），也就是按**播放历史**继承。
+于是倒着走的时候最后响的那首会被一直保留：
+
+- 结局页点「重新记录」→ 回到选地点，页面 1001/2001/3001 不在页面表里、没有 bgm
+  → 保持式写法什么都不做 → 结局曲继续响。
+- 结局页点顶部「返回上一节点」→ 上一页也没有 bgm 字段 → 同样留着结局曲。
+
+现在改成按**走过的路径**回溯：`FadingAffection.tsx` 里 `useMemo` 出的 `bgm`，
+本页有 `bgm` 用它，否则从 `history` 往前找到最近一个写了 bgm 的页，再找不到就用壳层曲。
+`playBgm(null)` 的语义同时改成「停掉 BGM 层」，播放层不再自作主张保持上一首。
+
+**主菜单是有背景乐的**（用户实听）。这首在静态表里查不到任何出处，都找过：
+
+- `EventTextAdvPlus*` 八张表里 `event_bgm_` 只出现在页面表，`FirstSelect`/`Route`/`Manager`/
+  `SpecialIntro` 四张界面表零音频串；`ambient_fad` 在这八张表里也是零命中。
+- `BGMTriggerTable.mpk`（43 条 maria-n 行）里 `ambient_fad` 命中 0 次；它的尾部那批
+  `ambient_marian_room / factory / ruinfactory / siren` 配 `event_bgm_maria-n_*` 的行是**主线 50 章**的。
+- `SDLobbyBGMTable.mpk`（大厅背景乐表）整表只有 staranis 系列，没有本活动。
+- 活动自己的 prefab 都重建过了（`view_assets_view-fadingaffection{main,routeselect,scenario,intro,
+  ingameintro,ending,recall,achievement}`、`eventui-firstaffection_*`），里面没有任何
+  `event_bgm_*` / `ambient_fad_*` 字面串——界面与音频的绑定在客户端代码里，表与 prefab 都不带。
+
+**曲名靠 `JukeboxListTable.mpk`（游戏内"音乐收录"）对回来**：它的每一行按
+「音频 key → 曲名 → 作曲者」排列，所以 OST 标题能直接反查 key。用户报的主菜单曲
+「I Want to make you Smile / NieN」= **`event_bgm_maria-n_smile`**，接在 `MENU_BGM` 一行。
+（此前按「裸名 + 小游戏零引用」猜的 `event_bgm_marian` 是另一首：Marian / Cosmograph，猜错了；
+为试听导出的那 8 首候选已经删掉，回收 18.5 MB，清单回到 59 条。）
+
+本活动曲目的 key ↔ 曲名/作曲者 对照（`-4`、`percent`、`102-202` 三行的曲名分词没被我的
+正则收到，只留下署名）：
+
+| key | 曲名 / 作曲者 |
+| --- | --- |
+| `theroom` | Room-00 / Cosmograph |
+| `surface` | Surface / Cosmograph |
+| `route-n` | Route-n / Cosmograph |
+| `battledata-n` | BD-n / Cosmograph |
+| `daughter` | Daughter / Cosmograph |
+| `ijustsawmydeath` | I just saw my death / Cosmograph |
+| `forwhat` | for_NULL / Cosmograph |
+| `quietpeace` | Quiet Peace / Cosmograph |
+| `wish` | Wish / Cosmograph |
+| `plzstayalive` | Please Stay Alive / Cosmograph |
+| `cheers` | cheers / Cosmograph |
+| `-4` `percent` `102-202` | / Cosmograph |
+| `command` | Command / **NieN** |
+| `vow` | VOW / NieN |
+| `butterfly` | Butterfly / NieN |
+| `coldrain` | Coldrain / NieN |
+| `smile` | **I Want to make you Smile / NieN** ← 主菜单专用（另有 7 个正文页也引用它） |
+| `offline` | OFF-LINE / Nauts |
+| `ed` | Call me name Again / Cosmograph feat. Kang Yunjeong |
+
+**主菜单曲的播放规则（用户第二轮说清楚的行为，第一版我理解反了）**：
+
+1. 只在主菜单有声。点关卡卡片进选地点，这首就淡掉——**选地点不放任何 BGM**，
+   只有风声环境音（`bgm` 解析为 null 就是停，`playBgm` 不再自作主张保持上一首）。
+2. 但它在后台**继续走进度**：离开主菜单只把音量拉到 0，绝不 `pause`。
+   所以回主菜单是从当前位置接上（用户说的「在中间段开始播放」），不是每次从头放。
+3. 从主菜单打开内存/回想仍算在主菜单里（用 `backView` 判断）；从剧情打开就是浮层，
+   底下那层 BGM 与音床都不动。
+
+实现上是**第三条独立循环层** `FadingAudio.setShell(key, on)`：它自己持有一个循环元素、
+只用 `ramp` 切音量。它不进 `pool`——`smile` 同时被 7 个正文页引用，和剧情层共用一个元素
+会被剧情那边的淡入淡出踩掉。
+
+顺带修的四处：
+
+1. 卸载时补 `stopBgm()`（切到站内其它页面，小游戏已经没了但循环层还在响），
+   里面也一并停掉并释放主菜单曲那条元素。
+2. BGM 那条 effect 把 `audioMap` 列进依赖——清单到达前 `sound` 还是空的，首屏那次会空放。
+3. **同一首被建出多个实例叠着播**（开发模式下音量翻倍）：剧情/环境两层按 key 池化循环元素
+   （`pool`）复用不重建；`ramp` 加 token，被重新启用的元素不会再被上一条淡出循环拉回零。
+4. 浏览器在没有用户手势时会拒绝播放，循环层不能像一次性音那样直接放弃（那样刷新后
+   主菜单就一直没声）：`tryPlay(el, true)` 把被拒的循环元素挂到下一次 `pointerdown`/`keydown` 补播。
+
+实测（`window.Audio` 构造打桩 + 按元素身份去重，读 `volume`/`currentTime`/`paused`）：
+
+- 主菜单：只有 `smile`，vol 0.75。点关卡卡片 → 选地点：`smile` vol 归 0 但**不暂停**
+  （t 4.8 → 6.3 连续），有声的只剩 `ambient_fad_fade` 0.5。
+- 进正文页 1101：`surface` 0.75、风 0.5、`smile` 仍然 vol 0 在走（t 15.5）。
+  点顶部返回主菜单：`smile` 淡回 0.75 且是从 t=18.1 接上的，剧情层与环境层淡到 0 并 `paused`。
+- 走到死亡结局 6101：`102-202` 0.75，其余全静音，`smile` 已走到 t=38.3。
+  点「重新记录」回选地点：`102-202` 淡出并 `paused`，只剩风声，`smile` 在 t=47.1 继续走。
+
+
+

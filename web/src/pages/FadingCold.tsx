@@ -16,6 +16,7 @@ const order = (i: number) => ({ '--i': String(i) }) as CSSProperties
 /* ---------------- 内联 SVG 图标（stroke 用 currentColor，自动跟随主题） ---------------- */
 type IconName = 'file' | 'target' | 'chip' | 'hp' | 'food' | 'erosion' | 'mem'
   | 'arrow' | 'lock' | 'star' | 'play' | 'refresh' | 'book' | 'close' | 'eye' | 'mappin' | 'back' | 'exit'
+  | 'sound' | 'mute'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h4M9 12h6M9 16h6" /></>,
@@ -36,6 +37,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   mappin: <><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z" fill="currentColor" stroke="none" /><circle cx="12" cy="9" r="2.6" fill="var(--fpanel,#fff)" stroke="none" /></>,
   back: <><path d="M11 6L5 12l6 6M18 6l-6 6 6 6" /></>,
   exit: <><path d="M14 4H5v16h9M11 12h9M17 8l4 4-4 4" /></>,
+  sound: <><path d="M4 9h3l5-4v14l-5-4H4z" /><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10" /></>,
+  mute: <><path d="M4 9h3l5-4v14l-5-4H4z" /><path d="M16 10l5 4M21 10l-5 4" /></>,
 }
 function I({ n, fill }: { n: IconName; fill?: boolean }) {
   return <svg className={fill ? 'ico ico-fill' : 'ico'} viewBox="0 0 24 24" aria-hidden="true">{PATHS[n]}</svg>
@@ -84,12 +87,16 @@ function RegionMap({ choices }: { choices: ColdChoice[] }) {
 }
 
 /** 打字机：约 42 字/秒逐字出现，全部出完才放行选项；点正文可立刻补完。
- *  用 rAF 按已耗时间推算字数——被后台节流时不会累积错位，回到前台直接补到正确位置。 */
+ *  用 rAF 按已耗时间推算字数——被后台节流时不会累积错位，回到前台直接补到正确位置。
+ *  只跟 text 走，不跟幕次走：换视图（回主菜单、开内存）时正文没变，就不该重打一遍——
+ *  重打会在看不见的地方把打字咔哒和笔刷音放出来，原作点开内存回到同一页也是直接给全文。 */
 const TYPE_MS = 24
 
-function useTypewriter(text: string, sceneKey: number) {
+function useTypewriter(text: string, onReveal?: () => void) {
   const [n, setN] = useState(text.length)
   const stopped = useRef(false)
+  const cb = useRef(onReveal)
+  cb.current = onReveal
   useEffect(() => {
     stopped.current = false
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setN(text.length); return }
@@ -97,9 +104,11 @@ function useTypewriter(text: string, sceneKey: number) {
     const t0 = performance.now()
     let raf = 0
     let guard = 0
+    let shown = 0
     const step = (now: number) => {
       if (stopped.current) return
       const v = Math.min(Math.floor((now - t0) / TYPE_MS), text.length)
+      if (v > shown) { shown = v; cb.current?.() }
       setN(v)
       if (v < text.length) raf = requestAnimationFrame(step)
     }
@@ -107,7 +116,7 @@ function useTypewriter(text: string, sceneKey: number) {
     /* 后台页面不跑 rAF，兜底把剩余文字补齐，免得选项永远出不来 */
     guard = window.setTimeout(() => { stopped.current = true; setN(text.length) }, text.length * TYPE_MS + 400)
     return () => { cancelAnimationFrame(raf); clearTimeout(guard) }
-  }, [text, sceneKey])
+  }, [text])
   return {
     shown: n >= text.length ? text : text.slice(0, n),
     done: n >= text.length,
@@ -254,6 +263,8 @@ export type FadingColdProps = {
   fade: 'none' | 'page' | 'view'
   /** 回想/记忆页的返回目标：从游戏里点开就要回到同一页 */
   backView: ColdView
+  /** 每露出一批文字回调一次，用来打打字音 */
+  onType?: () => void
   /** Manager 表原样导出：items + init + max，状态不做增减 */
   status: FadingData['status']
   choices: ColdChoice[]
@@ -278,6 +289,9 @@ export type FadingColdProps = {
   onClearSave: () => void
   onMemClick: () => void
   routeUnlocked: (r: FadingRoute) => boolean
+  /** 音频静音开关（文件由 build/export_fading_audio.py 导出） */
+  muted: boolean
+  onToggleMute: () => void
 }
 
 /** 状态栏：体力/粮食上排，侵蚀长条下排，内存右下（原版布局）。
@@ -338,7 +352,7 @@ function GameNav({ canBack, onBack, onHome }: { canBack: boolean; onBack: () => 
 export default function FadingCold(p: FadingColdProps) {
   const { data, view, route, pageText, cgSrc, cgAlt, status, choices, ending,
     endingId, memoryUnlocked, found, endings, memories, unlockedMemories } = p
-  const typed = useTypewriter(pageText, p.sceneKey)
+  const typed = useTypewriter(pageText, p.onType)
   const blks = useBlocks(view === 'game' && !!ending, p.sceneKey)
 
   const cg = (name?: string, key?: string) => {
@@ -357,6 +371,10 @@ export default function FadingCold(p: FadingColdProps) {
               <span><I n="file" /> SILVERGUN PROJECT — ARCHIVE VOL. I</span>
               <span className="cf-top-right">
                 <span className="cf-mark"><I n="target" /> MMXXVI</span>
+                <button className="cf-sound" onClick={p.onToggleMute}
+                  title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
+                  <I n={p.muted ? 'mute' : 'sound'} />
+                </button>
                 <button className="cf-clear" onClick={p.onClearSave} title="清除存档"><I n="refresh" /><span>清除存档</span></button>
               </span>
             </div>
@@ -532,6 +550,10 @@ export default function FadingCold(p: FadingColdProps) {
         <span><I n="file" /> {route?.name || '记录'}</span>
         <span className="cf-bar-right">
           <b><I n="chip" /> MEM {unlockedMemories.size} / ARC {found.length}</b>
+          <button className="cf-sound" onClick={p.onToggleMute}
+            title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
+            <I n={p.muted ? 'mute' : 'sound'} />
+          </button>
           <GameNav canBack={p.canBack} onBack={p.onBack} onHome={() => p.onNavigate('home')} />
         </span>
       </div>
