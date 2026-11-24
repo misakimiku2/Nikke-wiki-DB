@@ -24,8 +24,8 @@
 .cf-top .cf-mark{display:flex;align-items:center;gap:7px;color:var(--fred)}
 .cf-hero{text-align:center;padding:34px 0 24px}
 .cf-hero .k{display:flex;align-items:center;justify-content:center;gap:9px;font:600 9px/1 ui-monospace,monospace;letter-spacing:.3em;color:var(--fmut)}
-.cf-hero h1{margin:18px 0 8px;font:900 52px/.92 "Arial Black",Helvetica,sans-serif;letter-spacing:-.02em;color:var(--fink);text-transform:uppercase}
-.cf-hero h1 em{display:block;font:400 30px/1.2 "PingFang SC",sans-serif;font-style:normal;letter-spacing:.18em;color:var(--fsteel)}
+.cf-hero h1{margin:18px 0 8px;font:900 58px/.92 "Arial Black",Helvetica,sans-serif;letter-spacing:-.02em;color:var(--fink);text-transform:uppercase}
+.cf-hero h1 em{display:block;font:400 33px/1.2 "PingFang SC",sans-serif;font-style:normal;letter-spacing:.18em;color:var(--fsteel)}
 .cf-rule{display:flex;align-items:center;gap:12px;margin:24px auto;max-width:340px}
 .cf-rule::before,.cf-rule::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,transparent,var(--fline))}
 .cf-rule::after{background:linear-gradient(90deg,var(--fline),transparent)}
@@ -222,10 +222,17 @@
 .cf-hint-checked{color:var(--fmut);letter-spacing:.08em}
 .cf-cost-mini{font:600 9px/1 ui-monospace,monospace;color:var(--fred);margin-left:auto}
 
-@media (max-width:800px){
+/* 竖屏分界取 640，不是 800。
+   面板宽度是 min(760px, 视口−32)，桌面端把窗口拖到 800 以内（分屏、内置预览面板）
+   面板仍有 600+ px，可 800 的视口断点会把「砍信息」那套竖屏规则整套套上去，
+   桌面反而比改动前显示得更少。640 对应面板 608，才是真的没地方放。 */
+@media (max-width:640px){
   .fad-cold-root{padding:12px 8px 40px}
   .cf-inner{padding:20px 14px 24px}
   .cf-hero h1{font-size:38px}
+  /* 竖屏不往下压标题：那一段留白在手机上是负担 */
+  .cf-home-head .cf-hero{padding:22px 0 16px}
+  .cf-home-acts{margin-bottom:14px}
   /* 顶栏那串长标题在 430px 下会折三行，只留档案号 */
   .cf-top-full{display:none}
   /* 竖屏也保持横排三张记录卡：每张只有约 122px 宽，描述句塞不下，直接不显示 */
@@ -347,17 +354,18 @@
 
 /* —— 主菜单：项目条 / 标题 / 导语固定，按钮与三条记录滚动 —— */
 .cf-home-head{flex:none}
-.cf-home-head .cf-hero{padding:22px 0 16px}
+/* 标题屏没有卡片，标题往下压一段、按钮提到分割线上方，中间整块留给动态 CG */
+.cf-home-head .cf-hero{padding:clamp(28px,8vh,92px) 0 16px}
 .cf-home-head .cf-rule{margin:18px auto}
 .cf-home-body{flex:1;min-height:0;padding:0 4px;display:flex;flex-direction:column}
 /* 预留主视觉 CG 位：标题区与内容块之间的整片留白都归它（现在为空） */
 .cf-home-art{flex:1 1 auto;min-height:0;margin:8px 0 0;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .cf-home-art img{display:block;max-width:100%;max-height:100%;object-fit:contain}
 
-/* 内容块（导语 + 按钮 + 三条记录）整体贴底 */
+/* 内容块（导语）整体贴底；按钮组挂在它的分割线上方 */
 .cf-home-block{flex:none;padding-top:10px;border-top:1px solid var(--fline)}
 .cf-home-block .cf-lead{margin:12px auto 0;line-height:1.95}
-.cf-home-block .cf-acts{flex:none;margin-top:10px}
+.cf-home-acts{flex:none;margin:0 0 20px;gap:24px}
 .cf-home-block .cf-routes{height:clamp(248px,34vh,320px);margin:14px 0 0;grid-auto-rows:1fr}
 /* 进关卡屏时卡片自上而下级联出现（.cf-inner 按 view 重挂载，所以每次进都会重播） */
 .cf-home-block .cf-routes .cf-rc{animation:cf-rc-in .34s ease backwards;animation-delay:calc(var(--i,0)*.07s)}
@@ -400,7 +408,7 @@
 .cf-game-fixed .sb{flex:none;margin-top:10px}
 
 /* 小屏同样填满视口 */
-@media (max-width:800px){
+@media (max-width:640px){
   .fad-cold-root:has(.cf-fill){height:calc(100dvh - 56px);min-height:0;padding:8px 6px}
   #cf .stage:has(.cf-fill) .cf-inner{padding:14px 14px 10px}
   .cf-home-block .cf-routes{height:auto;grid-auto-rows:auto}
@@ -517,7 +525,7 @@
    360×740 实测正文从 y=220 才开始（占屏 30%）：章节栏折三行、标题折三行，
    内存卡 150px 又吃掉页脚 49%。这里去掉与章节栏重复的信息，把顶部压成单行。
    写在文件末尾，是为了稳定盖过前面各段的同名规则。 */
-@media (max-width:800px){
+@media (max-width:640px){
   /* 路线名和下面的大标题是同一句话，竖屏只留大标题。
      必须带 .cf-bar 前缀：.cf-bar span{display:inline-flex} 的特异性比单类名高。 */
   .cf-bar .cf-bar-route{display:none}

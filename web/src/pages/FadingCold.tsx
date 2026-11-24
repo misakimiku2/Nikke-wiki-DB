@@ -514,13 +514,9 @@ export default function FadingCold(p: FadingColdProps) {
             </div>{/* /cf-home-head */}
             <div className="cf-home-body">
             <div className="cf-home-art" aria-hidden="true">{/* 标题屏这里全留给动态 CG */}</div>
-            <div className="cf-home-block">
-            <p className="cf-lead">
-              三段记录，三种人生。体力、粮食、侵蚀度标记着玛丽亚的处境，
-              某些分支只有达成特定状态才会开启——死亡并非终点，
-              留下的记忆是解锁新路线与新地点的钥匙。
-            </p>
-            <div className="cf-acts">
+            {/* 三个动作按钮贴在分割线上方，导语落到线下——标题屏没有卡片，
+                按钮留在原位会让下半块空成一片。 */}
+            <div className="cf-acts cf-home-acts">
               {/* 原版在主菜单点「탐색 시작」才进关卡选择，这里照做：开始记录 = 切到关卡屏 */}
               <button className="cf-btn on" onClick={() => p.onNavigate('routes')}>
                 <I n="play" /> 开始记录
@@ -528,6 +524,12 @@ export default function FadingCold(p: FadingColdProps) {
               <button className="cf-btn" onClick={() => p.onNavigate('memories')}><I n="mem" /> 记忆 {unlockedMemories.size}/{data.memories.length}</button>
               <button className="cf-btn" onClick={() => p.onNavigate('endings')}><I n="book" /> 回想 {found.length}/{endings.length}</button>
             </div>
+            <div className="cf-home-block">
+            <p className="cf-lead">
+              三段记录，三种人生。体力、粮食、侵蚀度标记着玛丽亚的处境，
+              某些分支只有达成特定状态才会开启——死亡并非终点，
+              留下的记忆是解锁新路线与新地点的钥匙。
+            </p>
             </div>{/* /cf-home-block */}
             </div>{/* /cf-home-body */}
           </div></div>
