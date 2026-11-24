@@ -5,7 +5,7 @@ import {
   type FadingData, type FadingPage, type FadingRoute, type UnlockReq,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
-import { FadingAudio, loadFadingAudio, type FadingAudioMap } from '../fadingAudio'
+import { FadingAudio, loadFadingAudio, DEFAULT_GAINS, type FadingAudioMap, type FadingAudioGains } from '../fadingAudio'
 import FadingCold, { type ColdView, type ColdChoice } from './FadingCold'
 
 /* 所有游戏逻辑沿用原实现；UI 已替换为 F 冷寂双主题（FadingCold） */
@@ -14,6 +14,17 @@ const LS_ENDINGS = 'nikke_fading_endings_v1'
 const LS_CHECKED = 'nikke_fading_checked_v1'
 const LS_SEEN = 'nikke_fading_seen_v1'
 const LS_MUTE = 'nikke_fading_mute'
+const LS_VOL = 'nikke_fading_volume_v1'
+
+/** 音量存在本地；坏值一律退回满音量（乘在基准音量上，100% 就是原来的手感） */
+function loadGains(): FadingAudioGains {
+  const pick = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 1)
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_VOL) || 'null') as Partial<FadingAudioGains> | null
+    if (v && typeof v === 'object') return { bgm: pick(v.bgm), sfx: pick(v.sfx) }
+  } catch { /* ignore */ }
+  return { ...DEFAULT_GAINS }
+}
 
 /** 环境音床的选择。EventTextAdvPlus 八张表里没有任何音频字段（ambient 关键字零命中），
  *  所以按场景文本自己写明的「时间 + 地点」来定；每条床的音色是频谱实测出来的：
@@ -83,6 +94,14 @@ export default function FadingAffection() {
   const [found, setFound] = useState<number[]>(() => loadArr(LS_ENDINGS))
   const [checked, setChecked] = useState<number[]>(() => loadArr(LS_CHECKED))
   const [seen, setSeen] = useState<number[]>(() => loadArr(LS_SEEN))
+  /** 三个进度数组的同步副本：授予要「到达即入库」，不能只等 useEffect 那一拍；
+   *  同一 tick 内连续授予时也不会拿到旧数组。 */
+  const seenRef = useRef(seen)
+  const foundRef = useRef(found)
+  const checkedRef = useRef(checked)
+  useEffect(() => { seenRef.current = seen }, [seen])
+  useEffect(() => { foundRef.current = found }, [found])
+  useEffect(() => { checkedRef.current = checked }, [checked])
   /** 换幕状态：fade = 正在淡出的范围（page 只淡正文区，view 淡整块正文）；scene = 幕次 */
   const [fade, setFade] = useState<'none' | 'page' | 'view'>('none')
   const [scene, setScene] = useState(0)
@@ -93,22 +112,32 @@ export default function FadingAffection() {
   /** 点击带 HINT 的锁定项时弹出的提示横幅，几秒后自动收起 */
   const [hintToast, setHintToast] = useState<string | null>(null)
   const [hintClosing, setHintClosing] = useState(false)
-  /** 音频：清单 + 播放器实例 + 静音开关（静音状态存本地） */
+  /** 音频：清单 + 播放器实例 + 静音开关 + 音量（都存在本地） */
   const [audioMap, setAudioMap] = useState<FadingAudioMap | null>(null)
   const [muted, setMuted] = useState(() => {
     try { return localStorage.getItem(LS_MUTE) === '1' } catch { return false }
   })
+  const [gains, setGains] = useState<FadingAudioGains>(loadGains)
   const sound = useRef<FadingAudio | null>(null)
+  /** 音效音量试听限频：拖动时不能每个像素都“咔”一声 */
+  const lastPreview = useRef(0)
 
   useEffect(() => {
     loadFadingData().then((d) => setData(d)).catch((e) => setError(String(e)))
     loadFadingAudio().then(setAudioMap).catch(() => setAudioMap({}))
   }, [])
-  useEffect(() => { if (audioMap && !sound.current) sound.current = new FadingAudio(audioMap) }, [audioMap])
+  /* 初始静音 / 音量在构造时就带上，别指望 effect 补——实例比 effect 晚到（见 fadingAudio 注释） */
+  useEffect(() => {
+    if (audioMap && !sound.current) sound.current = new FadingAudio(audioMap, { muted, gains })
+  }, [audioMap]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     sound.current?.setMuted(muted)
     try { localStorage.setItem(LS_MUTE, muted ? '1' : '0') } catch { /* ignore */ }
-  }, [muted])
+  }, [muted, audioMap])
+  useEffect(() => {
+    sound.current?.setGains(gains)
+    try { localStorage.setItem(LS_VOL, JSON.stringify(gains)) } catch { /* ignore */ }
+  }, [gains, audioMap])
   useEffect(() => { try { localStorage.setItem(LS_ENDINGS, JSON.stringify(found)) } catch { /* ignore */ } }, [found])
   useEffect(() => { try { localStorage.setItem(LS_CHECKED, JSON.stringify(checked)) } catch { /* ignore */ } }, [checked])
   useEffect(() => { try { localStorage.setItem(LS_SEEN, JSON.stringify(seen)) } catch { /* ignore */ } }, [seen])
@@ -174,6 +203,26 @@ export default function FadingAffection() {
 
   const ui = (key: string) => sound.current?.playUi(key)
 
+  /** 静音键：先把状态落到播放器再放反馈音，否则「取消静音」这一下自己听不见 */
+  function toggleMute() {
+    const next = !muted
+    setMuted(next)
+    sound.current?.setMuted(next)
+    if (next) ui('uis_mini_fad_btn')
+  }
+
+  /** 音量条：先同步给播放器再试听，拖到哪就听到哪（音效档位用按钮音试） */
+  function changeGain(k: keyof FadingAudioGains, v: number) {
+    const next = { ...gains, [k]: v }
+    setGains(next)
+    sound.current?.setGains(next)
+    if (k !== 'sfx' || v <= 0) return
+    const now = performance.now()
+    if (now - lastPreview.current < 170) return
+    lastPreview.current = now
+    sound.current?.playUi('uis_mini_fad_btn')
+  }
+
   /** 原版点锁定的 HINT 项会弹一条提示并响 hint_toast 音，不推进剧情 */
   function showHint(text: string) {
     ui('uis_mini_fad_hint_toast')
@@ -190,9 +239,45 @@ export default function FadingAffection() {
     () => (data ? unlockedMemoryIds(data, [...seen, ...found]) : new Set<number>()),
     [data, seen, found])
 
+  /** 已打开过的路线：原作卡片右上角那枚 NEW 是 prefab 里的 reddot_v2（新内容红点），
+   *  由运行时状态驱动，RouteTable 里没有这个字段。本地没有红点系统，就用「这条路线
+   *  的页面有没有被访问过」来推——进路线第一件事就是 markSeen(start)，所以点开即消失。
+   *  开发用「全解锁」会把所有页面写进 seen，因此点完它不会再亮任何 NEW。 */
+  const openedRoutes = useMemo(() => {
+    const touched = new Set<number>()
+    if (!data) return touched
+    for (const id of seen) {
+      const rn = data.pages[String(id)]?.route
+      if (rn != null) touched.add(rn)
+    }
+    /* 三条路线的开场页（1001/2001/3001）在页面表里没有 route 字段，
+       只能按 route.start 反查——进路线第一件事就是 markSeen(start) */
+    for (const r of data.routes) if (seen.includes(r.start)) touched.add(r.no)
+    return touched
+  }, [data, seen])
+
+  /** 记一笔「已获得」并立即落盘。访问页 / 结局 / 已选选项都走这里。
+   *  之所以不等 useEffect：结局页一出现就该算数，用户这时直接点「返回上一节点」
+   *  或者刷新走人，也不能让这条记忆凭空丢掉。 */
+  function grant(
+    ref: { current: number[] },
+    set: (v: number[]) => void,
+    key: string,
+    id: number,
+    sorted = false,
+  ) {
+    if (ref.current.includes(id)) return
+    const next = sorted
+      ? [...ref.current, id].sort((a, b) => a - b)
+      : [...ref.current, id]
+    ref.current = next
+    set(next)
+    try { localStorage.setItem(key, JSON.stringify(next)) } catch { /* ignore */ }
+  }
+
   function markSeen(id: number | null) {
     if (id == null) return
-    setSeen((s) => (s.includes(id) ? s : [...s, id]))
+    grant(seenRef, setSeen, LS_SEEN, id)
   }
 
   /** 解锁条件取自选项表字段，与有没有 hint 无关（38 条带条件、仅 25 条带 hint） */
@@ -215,6 +300,7 @@ export default function FadingAffection() {
       try { localStorage.removeItem(k) } catch { /* ignore */ }
     })
     setFound([]); setChecked([]); setSeen([])
+    foundRef.current = []; checkedRef.current = []; seenRef.current = []
     setHistory([]); setView('home'); setRoute(null); setNode(null)
   }
 
@@ -226,6 +312,19 @@ export default function FadingAffection() {
       markSeen(r.start)
       setHistory([]); setView('game')
     }, 'view')
+  }
+
+  /** 「重新记录」= 确认这次结局：把结局页和它授予的记忆写进存档，再重开路线。
+   *  这是结局唯一的入库时机——结局页本身落上去时不写（见 commit），
+   *  所以点「返回上一节点」就等于放弃这次记录。 */
+  function confirmRestart() {
+    if (!route) return
+    const end = node != null ? data?.pages[String(node)] : null
+    if (end?.ending) {
+      grant(foundRef, setFound, LS_ENDINGS, end.id, true)
+      grant(seenRef, setSeen, LS_SEEN, end.id)
+    }
+    start(route)
   }
 
   /** 小游戏内任何界面跳转都要走换幕；顺带记住来源，内存/回想看完能回到原处 */
@@ -241,6 +340,10 @@ export default function FadingAffection() {
   /**
    * 推进到下一页。原版的状态（体力/粮食/侵蚀度）在静态表里没有任何增减量，
    * 死亡/侵蚀结局都由表里的选项或页面 next 显式指向，所以这里不做数值判定。
+   *
+   * 结局页例外：落上去只是「待确认」，不写任何存档。结局与它授予的记忆要等玩家
+   * 在结局面板点「重新记录」才入库（见 confirmRestart）；直接点「返回上一节点」
+   * 等于放弃这次记录——结局页也不会记进访问过，因此对应的记忆仍是锁着的。
    */
   function commit(next: number, choiceId?: number) {
     if (!data) return
@@ -249,9 +352,8 @@ export default function FadingAffection() {
     setHistory((h) => [...h, {
       id: next, text: p?.text || '', title: p?.ending?.title,
     }].slice(-120))
-    if (p?.ending) setFound((f) => (f.includes(next) ? f : [...f, next].sort((a, b) => a - b)))
-    if (choiceId != null) setChecked((c) => (c.includes(choiceId) ? c : [...c, choiceId]))
-    markSeen(next)
+    if (choiceId != null) grant(checkedRef, setChecked, LS_CHECKED, choiceId)
+    if (!p?.ending) markSeen(next)
   }
 
   /** 原作换幕：先淡出，LEAVE_MS 后落新内容再淡入。用 rAF 计时，节流时也不会卡在暗场。
@@ -359,7 +461,7 @@ export default function FadingAffection() {
       onStart={start}
       onNavigate={nav}
       backView={backView}
-      onRestart={() => route && start(route)}
+      onRestart={confirmRestart}
       onBack={goBack}
       canBack={history.length > 0}
       canNext={autoNext != null}
@@ -371,9 +473,13 @@ export default function FadingAffection() {
       onClearSave={clearSave}
       onMemClick={() => nav('memories')}
       muted={muted}
-      onToggleMute={() => setMuted((m) => { if (m) ui('uis_mini_fad_btn'); return !m })}
+      onToggleMute={toggleMute}
+      gains={gains}
+      onGainChange={changeGain}
+      onGainReset={() => { setGains({ ...DEFAULT_GAINS }); sound.current?.setGains(DEFAULT_GAINS) }}
       onType={() => sound.current?.playTyping()}
       routeUnlocked={(r) => routeUnlocked(r, found)}
+      routeIsNew={(r) => !openedRoutes.has(r.no)}
     />
   )
 }

@@ -18,7 +18,7 @@ const order = (i: number) => ({ '--i': String(i) }) as CSSProperties
 /* ---------------- 内联 SVG 图标（stroke 用 currentColor，自动跟随主题） ---------------- */
 type IconName = 'file' | 'target' | 'chip' | 'mem'
   | 'arrow' | 'lock' | 'star' | 'play' | 'refresh' | 'book' | 'eye' | 'mappin' | 'back' | 'exit'
-  | 'sound' | 'mute' | 'trash' | 'hint'
+  | 'sound' | 'mute' | 'trash' | 'hint' | 'sliders' | 'check'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h4M9 12h6M9 16h6" /></>,
@@ -40,6 +40,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
   trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" /><path d="M10 11v7M14 11v7" /></>,
   // HINT 徽章：自绘对话标签 + 感叹号，不用原版 marian_icn_hint.png
   hint: <><path d="M3 5h18v12H9l-6 4z" /><path d="M12 8.5v4.5M12 16h.01" /></>,
+  // 音频设置：推子（三轨，各带一枚旋钮）
+  sliders: <><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h10M18 18h2" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="16" cy="18" r="2" /></>,
+  check: <path d="M4 12.5l5.2 5.2L20 6.8" />,
 }
 function I({ n, fill }: { n: IconName; fill?: boolean }) {
   return <svg className={fill ? 'ico ico-fill' : 'ico'} viewBox="0 0 24 24" aria-hidden="true">{PATHS[n]}</svg>
@@ -466,9 +469,141 @@ export type FadingColdProps = {
   onClearSave: () => void
   onMemClick: () => void
   routeUnlocked: (r: FadingRoute) => boolean
+  /** 卡片右上角的 NEW（prefab 里的 reddot_v2）：这条路线还没被打开过 */
+  routeIsNew: (r: FadingRoute) => boolean
   /** 音频静音开关（文件由 build/export_fading_audio.py 导出） */
   muted: boolean
   onToggleMute: () => void
+  /** 音量（0~1）：bgm 管音乐层与环境音床，sfx 管音效 / UI / 打字 */
+  gains: { bgm: number; sfx: number }
+  onGainChange: (k: 'bgm' | 'sfx', v: number) => void
+  onGainReset: () => void
+}
+
+/** 弹窗通用行为：Esc 关闭。onClose 每次渲染都是新函数，用 ref 兜住只绑一次。 */
+function useDialogClose(onClose: () => void) {
+  const fn = useRef(onClose)
+  fn.current = onClose
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') fn.current() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+}
+
+/** 记忆分三类（LootItem 表）：已储存 / 已删除 / 仅剩一部分 */
+const MEM_KIND: Record<FadingMemory['kind'], string> = {
+  save: '已储存', deleted: '已删除', fragment: '仅剩一部分',
+}
+
+/** 音频设置弹窗：两条推子（音乐 / 音效）+ 静音、重置、完成。
+ *  铺在外框内的居中遮罩上——手机竖屏也保证完整可见，不会像下来菜单那样贴边溢出。 */
+function AudioSettingsDialog({ p, onClose }: { p: FadingColdProps; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null)
+  useDialogClose(onClose)
+  /* 打开时把焦点放到第一根推子，键盘左右键就能调 */
+  useEffect(() => { box.current?.querySelector<HTMLInputElement>('input')?.focus() }, [])
+  const rows: { k: 'bgm' | 'sfx'; label: string; hint: string }[] = [
+    { k: 'bgm', label: '音乐', hint: 'BGM / 环境音' },
+    { k: 'sfx', label: '音效', hint: '按钮 / 打字' },
+  ]
+  return (
+    <div className="cf-modal" role="dialog" aria-modal="true" aria-label="音频设置">
+      {/* 遮罩本身是按钮：点空白处关闭，键盘也能落到它上面 */}
+      <button className="cf-modal-scrim" onClick={onClose} aria-label="关闭音频设置" tabIndex={-1} />
+      <div className="cf-modal-box" ref={box}>
+        <div className="cf-modal-head">
+          <span>
+            <h3>音频设置</h3>
+            <small>AUDIO / VOLUME</small>
+          </span>
+          <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
+        </div>
+        {rows.map(({ k, label, hint }) => {
+          const v = Math.round(p.gains[k] * 100)
+          return (
+            <label className="cf-set-row" key={k}>
+              <span className="cf-set-lb">{label}<em>{hint}</em></span>
+              <input type="range" min={0} max={100} step={1} value={v}
+                aria-label={`${label}音量`}
+                onChange={(e) => p.onGainChange(k, Number(e.target.value) / 100)} />
+              <span className="cf-set-val">{v}</span>
+            </label>
+          )
+        })}
+        <div className="cf-set-foot">
+          <button className={`cf-set-btn${p.muted ? ' on' : ''}`} onClick={p.onToggleMute}>
+            <I n={p.muted ? 'mute' : 'sound'} /> {p.muted ? '已静音' : '全部静音'}
+          </button>
+          <span className="cf-set-foot-r">
+            <button className="cf-set-btn" onClick={p.onGainReset}>恢复默认</button>
+            <button className="cf-set-btn solid" onClick={onClose}>完成</button>
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 详情弹窗要显示的东西：一个结局页，或一条记忆 */
+type Peek = { kind: 'ending'; page: FadingPage } | { kind: 'memory'; mem: FadingMemory }
+
+/** 回想 / 记忆详情：列表里只放摘要，完整正文在这里读。
+ *  结局页的 body（ending.text）本来就在页面表里，卡片上只露了 title / hint。 */
+function PeekDialog({ p, peek, onClose }: { p: FadingColdProps; peek: Peek; onClose: () => void }) {
+  useDialogClose(onClose)
+
+  if (peek.kind === 'memory') {
+    const m = peek.mem
+    return (
+      <div className="cf-modal" role="dialog" aria-modal="true" aria-label="记忆详情">
+        <button className="cf-modal-scrim" onClick={onClose} aria-label="关闭" tabIndex={-1} />
+        <div className="cf-modal-box cf-peek">
+          <div className="cf-modal-head">
+            <span>
+              <h3>{m.name}</h3>
+              <small>R{m.route} · {String(m.index).padStart(2, '0')} · {MEM_KIND[m.kind]}</small>
+            </span>
+            <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
+          </div>
+          <p className="cf-peek-short">{m.short}</p>
+          <p className="cf-peek-text">{m.desc}</p>
+        </div>
+      </div>
+    )
+  }
+
+  const page = peek.page
+  const src = fadingCgSrc(p.data, page.cg)
+  const mark = END_MARK[endKind(page.id)]
+  return (
+    <div className="cf-modal" role="dialog" aria-modal="true" aria-label="结局详情">
+      <button className="cf-modal-scrim" onClick={onClose} aria-label="关闭" tabIndex={-1} />
+      <div className="cf-modal-box cf-peek">
+        <div className="cf-modal-head">
+          <span>
+            <h3>{page.ending?.title}</h3>
+            <small>#{String(page.id).slice(-4)} · ENDING · ROUTE {ROMAN[(page.route ?? 1) - 1] ?? 'I'}</small>
+          </span>
+          <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
+        </div>
+        {src && <figure className="cf-peek-art"><img src={src} alt={page.cg || ''} /></figure>}
+        <p className="cf-peek-text">{page.text}</p>
+        {page.ending?.hint && <p className="cf-peek-hint">{page.ending.hint}</p>}
+        {mark && <div className="cf-peek-mark"><img src={mark.src} alt={mark.alt} /></div>}
+      </div>
+    </div>
+  )
+}
+
+/** 设置键：开合状态提到 FadingCold，弹窗要渲染在外框层（不能被正文区裁掉）。 */
+function AudioSettingsButton({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+  return (
+    <button className={`cf-sound${open ? ' on' : ''}`} onClick={onOpen}
+      title="音频设置" aria-haspopup="dialog" aria-expanded={open}>
+      <I n="sliders" />
+    </button>
+  )
 }
 
 /** 状态栏：体力/粮食上排，侵蚀长条下排。数值全部来自 Manager 表：
@@ -547,12 +682,35 @@ export default function FadingCold(p: FadingColdProps) {
      → 翻页放完才开始逐字出正文，打字音也跟着一起开始。没有 CG 的页面直接出字。 */
   const hasCg = view === 'game' && !p.isRegionSelect && !!cgSrc
   /* 手机端全屏：把小游戏面板本身全屏，站点导航栏自然被排除在全屏元素之外 */
+  /* 音频设置弹窗：挂在组件层，弹窗渲染到外框上（见 .cf-modal） */
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  /* 回想 / 记忆的详情弹窗：卡片只放摘要，点开才读全文 */
+  const [peek, setPeek] = useState<Peek | null>(null)
+  /* 「重新记录」的即时提示：跟 HINT 那条同一套外观，只是停留更短 */
+  const [toast, setToast] = useState<string | null>(null)
+  const [toastOut, setToastOut] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   useEffect(() => {
     const onChange = () => setIsFullscreen(!!document.fullscreenElement)
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
+  /* 提示条：HINT 那条是 3s，这里 1.2s 就走——只是告诉玩家「记下了」，不用留那么久 */
+  useEffect(() => {
+    if (!toast || toastOut) return
+    const t = window.setTimeout(() => setToastOut(true), 1200)
+    return () => clearTimeout(t)
+  }, [toast, toastOut])
+  useEffect(() => {
+    if (!toastOut) return
+    const t = window.setTimeout(() => { setToast(null); setToastOut(false) }, 280)
+    return () => clearTimeout(t)
+  }, [toastOut])
+  /** 弹一条短提示（同一条被再次触发时重新计时） */
+  function notify(msg: string) {
+    setToastOut(false)
+    setToast(msg)
+  }
   function toggleFullscreen() {
     const root = document.querySelector('.fad-cold-root')
     if (!root) return
@@ -580,34 +738,62 @@ export default function FadingCold(p: FadingColdProps) {
   const followRef = useRef(true)
   const targetRef = useRef(0)
   /* 程序滚动会触发 onScroll，若把它当成「用户自己滚的」，第一次换幕就把跟随关掉了，
-     等于自己把自己禁用。所以自己滚的时候记个时间戳，那之后的事件忽略。 */
-  const lastAuto = useRef(0)
+     等于自己把自己禁用。判断方式用位置比对而不是时间窗：只有位置还停在「我们刚写进去的」
+     那个值上才算自己滚的。
+     时间窗法（旧实现：写完 120ms 内忽略）有两个坑：
+       1) 目标超过最大滚动量时永远差最后几像素，循环每帧都在写，时间戳一直被刷新，
+          鼠标滚轮永远抢不回页面；
+       2) 逐字出字时目标一直在长，同样会一直刷新。 */
+  const autoTop = useRef(0)
+  /** 把目标夹进 [0, maxScroll]：超出的部分永远到不了，只会让循环空转、把滚轮锁死。 */
+  function clampTarget(el: HTMLElement, top: number) {
+    const max = Math.max(0, el.scrollHeight - el.clientHeight)
+    return Math.min(Math.max(0, top), max)
+  }
   function autoScrollTo(el: HTMLElement, top: number) {
-    lastAuto.current = Date.now()
-    el.scrollTop = top
+    const to = clampTarget(el, top)
+    if (Math.abs(el.scrollTop - to) < 0.5) return
+    el.scrollTop = to
+    autoTop.current = el.scrollTop
   }
   function trackFollow() {
     const el = scrollRef.current
-    if (!el || Date.now() - lastAuto.current < 120) return
+    if (!el) return
+    /* 浏览器可能把小数 scrollTop 取整，留 1px 容差 */
+    if (Math.abs(el.scrollTop - autoTop.current) <= 1) return
     followRef.current = false
+  }
+  /** 点击画面：如果还在追滚途中，直接落到终点，别让用户等动画 */
+  function jumpScroll() {
+    const el = scrollRef.current
+    if (!el || !followRef.current) return false
+    if (Math.abs(clampTarget(el, targetRef.current) - el.scrollTop) <= 2) return false
+    autoScrollTo(el, targetRef.current)
+    return true
   }
   /* 换幕先瞬回顶部（CG 从头放起），再把目标同步成 0，免得追滚动画从半路滑上来 */
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     autoScrollTo(el, 0)
+    autoTop.current = el.scrollTop
     targetRef.current = 0
     followRef.current = true
   }, [p.sceneKey])
   /* 逐步定目标：CG 翻页阶段跟画框底部 → 打字阶段跟正文底部 →
      打完跟选项底部，下面没东西了自然就停。 */
+  /** 当前该跟到哪一块：页面顶部的滚动目标由打字阶段决定，循环里重算时也要用同一个 */
+  const followSel = useRef('.cf-script')
+  followSel.current = !textStart ? '.cf-fig' : typed.done ? '.cf-opts' : '.cf-script'
+  function measureTarget(el: HTMLElement) {
+    const t = el.querySelector(followSel.current) as HTMLElement | null
+    if (!t) return
+    targetRef.current = Math.max(0, t.offsetTop + t.offsetHeight - el.clientHeight + 12)
+  }
   useEffect(() => {
     const el = scrollRef.current
     if (!el || p.isRegionSelect || !followRef.current) return
-    const sel = !textStart ? '.cf-fig' : typed.done ? '.cf-opts' : '.cf-script'
-    const target = el.querySelector(sel) as HTMLElement | null
-    if (!target) return
-    targetRef.current = Math.max(0, target.offsetTop + target.offsetHeight - el.clientHeight + 12)
+    measureTarget(el)
   }, [textStart, typed.shown, typed.done, p.sceneKey, p.isRegionSelect])
   /* 线性追滚：约 340px/s，一步到位改成匀速滑行 */
   useEffect(() => {
@@ -616,12 +802,16 @@ export default function FadingCold(p: FadingColdProps) {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     let raf = 0
     let last = performance.now()
+    let lastMeasure = 0
     const SPEED = 0.34
     const step = (now: number) => {
       const dt = Math.min(64, now - last)
       last = now
       // 用户已经接手就不再碰 scrollTop，否则会跟他抢页面
       if (followRef.current) {
+        /* 每半秒重量一次：CG 加载完、字体回流会把先算好的目标顶偏，
+           不重算的话页面会停在中途，结局的按钮就被留在屏幕外。 */
+        if (now - lastMeasure > 500) { lastMeasure = now; measureTarget(el) }
         const d = targetRef.current - el.scrollTop
         if (Math.abs(d) > 0.5) autoScrollTo(el, el.scrollTop + Math.sign(d) * Math.min(Math.abs(d), SPEED * dt))
       }
@@ -676,6 +866,7 @@ export default function FadingCold(p: FadingColdProps) {
                   title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
                   <I n={p.muted ? 'mute' : 'sound'} />
                 </button>
+                <AudioSettingsButton open={settingsOpen} onOpen={() => setSettingsOpen(true)} />
                 <button className="cf-clear" onClick={p.onClearSave} title="清除存档" aria-label="清除存档"><I n="trash" /></button>
               </span>
             </div>
@@ -706,7 +897,10 @@ export default function FadingCold(p: FadingColdProps) {
             </p>
             </div>{/* /cf-home-block */}
             </div>{/* /cf-home-body */}
-          </div></div>
+          </div>
+          </div>
+          {/* 弹窗挂在外框之外、.cf 之内：手机端能吃到面板的全部宽度，不被 14px 外边距再削一圈 */}
+          {settingsOpen && <AudioSettingsDialog p={p} onClose={() => setSettingsOpen(false)} />}
         </div></div></div>
       </div>
     )
@@ -741,7 +935,11 @@ export default function FadingCold(p: FadingColdProps) {
                     {/* 原版关卡卡片的背景就是这张水彩插画，文字压在下方渐隐层上 */}
                     <img className="cf-rc-art" src={ROUTE_ART(r.no)} alt="" aria-hidden="true" loading="lazy" draggable={false} />
                     <span className="cf-rc-scrim" aria-hidden="true" />
-                    {ok && r.no === 1 && <span className="cf-rc-new">NEW</span>}
+                    {/* 原版这枚是 reddot_v2 里的 board_new，用同一张 stamp 素材，
+                        只有「已解锁但还没进去过」的路线才亮 */}
+                    {ok && p.routeIsNew(r) && (
+                      <img className="cf-rc-new" src="/fading_ui/marian_icn_new.png" alt="NEW" draggable={false} />
+                    )}
                     <div className="cf-rc-body">
                       <h4>{ok ? r.name : 'NO SIGNAL'}</h4>
                       <p>{ok ? r.desc : `观看【${req?.name ?? '前一条记录的结局'}】后解锁`}</p>
@@ -781,10 +979,15 @@ export default function FadingCold(p: FadingColdProps) {
                     const got = found.includes(ep.id)
                     const src = fadingCgSrc(data, ep.cg)
                     return (
-                      <div key={ep.id} className={`cf-tile ${got ? '' : 'locked'}`}>
+                      <div key={ep.id} className={`cf-tile ${got ? '' : 'locked'}`}
+                        onClick={got ? () => setPeek({ kind: 'ending', page: ep }) : undefined}
+                        role={got ? 'button' : undefined} tabIndex={got ? 0 : undefined}
+                        onKeyDown={got ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPeek({ kind: 'ending', page: ep }) }
+                        } : undefined}>
                         <div className="cf-tile-img">{got && src ? <img src={src} alt="" loading="lazy" /> : '?'}</div>
                         <div className="cf-tile-meta">
-                          <div className="cf-tile-id">#{String(ep.id).slice(-4)}</div>
+                          <div className="cf-tile-id"><span>#{String(ep.id).slice(-4)}</span>{got && <I n="arrow" />}</div>
                           <div className="cf-tile-name">{got ? ep.ending?.title : '尚未收录的结局'}</div>
                           <div className="cf-tile-hint">{got ? ep.ending?.hint : '继续探索以解锁'}</div>
                         </div>
@@ -801,11 +1004,20 @@ export default function FadingCold(p: FadingColdProps) {
                     {memories.map((m) => {
                       const got = unlockedMemories.has(m.id)
                       return (
-                        <div key={m.id} className={`cf-memo ${got ? '' : 'locked'}`}>
-                          <div className="cf-memo-id">R{m.route} · {String(m.index).padStart(2, '0')}</div>
+                        /* 卡片只留前三行（编号 / 名称 / 短句），完整记录点开才读——
+                           原文 desc 有 3~4 行，铺在卡片上会把网格撑成一堵墙 */
+                        <div key={m.id} className={`cf-memo ${got ? '' : 'locked'}`}
+                          onClick={got ? () => setPeek({ kind: 'memory', mem: m }) : undefined}
+                          role={got ? 'button' : undefined} tabIndex={got ? 0 : undefined}
+                          onKeyDown={got ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPeek({ kind: 'memory', mem: m }) }
+                          } : undefined}>
+                          <div className="cf-memo-id">
+                            <span>R{m.route} · {String(m.index).padStart(2, '0')}</span>
+                            {got && <I n="arrow" />}
+                          </div>
                           <div className="cf-memo-name">{got ? m.name : '未储存的记忆'}</div>
                           <div className="cf-memo-short">{got ? m.short : '???'}</div>
-                          <div className="cf-memo-desc">{got ? m.desc : '这段记忆尚未找回。'}</div>
                         </div>
                       )
                     })}
@@ -814,6 +1026,7 @@ export default function FadingCold(p: FadingColdProps) {
               )}
             </div>
           </div></div>
+          {peek && <PeekDialog p={p} peek={peek} onClose={() => setPeek(null)} />}
         </div></div></div>
       </div>
     )
@@ -823,6 +1036,8 @@ export default function FadingCold(p: FadingColdProps) {
   const routeNo = route?.no ?? 1
   const endK = ending ? endKind(endingId) : null
   const endMark = endK ? END_MARK[endK] : null
+  /** 这次结局是否已经进过档案：重复到达时，横幅 / 说明行 / 记录提示都要换说法 */
+  const endRecorded = endingId != null && found.includes(endingId)
   /* 剧情正文抽成变量：结局页要在下面再渲染一份加位移滤镜的副本，用方块矩形当遮罩 */
   const body = (
     <>
@@ -853,7 +1068,9 @@ export default function FadingCold(p: FadingColdProps) {
                     {c.locked ? '???' : c.text}
                     {c.hint && !c.locked && <span className="cf-hint"><I n="eye" /> {c.hint}</span>}
                     {c.locked && c.lockText && <span className="cf-hint cf-hint-locked"><I n="lock" /> {c.lockText}</span>}
-                    {c.checked && <span className="cf-hint cf-hint-checked">Checked +1%</span>}
+                    {/* 已选过：自绘角标，和 HINT 徽章同一套语言（等宽大写 + 对勾 + 悬停反色）。
+                        原作只有一枚「Checked」戳、没有百分比，早年那行「Checked +1%」的 +1% 是编的。 */}
+                    {c.checked && <span className="cf-checked"><I n="check" />CHECKED</span>}
                   </span>
                   {/* HINT 徽章常驻：原版即使选项被锁（如未拿到「袭击」）也贴着 HINT，
                       解锁条件只管提示文字 / 能不能点。徽章占据右侧箭头的位置。 */}
@@ -881,14 +1098,31 @@ export default function FadingCold(p: FadingColdProps) {
                   <h3 style={{ margin: '18px 0 14px', font: '800 34px/1 "Arial Black",Helvetica,sans-serif', color: 'var(--fink)' }}>{ending.title}</h3>
                   <p style={{ margin: '0 auto', maxWidth: 470, fontSize: 12, lineHeight: 2.1, color: 'var(--fmut)' }}>{ending.hint}</p>
                   {memoryUnlocked && (
+                    /* 结局页落上去只是「待确认」：这段记忆要按「重新记录」才写进存档，
+                       点「返回上一节点」等于放弃，所以文案要跟状态走 */
                     <div className="unlock" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: '20px 0', padding: '9px 16px', border: '1px solid var(--fline)', color: 'var(--fsteel)', fontSize: 12 }}>
-                      <I n="mem" /> 解锁记忆：{memoryUnlocked.name}
+                      <I n="mem" /> {endRecorded ? '已记录：' : '记录后可获得：'}{memoryUnlocked.name}
                     </div>
                   )}
                   <div className="acts" style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
-                    <button className="cf-btn on" onClick={p.onRestart}><I n="refresh" /> 重新记录</button>
-                    <button className="cf-btn" onClick={() => p.onNavigate('endings')}><I n="book" /> 回想</button>
+                    <button className="cf-btn on" onClick={(e) => {
+                      e.stopPropagation()
+                      /* 文案在点击这一刻抓下来：紧接着就会换幕回到路线开场，ending 会变成 null */
+                      notify(endRecorded ? '无新纪录' : `已记录：${ending.title}`)
+                      p.onRestart()
+                    }}>
+                      <I n="refresh" /> 重新记录
+                    </button>
+                    <button className="cf-btn" onClick={(e) => { e.stopPropagation(); p.onNavigate('endings') }}>
+                      <I n="book" /> 回想
+                    </button>
                   </div>
+                  {/* 这一行把规则说清楚：结局页只是待确认，返回上一节点不会留档 */}
+                  <p className="cf-end-note">
+                    {endRecorded
+                      ? '该结局已记录在档案中'
+                      : '仅「重新记录」会保存，返回上一节点视为放弃'}
+                  </p>
                 </div>
               )}
             </div>
@@ -910,6 +1144,7 @@ export default function FadingCold(p: FadingColdProps) {
             title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
             <I n={p.muted ? 'mute' : 'sound'} />
           </button>
+          <AudioSettingsButton open={settingsOpen} onOpen={() => setSettingsOpen(true)} />
           <GameNav canBack={p.canBack} onBack={p.onBack} onHome={() => p.onNavigate('home')} />
         </span>
       </div>
@@ -922,11 +1157,14 @@ export default function FadingCold(p: FadingColdProps) {
         {/* key=sceneKey：每换一幕重挂载，让淡入 / CG 翻页 / 选项级联重新播放 */}
         {/* 原版是「点画面」而不是「点那颗按钮」：没打完先补完，打完之后整块正文区都能推进。
             选项按钮自己 stopPropagation，避免一次点击既选分支又推进。 */}
+        {/* 滚轮一落下就说明用户要自己看，立刻交还控制权（位置比对在极快滚动时可能来不及） */}
         <div className="cf-scroll" ref={ghost ? undefined : scrollRef}
           onScroll={ghost ? undefined : trackFollow} key={p.sceneKey}
+          onWheel={ghost ? undefined : () => { followRef.current = false }}
           onClick={ghost ? undefined : () => {
             if (!textStart) return          // CG 还在翻页，这一下不算「点画面」
             if (!typed.done) { typed.skip(); return }
+            if (jumpScroll()) return        // 还在自动追滚：这一下直接落到终点，不推进剧情
             if (p.canNext) p.onNext()
           }}>
           {body}
@@ -954,7 +1192,14 @@ export default function FadingCold(p: FadingColdProps) {
               {p.hintToast}
             </div>
           )}
+          {/* 记录成功的提示：外观与 HINT 提醒同一条，停留更短 */}
+          {toast && (
+            <div className={`cf-hint-toast${toastOut ? ' cf-hint-toast-closing' : ''}`} role="status">
+              {toast}
+            </div>
+          )}
         </div>
+        {settingsOpen && <AudioSettingsDialog p={p} onClose={() => setSettingsOpen(false)} />}
       </div></div></div>
     </div>
   )

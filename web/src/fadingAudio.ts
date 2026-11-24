@@ -4,6 +4,10 @@
 export type FadingAudioItem = { f: string; dur: number; kind: string }
 export type FadingAudioMap = Record<string, FadingAudioItem>
 
+/** 用户音量（0~1），乘在下面的基准音量上：bgm = 音乐层 + 环境音床 + 主菜单曲，sfx = 音效 / UI / 打字音。 */
+export type FadingAudioGains = { bgm: number; sfx: number }
+export const DEFAULT_GAINS: FadingAudioGains = { bgm: 1, sfx: 1 }
+
 let mapCache: FadingAudioMap | null = null
 
 export async function loadFadingAudio(): Promise<FadingAudioMap> {
@@ -20,6 +24,8 @@ export async function loadFadingAudio(): Promise<FadingAudioMap> {
 const VOL = { bgm: 0.75, ambient: 0.5, sfx: 0.85, ui: 0.8, typing: 0.45, write: 0.5 }
 const FADE_OUT_MS = 380
 const FADE_IN_MS = 900
+/** 拖音量条时的跟随渐变：太长会追不上手指，太短会有咔哒声 */
+const GAIN_RAMP_MS = 120
 const TYPE_MIN_GAP_MS = 70
 const WRITE_MIN_GAP_MS = 1200
 const WRITE_CHANCE = 0.45
@@ -74,14 +80,37 @@ export class FadingAudio {
   private lastType = 0
   private lastWrite = 0
   muted = false
+  private gains: FadingAudioGains
+  /** 主菜单曲当前该不该出声：音量条改动时要按这个状态重算，不能一律拉满 */
+  private shellOn = false
 
-  constructor(map: FadingAudioMap) { this.map = map }
+  /** 静音与音量必须在构造时就能带进来：这个实例是在音频清单异步到货之后才 new 出来的，
+   *  而静音 / 音量的 effect 在首屏就已经跑过一次（那时实例还不存在）。
+   *  只靠 effect 同步的话，刷新后实例会以 muted=false、满音量出场——
+   *  按钮显示静音、声音却是响的。 */
+  constructor(map: FadingAudioMap, init?: { muted?: boolean; gains?: Partial<FadingAudioGains> }) {
+    this.map = map
+    this.muted = init?.muted ?? false
+    this.gains = { ...DEFAULT_GAINS, ...init?.gains }
+  }
 
   setMuted(v: boolean) {
     this.muted = v
     if (this.bgm) this.bgm.muted = v
     if (this.amb) this.amb.muted = v
     if (this.menu) this.menu.muted = v
+    /* 池里的元素此刻是停的，但会带着 muted 状态被重新捞出来——
+       统一刷一遍，免得半路停掉的曲子下次复用时是「没静音」的旧状态 */
+    this.pool.forEach((el) => { el.muted = v })
+  }
+
+  /** 音量条：立刻作用到正在响的各层（只改音量，不动播放位置）。 */
+  setGains(g: Partial<FadingAudioGains>) {
+    this.gains = { ...this.gains, ...g }
+    const bgmVol = VOL.bgm * this.gains.bgm
+    if (this.bgm) ramp(this.bgm, this.bgm.volume, bgmVol, GAIN_RAMP_MS)
+    if (this.amb) ramp(this.amb, this.amb.volume, VOL.ambient * this.gains.bgm, GAIN_RAMP_MS)
+    if (this.menu) ramp(this.menu, this.menu.volume, this.shellOn ? bgmVol : 0, GAIN_RAMP_MS)
   }
 
   /** 循环层通用：换曲时旧的淡出、新的淡入；key 为空就停。
@@ -127,14 +156,14 @@ export class FadingAudio {
    *  上一次播放的可能是结局曲。 */
   playBgm(key: string | null) {
     const k = key && this.map[key] ? key : null
-    this.loopLayer(() => this.bgm, (e) => { this.bgm = e }, this.bgmKey, k, VOL.bgm)
+    this.loopLayer(() => this.bgm, (e) => { this.bgm = e }, this.bgmKey, k, VOL.bgm * this.gains.bgm)
     this.bgmKey = k
   }
 
-  /** 环境音床：跟着地点走，换地点交叉淡入淡出 */
+  /** 环境音床：跟着地点走，换地点交叉淡入淡出（音量归在「音乐」一档，它本来就是背景底噪） */
   playAmbient(key: string | null) {
     if (key && !this.map[key]) key = null
-    this.loopLayer(() => this.amb, (e) => { this.amb = e }, this.ambKey, key, VOL.ambient)
+    this.loopLayer(() => this.amb, (e) => { this.amb = e }, this.ambKey, key, VOL.ambient * this.gains.bgm)
     this.ambKey = key
   }
 
@@ -145,6 +174,7 @@ export class FadingAudio {
    *  和剧情层共用一个元素会被剧情那边的淡入淡出踩掉。 */
   setShell(key: string, on: boolean) {
     if (!this.map[key]) return
+    this.shellOn = on
     if (!this.menu) {
       const el = new Audio(this.map[key].f)
       el.loop = true
@@ -154,15 +184,16 @@ export class FadingAudio {
       this.menu = el
       tryPlay(el, true)
     }
-    ramp(this.menu, this.menu.volume, on ? VOL.bgm : 0, on ? 700 : FADE_OUT_MS)
+    ramp(this.menu, this.menu.volume, on ? VOL.bgm * this.gains.bgm : 0, on ? 700 : FADE_OUT_MS)
   }
 
   stopBgm() {
-    this.loopLayer(() => this.bgm, (e) => { this.bgm = e }, this.bgmKey, null, VOL.bgm)
+    this.loopLayer(() => this.bgm, (e) => { this.bgm = e }, this.bgmKey, null, VOL.bgm * this.gains.bgm)
     this.bgmKey = null
-    this.loopLayer(() => this.amb, (e) => { this.amb = e }, this.ambKey, null, VOL.ambient)
+    this.loopLayer(() => this.amb, (e) => { this.amb = e }, this.ambKey, null, VOL.ambient * this.gains.bgm)
     this.ambKey = null
     if (this.menu) { this.menu.pause(); this.menu = null }
+    this.shellOn = false
   }
 
   playSfx(key: string | null) { this.oneShot(key, VOL.sfx) }
@@ -187,7 +218,7 @@ export class FadingAudio {
     const item = this.map[key]
     if (!item) return
     const el = new Audio(item.f)
-    el.volume = vol
+    el.volume = Math.max(0, Math.min(1, vol * this.gains.sfx))
     tryPlay(el)
   }
 }
