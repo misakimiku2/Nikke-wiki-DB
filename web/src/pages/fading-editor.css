@@ -221,7 +221,31 @@
 /* 图层通用 */
 .fu-layer { outline: 1px solid transparent; }
 .fu-layer.is-sel { outline: 2px solid #2ee6ff; outline-offset: 0; }
+/* 画布多选的附加项：橙色虚线框，与右栏多选行样式一致 */
+.fu-layer.is-multi { outline: 2px dashed #ffb020; outline-offset: 0; }
+/* 空白处拖框多选 */
+.fu-marquee {
+  position: absolute; z-index: 21000; pointer-events: none;
+  border: 1px solid #2ee6ff; background: rgba(46, 230, 255, .12);
+  box-shadow: 0 0 0 1px rgba(46, 230, 255, .25) inset;
+}
 .fu-text-edit { box-sizing: border-box; line-height: inherit; letter-spacing: inherit; }
+/* 画布就地编辑文字时浮动在文本框上方的小工具条：对齐 + 字号 */
+.fu-text-align {
+  position: absolute; left: 0; top: -27px; z-index: 8;
+  display: inline-flex; align-items: center; gap: 1px;
+  padding: 2px; pointer-events: auto;
+  background: #06141a; border: 1px solid #2ee6ff;
+}
+.fu-text-align button {
+  min-width: 20px; height: 19px; padding: 0 4px; cursor: pointer;
+  font: 700 10px ui-monospace, "Microsoft YaHei", monospace;
+  color: #9d9ab2; background: #171720; border: 0;
+}
+.fu-text-align button:hover { color: #fff; background: #2a2a3a; }
+.fu-text-align button.on { color: #06141a; background: #2ee6ff; }
+.fu-text-align-sep { width: 1px; height: 15px; margin: 0 3px; background: #34344a; }
+.fu-text-align-size { min-width: 20px; text-align: center; font: 700 10px ui-monospace, monospace; color: #2ee6ff; }
 .fu-layer-tag {
   position: absolute; left: 0; top: -22px; z-index: 5;
   padding: 2px 6px; white-space: nowrap; pointer-events: none;
@@ -242,6 +266,16 @@
 .fu-h-s { left: 50%; bottom: -5px; margin-left: -5px; cursor: ns-resize; }
 .fu-h-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .fu-h-w { left: -5px; top: 50%; margin-top: -5px; cursor: ew-resize; }
+/* 极细长条（≤16px）：默认 10px 手柄会盖住素材本体与操作点，把手柄挪到外侧 */
+.fu-layer.fu-thin .fu-h-nw,
+.fu-layer.fu-thin .fu-h-n,
+.fu-layer.fu-thin .fu-h-ne { top: -15px; }
+.fu-layer.fu-thin .fu-h-sw,
+.fu-layer.fu-thin .fu-h-s,
+.fu-layer.fu-thin .fu-h-se { bottom: -15px; }
+.fu-layer.fu-thin .fu-h-w { left: -15px; }
+.fu-layer.fu-thin .fu-h-e { right: -15px; }
+.fu-layer.fu-thin .fu-rotate { top: -46px; }
 .fu-rotate {
   position: absolute; z-index: 6; left: 50%; top: -32px;
   width: 18px; height: 18px; margin-left: -9px;

@@ -9,6 +9,7 @@ import type {
 import { fadingCgSrc } from '../fadingData'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import FadingIntro from './FadingIntro'
+import dossierLayout from './fading_dossier_layout.json'
 import './fading-cold.css'
 
 /** 选项/标记的级联序号交给 CSS 变量 */
@@ -17,7 +18,7 @@ const order = (i: number) => ({ '--i': String(i) }) as CSSProperties
 /* ---------------- 内联 SVG 图标（stroke 用 currentColor，自动跟随主题） ---------------- */
 type IconName = 'file' | 'target' | 'chip' | 'mem'
   | 'arrow' | 'lock' | 'star' | 'play' | 'refresh' | 'book' | 'eye' | 'mappin' | 'back' | 'exit'
-  | 'sound' | 'mute' | 'trash'
+  | 'sound' | 'mute' | 'trash' | 'hint'
 
 const PATHS: Record<IconName, React.ReactNode> = {
   file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v5h4M9 12h6M9 16h6" /></>,
@@ -37,6 +38,8 @@ const PATHS: Record<IconName, React.ReactNode> = {
   sound: <><path d="M4 9h3l5-4v14l-5-4H4z" /><path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10" /></>,
   mute: <><path d="M4 9h3l5-4v14l-5-4H4z" /><path d="M16 10l5 4M21 10l-5 4" /></>,
   trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14" /><path d="M10 11v7M14 11v7" /></>,
+  // HINT 徽章：自绘对话标签 + 感叹号，不用原版 marian_icn_hint.png
+  hint: <><path d="M3 5h18v12H9l-6 4z" /><path d="M12 8.5v4.5M12 16h.01" /></>,
 }
 function I({ n, fill }: { n: IconName; fill?: boolean }) {
   return <svg className={fill ? 'ico ico-fill' : 'ico'} viewBox="0 0 24 24" aria-hidden="true">{PATHS[n]}</svg>
@@ -87,6 +90,140 @@ const REGION_POS: Record<string, { x: number; y: number }> = {
   '新市区': { x: 74, y: 30 },
 }
 const MAP_SRC = '/fading_icons/map_mono.png'
+
+type DossierLayer = {
+  id: string; name: string; kind: 'image' | 'text' | 'rect'; visible: boolean; opacity: number
+  x: number; y: number; w: number; h: number; z: number; rotate: number
+  blend: string; radius: number; group: string
+  src?: string; fit?: string; border?: number[]; grayscale?: number; brightness?: number
+  text?: string; color?: string; fontSize?: number; weight?: number; align?: string
+  lineHeight?: number; letterSpacing?: number; shadow?: string
+}
+
+/** 外框 line_01 的描边倍率：只放大 border-width，九宫格 slice 仍取原图像素，纹样不变。 */
+const FRAME_BOLD = 1.5
+
+/** 纯白墨迹素材（在深底上可见）。浅色主题下由 CSS 反色成深色，相片和蓝色横幅保持原色。 */
+const DOSSIER_INK = new Set([
+  'marian_deco_line_01.png', 'marian_deco_line_02.png',
+  'marian_deco_line_04.png', 'marian_deco_line_04_v.png',
+  'marian_deco_intro_10.png', 'marian_deco_intro_11.png', 'marian_deco_intro_12.png',
+  'marian_bg_check.png', 'marian_bg_tag.png',
+  'marian_bg_choice_hidden.png', 'marian_divider_02.png',
+  'marian_title_intro_01.png',
+])
+
+/** 1920×1080 只是编辑器里方便摆素材的工作区，不是设计本身。
+ *  这里按所有可见图层的实际范围（含旋转后的签名）算出内容包围盒，
+ *  把留白裁掉，让名片本身铺满容器、垂直居中于画面。 */
+const DOSSIER_VIEW = (() => {
+  // 居中只按名片主体算；签名是浮在上面的装饰，用原坐标跟着变换即可
+  const vis = (dossierLayout.layers as unknown as DossierLayer[]).filter(l => l.visible && l.name !== '签名')
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const l of vis) {
+    const cx = l.x + l.w / 2, cy = l.y + l.h / 2
+    const a = (l.rotate || 0) * Math.PI / 180
+    const c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a))
+    const hw = (l.w * c + l.h * s) / 2, hh = (l.w * s + l.h * c) / 2
+    minX = Math.min(minX, cx - hw); maxX = Math.max(maxX, cx + hw)
+    minY = Math.min(minY, cy - hh); maxY = Math.max(maxY, cy + hh)
+  }
+  const padX = (maxX - minX) * 0.02, padY = (maxY - minY) * 0.02
+  return { x: minX - padX, y: minY - padY, w: maxX - minX + 2 * padX, h: maxY - minY + 2 * padY }
+})()
+
+/** 关卡选择页的 MARIA-7 名片：回放 UI 编辑器导出的图层布局。
+ *  和编辑器同一套规则——绝对定位，九宫格 sliced、细条 tiled、字号与边宽用 cqw 等比缩放。
+ *  签名是独立图层（-19°、z 最高、不属于「名片」组），因此浮在名片上方。 */
+function DossierPlate() {
+  const { layers } = dossierLayout as unknown as { layers: DossierLayer[] }
+  const V = DOSSIER_VIEW
+  const SCALE = 0.88
+  const xp = (v: number) => `${+((v - V.x) / V.w * 100).toFixed(4)}%`
+  const yp = (v: number) => `${+((v - V.y) / V.h * 100).toFixed(4)}%`
+  // 宽高没有原点偏移，不能复用 xp/yp（会把 V.x/V.y 当偏移量扣掉，算成负值）
+  const wp = (v: number) => `${+(v / V.w * 100).toFixed(4)}%`
+  const hp = (v: number) => `${+(v / V.h * 100).toFixed(4)}%`
+  const cqw = (v: number) => `${+(v / V.w * 100).toFixed(4)}cqw`
+
+  type DossierStyle = CSSProperties & { '--dl-raw'?: string }
+  const visual = (l: DossierLayer): DossierStyle => {
+    const base: CSSProperties = {
+      position: 'absolute', left: xp(l.x), top: yp(l.y),
+      width: wp(l.w), height: hp(l.h), zIndex: l.z,
+      opacity: l.opacity, borderRadius: l.radius || undefined,
+      transform: l.rotate ? `rotate(${l.rotate}deg)` : undefined,
+      mixBlendMode: (l.blend === 'normal' ? undefined : l.blend) as CSSProperties['mixBlendMode'],
+      pointerEvents: 'none',
+    }
+    if (l.name === '签名') {
+      // 签名浮在名片外，用 mask 把白色墨迹染成主题红（不改它的位置/旋转）
+      const mask = `url("${l.src}")`
+      return {
+        ...base, backgroundColor: 'var(--fred, #c05555)',
+        WebkitMaskImage: mask, maskImage: mask,
+        WebkitMaskSize: '100% 100%', maskSize: '100% 100%',
+        WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+      }
+    }
+    if (l.kind === 'image') {
+      const filter = l.grayscale || l.brightness !== 1
+        ? `grayscale(${l.grayscale ?? 0}) brightness(${l.brightness ?? 1})` : undefined
+      if (l.fit === 'sliced' && l.border?.some(n => n > 0)) {
+        const [bL, bB, bR, bT] = l.border.map(Math.round)
+        const bold = l.src?.endsWith('marian_deco_line_01.png') ? FRAME_BOLD : 1
+        const w = (n: number) => cqw(+(n * bold).toFixed(2))
+        const edges = `${w(bT)} ${w(bR)} ${w(bB)} ${w(bL)}`
+        return {
+          ...base, borderStyle: 'solid', borderColor: 'transparent',
+          borderTopWidth: w(bT), borderRightWidth: w(bR),
+          borderBottomWidth: w(bB), borderLeftWidth: w(bL),
+          // slice 仍是原图像素，只把 width 放大，所以破损纹样不变、只是描边更粗
+          borderImage: `url("${l.src}") ${bT} ${bR} ${bB} ${bL} fill / ${edges} / 0 stretch`,
+          filter,
+        }
+      }
+      return {
+        ...base,
+        backgroundImage: `url("${l.src}")`, backgroundPosition: 'center',
+        backgroundRepeat: l.fit === 'tiled' ? 'repeat' : 'no-repeat',
+        backgroundSize: l.fit === 'fill' || l.fit === 'sliced' ? '100% 100%'
+          : l.fit === 'tiled' ? 'auto' : l.fit,
+        filter,
+      }
+    }
+    // 文字颜色走 CSS 变量，浅色主题下由 .cf-dl-inktext / .cf-dl-stamp 覆盖
+    return {
+      ...base, display: 'flex', alignItems: 'center',
+      justifyContent: l.align === 'center' ? 'center' : l.align === 'right' ? 'flex-end' : 'flex-start',
+      color: 'var(--dl-c, var(--dl-raw))', '--dl-raw': l.color ?? '#ebebeb',
+      fontSize: cqw(l.fontSize ?? 18), fontWeight: l.weight,
+      textAlign: l.align as CSSProperties['textAlign'], lineHeight: l.lineHeight,
+      letterSpacing: cqw(l.letterSpacing ?? 0),
+      textShadow: l.shadow || undefined, whiteSpace: 'pre-wrap', overflow: 'hidden',
+    }
+  }
+
+  return (
+    <div className="cf-dossier-canvas" style={{
+      aspectRatio: `${V.w} / ${V.h}`,
+      // --cf-ds 由 CSS 按屏幕调整：桌面收一点，手机端放宽让名片更大
+      width: `min(calc(100% * var(--cf-ds, ${SCALE})), calc(100cqh * ${+(V.w / V.h).toFixed(4)} * var(--cf-ds, ${SCALE})))`,
+    }} aria-hidden="true">
+      {layers.filter(l => l.visible).slice().sort((a, b) => a.z - b.z).map(l => {
+        const ink = l.kind === 'image' && DOSSIER_INK.has(l.src?.split('/').pop() ?? '')
+        // TOP SECRET 是深色 multiply 叠在横幅上，浅色主题下要翻成浅色、去掉 multiply
+        const stamp = l.kind === 'text' && (l.color ?? '').toUpperCase() === '#171610'
+        const lightText = l.kind === 'text' && !stamp
+        return (
+          <div key={l.id}
+            className={`cf-dl${ink ? ' cf-dl-ink' : ''}${lightText ? ' cf-dl-inktext' : ''}${stamp ? ' cf-dl-stamp' : ''}`}
+            style={visual(l)}>{l.kind === 'text' ? l.text : null}</div>
+        )
+      })}
+    </div>
+  )
+}
 
 /** 开场地区选择：原版地图 + 可点标记 */
 function RegionMap({ choices }: { choices: ColdChoice[] }) {
@@ -281,6 +418,8 @@ export type ColdChoice = {
   lockText?: string
   checked?: boolean
   disabled?: boolean
+  /** 带 HINT 的锁定项：点击只弹提示、不推进剧情 */
+  hintOnly?: boolean
   onClick: () => void
 }
 export type FadingColdProps = {
@@ -320,6 +459,10 @@ export type FadingColdProps = {
   canNext: boolean
   onNext: () => void
   onChoice: (c: ColdChoice) => void
+  /** 点击锁定的 HINT 选项时弹出的提示横幅文本（null = 不显示） */
+  hintToast: string | null
+  hintClosing: boolean
+  onHint: (text: string) => void
   onClearSave: () => void
   onMemClick: () => void
   routeUnlocked: (r: FadingRoute) => boolean
@@ -403,6 +546,19 @@ export default function FadingCold(p: FadingColdProps) {
   /* 换幕时序：淡出 → 新幕淡入 → CG 翻页（cf-page-turn .6s + .14s delay）
      → 翻页放完才开始逐字出正文，打字音也跟着一起开始。没有 CG 的页面直接出字。 */
   const hasCg = view === 'game' && !p.isRegionSelect && !!cgSrc
+  /* 手机端全屏：把小游戏面板本身全屏，站点导航栏自然被排除在全屏元素之外 */
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+  function toggleFullscreen() {
+    const root = document.querySelector('.fad-cold-root')
+    if (!root) return
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {})
+    else root.requestFullscreen?.().catch(() => {})
+  }
   const [textStart, setTextStart] = useState(!hasCg)
   const typed = useTypewriter(pageText, p.onType, textStart)
   const blks = useBlocks(view === 'game' && !!ending, p.sceneKey)
@@ -498,6 +654,24 @@ export default function FadingCold(p: FadingColdProps) {
               <span className="cf-top-id"><I n="file" /> <span className="cf-top-full">SILVERGUN PROJECT — </span>ARCHIVE VOL. I</span>
               <span className="cf-top-right">
                 <span className="cf-mark"><I n="target" /> MMXXVI</span>
+                {/* 开发工具的统一写法：字面量 import.meta.env.DEV 守卫会在生产构建里
+                    连 children 一起被摇掉；不要封装成组件，否则链接文字仍会进包。 */}
+                {import.meta.env.DEV && (
+                  <>
+                    <a className="cf-devlink" href="/game/fadingaffection/editor" title="UI 拼图编辑器（仅开发模式）">🛠 UI 编辑器</a>
+                    <button className="cf-devlink" title="强制解锁全部进度（仅开发模式）" onClick={() => {
+                      const pages = Object.values(p.data.pages)
+                      localStorage.setItem('nikke_fading_seen_v1', JSON.stringify(pages.map(x => x.id)))
+                      localStorage.setItem('nikke_fading_endings_v1', JSON.stringify(pages.filter(x => x.ending).map(x => x.id)))
+                      location.reload()
+                    }}>🔓 全解锁</button>
+                  </>
+                )}
+                {/* 手机端顶栏位置用来放全屏（正式功能）；dev 按钮由 CSS 在窄屏隐藏 */}
+                <button className="cf-devlink cf-fullscreen" onClick={toggleFullscreen}
+                  title={isFullscreen ? '退出全屏' : '小游戏全屏'}>
+                  {isFullscreen ? '⛶ 退出' : '⛶ 全屏'}
+                </button>
                 <button className="cf-sound" onClick={p.onToggleMute}
                   title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
                   <I n={p.muted ? 'mute' : 'sound'} />
@@ -544,8 +718,6 @@ export default function FadingCold(p: FadingColdProps) {
       <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
         <div id="cf"><div className="stage"><div className="cf cf-fill">
           <div className="cf-frame">
-            <FadingIntro fit="cover" className="cf-home-bg" />
-            <img className="cf-home-leaf" src="/fading_ui/marian_main_leaf.png" alt="" aria-hidden="true" draggable={false} />
             <div className="cf-inner cf-inner-fill" key={p.view}>
             <div className="cf-doc-head">
               <button className="cf-back" onClick={() => p.onNavigate('home')}>
@@ -557,7 +729,7 @@ export default function FadingCold(p: FadingColdProps) {
               </div>
             </div>
             <div className="cf-home-body">
-            <div className="cf-home-art" aria-hidden="true">{/* 关卡屏这里留给卡片长高 */}</div>
+            <div className="cf-home-art"><DossierPlate /></div>
             <div className="cf-home-block">
             <div className="cf-routes">
               {data.routes.map((r, i) => {
@@ -669,8 +841,13 @@ export default function FadingCold(p: FadingColdProps) {
             <div className={`cf-opts ${typed.done || p.isRegionSelect ? 'ready' : 'pending'}`}
               style={p.isRegionSelect ? { display: 'none' } : undefined}>
               {choices.map((c, i) => (
-                <button key={c.key} className="cf-opt" style={order(i)} disabled={c.disabled}
-                  onClick={(e) => { e.stopPropagation(); p.onChoice(c) }}>
+                <button key={c.key} className={`cf-opt${c.hintOnly ? ' cf-opt-hintlocked' : ''}`}
+                  style={order(i)} disabled={c.disabled}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (c.hintOnly && c.hint) p.onHint(c.hint)
+                    else p.onChoice(c)
+                  }}>
                   <span className="ix">{c.index}</span>
                   <span className="tx">
                     {c.locked ? '???' : c.text}
@@ -678,7 +855,11 @@ export default function FadingCold(p: FadingColdProps) {
                     {c.locked && c.lockText && <span className="cf-hint cf-hint-locked"><I n="lock" /> {c.lockText}</span>}
                     {c.checked && <span className="cf-hint cf-hint-checked">Checked +1%</span>}
                   </span>
-                  <span className="arrow"><I n="arrow" /></span>
+                  {/* HINT 徽章常驻：原版即使选项被锁（如未拿到「袭击」）也贴着 HINT，
+                      解锁条件只管提示文字 / 能不能点。徽章占据右侧箭头的位置。 */}
+                  {c.hint
+                    ? <span className="cf-hint-badge"><I n="hint" /> HINT</span>
+                    : <span className="arrow"><I n="arrow" /></span>}
                 </button>
               ))}
               {/* 这不是一个分支，只是「画面可点」的提示，所以不套 .cf-opt 的选项行外壳；
@@ -767,6 +948,12 @@ export default function FadingCold(p: FadingColdProps) {
           </div>
           {/* 边框线自己也被干扰：骑边方块落在哪，哪一段边框就被位移 */}
           {ending && <div className="cf-ghost-frame" style={maskOf(blks)} aria-hidden="true" />}
+          {/* 原版点击锁定的 HINT 选项会弹一条横向提示（uis_mini_fad_hint_toast） */}
+          {p.hintToast && (
+            <div className={`cf-hint-toast${p.hintClosing ? ' cf-hint-toast-closing' : ''}`} role="status">
+              {p.hintToast}
+            </div>
+          )}
         </div>
       </div></div></div>
     </div>

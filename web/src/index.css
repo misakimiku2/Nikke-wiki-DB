@@ -156,7 +156,7 @@ img { display: block; }
 }
 /* 顶栏游戏字标：官方 NIKKE logo（白色透明底），浅色主题反相成黑色 */
 .brand-logo {
-  height: 30px; width: auto; display: block;
+  height: 40px; width: auto; display: block;
 }
 [data-theme="light"] .brand-logo { filter: invert(1); }
 .nav { display: flex; gap: 4px; margin-left: auto; }
@@ -224,7 +224,7 @@ img { display: block; }
   .topbar .nav { display: none; }
   .topbar-actions { margin-left: auto; }
   .menu-toggle { display: grid; }
-  .brand-logo { height: 24px; }
+  .brand-logo { height: 18px; }
   .lang-toggle button { height: 34px; padding: 0 7px; font-size: 9px; }
   .theme-toggle, .menu-toggle { width: 34px; height: 34px; }
   .theme-toggle svg, .menu-toggle svg { width: 15px; height: 15px; }
@@ -4081,7 +4081,7 @@ img { display: block; }
    这里压缩尺寸 + 禁止导航换行；极窄屏只留六边形 logo。 */
 @media (max-width: 620px) {
   .topbar-in { padding: 0 12px; gap: 10px; }
-  .brand-logo { height: 24px; }
+  .brand-logo { height: 18px; }
   .nav { gap: 2px; }
   .nav a {
     padding: 6px 7px; font-size: 11px; letter-spacing: .02em;

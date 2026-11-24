@@ -90,6 +90,9 @@ export default function FadingAffection() {
   const anim = useRef({ raf: 0, timer: 0, pending: false })
   /** 打开内存/回想时所在的视图，用来回到原处（游戏中点开内存要能回到同一页） */
   const [backView, setBackView] = useState<ColdView>('home')
+  /** 点击带 HINT 的锁定项时弹出的提示横幅，几秒后自动收起 */
+  const [hintToast, setHintToast] = useState<string | null>(null)
+  const [hintClosing, setHintClosing] = useState(false)
   /** 音频：清单 + 播放器实例 + 静音开关（静音状态存本地） */
   const [audioMap, setAudioMap] = useState<FadingAudioMap | null>(null)
   const [muted, setMuted] = useState(() => {
@@ -109,6 +112,16 @@ export default function FadingAffection() {
   useEffect(() => { try { localStorage.setItem(LS_ENDINGS, JSON.stringify(found)) } catch { /* ignore */ } }, [found])
   useEffect(() => { try { localStorage.setItem(LS_CHECKED, JSON.stringify(checked)) } catch { /* ignore */ } }, [checked])
   useEffect(() => { try { localStorage.setItem(LS_SEEN, JSON.stringify(seen)) } catch { /* ignore */ } }, [seen])
+  useEffect(() => {
+    if (!hintToast || hintClosing) return
+    const t = setTimeout(() => setHintClosing(true), 3000)
+    return () => clearTimeout(t)
+  }, [hintToast, hintClosing])
+  useEffect(() => {
+    if (!hintClosing) return
+    const t = setTimeout(() => { setHintToast(null); setHintClosing(false) }, 280)
+    return () => clearTimeout(t)
+  }, [hintClosing])
   useEffect(() => () => {
     cancelAnimationFrame(anim.current.raf); clearTimeout(anim.current.timer)
     /* 切到站内其它页面时小游戏已经卸载，循环层得一起停，不然 BGM 会一直响 */
@@ -160,6 +173,16 @@ export default function FadingAffection() {
   }, [view, bgm, node, audioMap, backView])
 
   const ui = (key: string) => sound.current?.playUi(key)
+
+  /** 原版点锁定的 HINT 项会弹一条提示并响 hint_toast 音，不推进剧情 */
+  function showHint(text: string) {
+    ui('uis_mini_fad_hint_toast')
+    setHintToast(text)
+    setHintClosing(false)
+  }
+
+  /** 换幕时提前收起提示（走同一段淡出，不会留到下一页） */
+  function closeHint() { setHintClosing(true) }
 
   /** 已解锁记忆：由访问过的「授予页」反查。判定用记忆 id——同一 route-序号在
    *  已储存/已删除两类里会撞（如 1-1 既是存档「袭击」也是删除「储备库」）。 */
@@ -257,6 +280,7 @@ export default function FadingAffection() {
 
   function go(next: number | null, choiceId?: number) {
     if (next == null) return
+    if (hintToast) closeHint()
     transition(() => commit(next, choiceId))
   }
 
@@ -286,6 +310,8 @@ export default function FadingAffection() {
     : choices.map((c, i) => {
         const isChecked = checked.includes(c.id)
         const locked = !reqMet(c.req)
+        // 原版：带 HINT 的锁定项仍可点，点下去只弹提示（音效 uis_mini_fad_hint_toast），不推进
+        const hintLocked = locked && !!c.hint
         return {
           key: c.id, index: CN_NUM[i] ?? `${i + 1}.`,
           text: c.text,
@@ -293,8 +319,10 @@ export default function FadingAffection() {
           locked,
           lockText: locked && c.req ? reqLockText(c.req) : undefined,
           checked: isChecked,
-          disabled: locked,
+          disabled: locked && !hintLocked,
+          hintOnly: hintLocked,
           onClick: () => {
+            if (hintLocked) { showHint(c.hint); return }
             if (locked) return
             /* 172 条选项里只有 74 条在表里带 sfx（剧情音），点哪条都要有一声按钮音兜底 */
             ui('uis_mini_fad_btn')
@@ -337,6 +365,9 @@ export default function FadingAffection() {
       canNext={autoNext != null}
       onNext={() => { ui('uis_mini_fad_btn'); go(autoNext) }}
       onChoice={(c) => c.onClick()}
+      hintToast={hintToast}
+      hintClosing={hintClosing}
+      onHint={showHint}
       onClearSave={clearSave}
       onMemClick={() => nav('memories')}
       muted={muted}

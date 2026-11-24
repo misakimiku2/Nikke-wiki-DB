@@ -48,6 +48,8 @@ export interface TextLayer extends LayerBase {
   lineHeight: number
   letterSpacing: number
   shadow: string
+  /** true=宽高由字号/字距/文字内容自动算出，手动拖拽缩放不可用 */
+  autoSize?: boolean
 }
 export interface RectLayer extends LayerBase {
   kind: 'rect'
@@ -101,7 +103,7 @@ function txt(name: string, text: string, x: number, y: number, w: number, h: num
     rotate: 0, opacity: 1, z: 0, visible: true, locked: false,
     blend: 'normal', radius: 0, group: '',
     text, color: '#171610', fontSize: 15, weight: 600,
-    align: 'left', lineHeight: 1.6, letterSpacing: 0, shadow: '', ...extra,
+    align: 'left', lineHeight: 1.6, letterSpacing: 0, shadow: '', autoSize: false, ...extra,
   }
 }
 function rect(name: string, x: number, y: number, w: number, h: number, extra: Partial<RectLayer> = {}): RectLayer {
@@ -198,6 +200,8 @@ export function normalizeLayout(v: FadingLayout): FadingLayout {
         im.grayscale = im.grayscale ?? 0
         im.brightness = im.brightness ?? 1
       }
+      // 旧存档/外部 JSON 没有 autoSize 字段：保留原有固定尺寸，避免布局被悄悄改动
+      if (base.kind === 'text') (base as TextLayer).autoSize = (base as TextLayer).autoSize ?? false
       return base
     }),
   }

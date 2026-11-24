@@ -28,6 +28,39 @@ type DragState =
       members: Array<{ id: string; x: number; y: number; w: number; h: number; rotate: number }> }
 
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+
+/** 极细长条素材（如 marian_deco_line_04 128×8）：原作是平铺拼接，
+ *  .9 拉伸会把线条糊掉，10px 手柄也会完全盖住操作点。 */
+const isThinLayer = (l: Layer) => l.kind === 'image' && Math.min(l.w, l.h) <= 16
+
+/** 与 index.css body 字体一致，文字测量才和画布上的实际渲染吻合 */
+const TEXT_FONT_STACK = '"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Yu Gothic UI","Meiryo","Malgun Gothic","Noto Sans CJK SC",system-ui,sans-serif'
+let textMeasureCtx: CanvasRenderingContext2D | null | undefined
+/** 按字号 / 字重 / 字距 / 行数算出文本框该有的尺寸，留少量余量避免文字被裁 */
+function measureText(l: TextLayer): { w: number; h: number } {
+  const lines = l.text.split('\n')
+  if (textMeasureCtx === undefined) {
+    textMeasureCtx = typeof document !== 'undefined' ? document.createElement('canvas').getContext('2d') : null
+  }
+  let widest = 0
+  if (textMeasureCtx) {
+    textMeasureCtx.font = `${l.weight} ${l.fontSize}px ${TEXT_FONT_STACK}`
+    for (const line of lines) widest = Math.max(widest, textMeasureCtx.measureText(line || ' ').width)
+  } else {
+    for (const line of lines) {
+      widest = Math.max(widest, [...line].reduce((s, c) => s + (/[\u4e00-\u9fff]/.test(c) ? 1 : 0.55), 0) * l.fontSize)
+    }
+  }
+  const spacing = (l.letterSpacing || 0) * Math.max(0, ...lines.map((x) => x.length - 1))
+  const lineH = Math.max(8, Math.ceil(l.fontSize * l.lineHeight))
+  return { w: Math.max(8, Math.ceil(widest + spacing) + 4), h: lineH * lines.length + 2 }
+}
+/** 自动尺寸文本：任何属性变化后都重新贴合文字，并同步基准尺寸（缩放显示保持 100%） */
+function withAutoSize(l: TextLayer): TextLayer {
+  if (!l.autoSize) return l
+  const { w, h } = measureText(l)
+  return { ...l, w, h, baseW: w, baseH: h }
+}
 const BLENDS = [
   'normal', 'multiply', 'darken', 'color-burn',
   'screen', 'lighten', 'color-dodge',
@@ -86,6 +119,8 @@ export default function FadingUiEditor() {
   const committedRef = useRef(committed)
   committedRef.current = committed
   const layout = draft ?? committed
+  const layoutRef = useRef(layout)
+  layoutRef.current = layout
 
   const setDraft = useCallback((v: FadingLayout | null) => {
     draftRef.current = v
@@ -112,7 +147,11 @@ export default function FadingUiEditor() {
     commit(mut(JSON.parse(JSON.stringify(base)) as FadingLayout))
   }
   function patchLayer(id: string, patch: Partial<Layer>) {
-    apply((l) => ({ ...l, layers: l.layers.map((x) => (x.id === id ? { ...x, ...patch } as Layer : x)) }))
+    apply((l) => ({ ...l, layers: l.layers.map((x) => {
+      if (x.id !== id) return x
+      const next = { ...x, ...patch } as Layer
+      return next.kind === 'text' ? withAutoSize(next) : next
+    }) }))
   }
   function setCanvas(patch: Partial<FadingLayout['canvas']>) {
     apply((l) => ({ ...l, canvas: { ...l.canvas, ...patch } }))
@@ -150,11 +189,17 @@ export default function FadingUiEditor() {
       if (l.kind !== 'image') return l
       const name = l.src.split('/').pop() || ''
       const b = borders.get(name)
+      let next = l
       if (b && b.some((n) => n > 0) && l.border.every((n) => n === 0)) {
-        changed = true
-        return { ...l, border: b, fit: l.fit === 'tiled' ? 'sliced' : l.fit }
+        next = { ...next, border: b, fit: l.fit === 'tiled' ? 'sliced' : l.fit }
       }
-      return l
+      // 细长条旧存档里存成了 fill/sliced，纠正成平铺拼接（不覆盖用户主动设的 contain/cover）
+      if (Math.min(l.baseW || l.w, l.baseH || l.h) <= 16 &&
+          (next.fit === 'fill' || next.fit === 'sliced')) {
+        next = { ...next, fit: 'tiled' }
+      }
+      if (next !== l) changed = true
+      return next
     })
     if (changed) commit({ ...cur, layers })
   }, [assets, commit])
@@ -173,8 +218,9 @@ export default function FadingUiEditor() {
     const x = Math.round((cx ?? layout.canvas.w / 2) - w / 2)
     const y = Math.round((cy ?? layout.canvas.h / 2) - h / 2)
     const border = a.border?.length === 4 ? a.border : [0, 0, 0, 0]
-    // 按原作行为选默认填充方式：平铺类 > 有九宫格 border 的 > 纯拉伸
-    const fit: ImageLayer['fit'] = a.tiled ? 'tiled' : border.some((n) => n > 0) ? 'sliced' : 'fill'
+    // 按原作行为选默认填充方式：细长条（拼接）/清单标记平铺 > 有九宫格 border 的 > 纯拉伸
+    const thin = Math.min(nw, nh) <= 16
+    const fit: ImageLayer['fit'] = thin || a.tiled ? 'tiled' : border.some((n) => n > 0) ? 'sliced' : 'fill'
     const layer: ImageLayer = {
       id: uid(), name: a.n.replace(/\.png$/i, ''), kind: 'image', x, y, w, h, baseW: w, baseH: h,
       rotate: 0, opacity: 1, z: layout.layers.length, visible: true, locked: false,
@@ -185,13 +231,15 @@ export default function FadingUiEditor() {
     selectOnly(layer.id)
   }
   function addText() {
-    const layer: TextLayer = {
+    const base: TextLayer = {
       id: uid(), name: '文字', kind: 'text',
-      x: 120, y: 120, w: 320, h: 48, baseW: 320, baseH: 48,
+      x: 120, y: 120, w: 8, h: 8, baseW: 8, baseH: 8,
       rotate: 0, opacity: 1, z: layout.layers.length, visible: true, locked: false,
       blend: 'normal', radius: 0, group: '', text: '双击此处编辑文字', color: '#171610',
       fontSize: 18, weight: 700, align: 'left', lineHeight: 1.5, letterSpacing: 0, shadow: '',
+      autoSize: true,
     }
+    const layer = withAutoSize(base)
     apply((l) => ({ ...l, layers: [...l.layers, layer] }))
     selectOnly(layer.id)
   }
@@ -216,6 +264,11 @@ export default function FadingUiEditor() {
   const [dragOverGroup, setDragOverGroup] = useState<string | null>(null)
   const [dragOverRoot, setDragOverRoot] = useState(false)
   const [zoom, setZoom] = useState(0.65)
+  /** 画布框选矩形，画布坐标（未缩放） */
+  const [marquee, setMarquee] = useState<Box | null>(null)
+  const marqueeRef = useRef<Box | null>(null)
+  /** 隐藏后画布不显示缩放/旋转/切线手柄，只能拖动素材移动 */
+  const [showHandles, setShowHandles] = useState(true)
   const [snap, setSnap] = useState(true)
   const [smart, setSmart] = useState(true)
   const [guides, setGuides] = useState<Guide[]>([])
@@ -239,6 +292,7 @@ export default function FadingUiEditor() {
   const suppressClick = useRef(false)
   const selLayer = layout.layers.find((l) => l.id === selected) ?? null
   const selIsImage = selLayer?.kind === 'image'
+  const selThin = !!selLayer && selLayer.kind === 'image' && Math.min(selLayer.w, selLayer.h) <= 16
 
   // 整组包围盒（选中组时用于整体缩放/旋转）
   const groupMembers = useMemo(() =>
@@ -287,7 +341,7 @@ export default function FadingUiEditor() {
     if (!editingText) return
     const onDown = (e: PointerEvent) => {
       const el = e.target as HTMLElement | null
-      if (!el?.closest('.fu-text-edit')) setEditingText(null)
+      if (!el?.closest('.fu-text-edit, .fu-text-align')) setEditingText(null)
     }
     window.addEventListener('pointerdown', onDown)
     return () => window.removeEventListener('pointerdown', onDown)
@@ -301,24 +355,26 @@ export default function FadingUiEditor() {
   const isSelected = (id: string) => selected === id || multi.includes(id)
   function selectOnly(id: string | null) { setSelected(id); setMulti([]); setSelectedGroup(null) }
   function onLayerRowClick(e: ReactMouseEvent, l: Layer) {
-    if (e.ctrlKey || e.metaKey) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
       // primary 单独存在 selected 里，不重复放进 multi
       if (l.id === selected) {
         // Ctrl+点击主选中项 = 取消它，并把第一个附加选中项提升为主项
         if (multi.length) { setSelected(multi[0]); setMulti(multi.slice(1)) }
         else selectOnly(null)
+      } else if (!selected) {
+        // 还没有主图层时，第一个追加的图层即成为主图层（对齐以它为基准）
+        setSelected(l.id)
+        setMulti((prev) => prev.filter((id) => id !== l.id))
       } else {
         setMulti((prev) => (prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id]))
       }
     } else selectOnly(l.id)
   }
 
-  // 切换选中图层时，默认：有九宫格 border 的进 .9 图模式，否则进自由变换
+  // 切换选中图层时一律回到自由变换：移动是最高频操作，.9 切线是低频操作，
+  // 需要改九宫格时手动点顶部「.9 图」。只在选中项变化时重置，避免调 border 时把模式切回去。
   useEffect(() => {
-    const l = layout.layers.find((x) => x.id === selected)
-    setNineMode(l?.kind === 'image' && l.border.some((n) => n > 0))
-    // 只在选中项变化时重置，避免调 border 时把模式又切回去
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setNineMode(false)
   }, [selected])
 
   /* ---------- 拖拽：移动 / 缩放 / 旋转 / 九宫格切线 ---------- */
@@ -516,11 +572,26 @@ export default function FadingUiEditor() {
   function onLayerDown(e: ReactPointerEvent, l: Layer) {
     // 空格平移 / 文字就地编辑时不要让图层开始拖动
     if (preview || spaceDown || e.button === 1 || editingText === l.id) return
-    selectOnly(l.id)
-    if (l.locked) return
-    // 拖图层只移动该层（多选时一起移动）；整组移动请用组包围盒的橙色标题条
-    const ids = selectedIds()
+    // Ctrl/Shift+点击：画布上追加/移除多选（与图层面板一致），不开始拖动
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      e.stopPropagation(); e.preventDefault()
+      if (l.id === selected) {
+        if (multi.length) { setSelected(multi[0]); setMulti(multi.slice(1)) }
+        else selectOnly(null)
+      } else if (!selected) {
+        setSelected(l.id)
+        setMulti((prev) => prev.filter((id) => id !== l.id))
+      } else {
+        setMulti((prev) => (prev.includes(l.id) ? prev.filter((id) => id !== l.id) : [...prev, l.id]))
+      }
+      return
+    }
+    // 点在已多选的图层上：保持多选并整体拖动；否则只选中该层
+    const alreadyMulti = isSelected(l.id) && multi.length > 0
+    if (!alreadyMulti) selectOnly(l.id)
+    const ids = alreadyMulti ? selectedIds() : [l.id]
     const members = layout.layers.filter((x) => ids.includes(x.id) && !x.locked)
+    if (!members.length) return
     startDrag(e, {
       mode: 'move', id: l.id, sx: e.clientX, sy: e.clientY,
       items: members.map((x) => ({ id: x.id, x: x.x, y: x.y })),
@@ -661,7 +732,7 @@ export default function FadingUiEditor() {
   /** 把当前多选的图层编成一个新组（图层面板有独立按钮 + Ctrl+G） */
   function groupSelection() {
     const ids = selectedIds()
-    if (ids.length < 2) { showToast('先在图层面板按住 Ctrl 选中至少 2 个图层'); return }
+    if (ids.length < 2) { showToast('先多选至少 2 个图层（画布上 Ctrl/Shift+点击或拖框）'); return }
     const suggested = `新组 ${groupNames.length + 1}`
     const name = (window.prompt('组名', suggested) || '').trim()
     if (!name) return
@@ -700,31 +771,48 @@ export default function FadingUiEditor() {
     selectOnly(null)
     if (selectedGroup === name) setSelectedGroup(null)
   }
-  /** 把选中图层（或整组包围盒）对齐到画布边缘/中线 */
+  /** 多选时把其它素材对齐到首个选中素材；单选时把图层（或整组）对齐到画布边缘/中线 */
   function align(dir: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom') {
     const chosen = selectedIds()
     const primary = selLayer
     if (!chosen.length) return
-    // 多选时对齐选中集合；单选且属于组时对齐整组包围盒
-    const ids = chosen.length > 1 || !primary?.group
+    const relative = chosen.length > 1 && !!primary
+    // 单选且属于组时对齐整组包围盒
+    const ids = relative || chosen.length > 1 || !primary?.group
       ? chosen
       : layout.layers.filter((x) => x.group === primary.group).map((x) => x.id)
     const members = layout.layers.filter((x) => ids.includes(x.id))
     if (!members.length) return
-    const box = {
-      x: Math.min(...members.map((m) => m.x)),
-      y: Math.min(...members.map((m) => m.y)),
-      r: Math.max(...members.map((m) => m.x + m.w)),
-      b: Math.max(...members.map((m) => m.y + m.h)),
+    let off: Map<string, { dx: number; dy: number }>
+    if (relative && primary) {
+      // 素材互相对齐：以主图层为基准，逐个算偏移（主图层自己不动）
+      off = new Map(members.map((m) => {
+        if (m.id === primary.id) return [m.id, { dx: 0, dy: 0 }] as const
+        let dx = 0, dy = 0
+        if (dir === 'left') dx = primary.x - m.x
+        else if (dir === 'hcenter') dx = primary.x + primary.w / 2 - (m.x + m.w / 2)
+        else if (dir === 'right') dx = primary.x + primary.w - (m.x + m.w)
+        else if (dir === 'top') dy = primary.y - m.y
+        else if (dir === 'vcenter') dy = primary.y + primary.h / 2 - (m.y + m.h / 2)
+        else dy = primary.y + primary.h - (m.y + m.h)
+        return [m.id, { dx, dy }] as const
+      }))
+    } else {
+      const box = {
+        x: Math.min(...members.map((m) => m.x)),
+        y: Math.min(...members.map((m) => m.y)),
+        r: Math.max(...members.map((m) => m.x + m.w)),
+        b: Math.max(...members.map((m) => m.y + m.h)),
+      }
+      let dx = 0, dy = 0
+      if (dir === 'left') dx = -box.x
+      else if (dir === 'hcenter') dx = (layout.canvas.w - (box.r - box.x)) / 2 - box.x
+      else if (dir === 'right') dx = layout.canvas.w - box.r
+      else if (dir === 'top') dy = -box.y
+      else if (dir === 'vcenter') dy = (layout.canvas.h - (box.b - box.y)) / 2 - box.y
+      else dy = layout.canvas.h - box.b
+      off = new Map(ids.map((id) => [id, { dx, dy }]))
     }
-    let dx = 0, dy = 0
-    if (dir === 'left') dx = -box.x
-    else if (dir === 'hcenter') dx = (layout.canvas.w - (box.r - box.x)) / 2 - box.x
-    else if (dir === 'right') dx = layout.canvas.w - box.r
-    else if (dir === 'top') dy = -box.y
-    else if (dir === 'vcenter') dy = (layout.canvas.h - (box.b - box.y)) / 2 - box.y
-    else dy = layout.canvas.h - box.b
-    const off = new Map(ids.map((id) => [id, { dx, dy }]))
     apply((cur) => ({ ...cur, layers: cur.layers.map((x) => {
       const o = off.get(x.id)
       return o ? { ...x, x: x.x + o.dx, y: x.y + o.dy } : x
@@ -837,6 +925,9 @@ export default function FadingUiEditor() {
       const t = e.target as HTMLElement | null
       if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
       if (e.key === 'Escape') { selectOnly(null); setModal(null); return }
+      if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault(); setShowHandles((v) => !v); return
+      }
       const ctrl = e.ctrlKey || e.metaKey
       if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return }
       if (ctrl && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return }
@@ -895,7 +986,7 @@ export default function FadingUiEditor() {
       const sz = sizerRef.current
       if (!sz) return
       const oldZoom = zoomRef.current
-      const next = Math.min(2, Math.max(0.1, +(oldZoom - Math.sign(e.deltaY) * 0.08).toFixed(2)))
+      const next = Math.min(4, Math.max(0.1, +(oldZoom - Math.sign(e.deltaY) * 0.08).toFixed(2)))
       if (next === oldZoom) return
       // 以鼠标所在的画布点为锚点缩放：缩放后把该点移回鼠标位置
       const r = sz.getBoundingClientRect()
@@ -914,22 +1005,67 @@ export default function FadingUiEditor() {
   }, [])
 
   function onStagePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
-    if (!spaceDown && e.button !== 1) return
-    e.preventDefault()
-    const sx = e.clientX, sy = e.clientY
-    const ox = panRef.current.x, oy = panRef.current.y
+    // 空格 / 中键：平移画布
+    if (spaceDown || e.button === 1) {
+      e.preventDefault()
+      const sx = e.clientX, sy = e.clientY
+      const ox = panRef.current.x, oy = panRef.current.y
+      let moved = false
+      setPanning(true)
+      const move = (ev: PointerEvent) => {
+        if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 3) moved = true
+        setPan({ x: ox + ev.clientX - sx, y: oy + ev.clientY - sy })
+      }
+      const up = () => {
+        window.removeEventListener('pointermove', move)
+        window.removeEventListener('pointerup', up)
+        setPanning(false)
+        // 平移结束后的 click 不要触发「点击空白处取消选中」
+        if (moved) suppressClick.current = true
+      }
+      window.addEventListener('pointermove', move)
+      window.addEventListener('pointerup', up)
+      return
+    }
+    // 左键在画布空白处：拖框多选（按住 Ctrl/Shift 追加）
+    if (preview || e.button !== 0) return
+    const target = e.target as HTMLElement
+    if (target.closest('.fu-layer, .fu-group-box, .fu-text-edit')) return
+    if (!target.closest('.fu-stage')) return
+    const host = stageRef.current
+    if (!host) return
+    const r = host.getBoundingClientRect()
+    const z = zoomRef.current
+    const { w: cw, h: ch } = layoutRef.current.canvas
+    const clamp = (v: number, max: number) => Math.max(0, Math.min(max, v))
+    const sx = clamp((e.clientX - r.left) / z, cw)
+    const sy = clamp((e.clientY - r.top) / z, ch)
     let moved = false
-    setPanning(true)
+    const setBox = (box: Box | null) => { marqueeRef.current = box; setMarquee(box) }
+    setBox({ x: sx, y: sy, r: sx, b: sy })
     const move = (ev: PointerEvent) => {
-      if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 3) moved = true
-      setPan({ x: ox + ev.clientX - sx, y: oy + ev.clientY - sy })
+      if (Math.abs(ev.clientX - e.clientX) + Math.abs(ev.clientY - e.clientY) > 3) moved = true
+      const cx = clamp((ev.clientX - r.left) / z, cw)
+      const cy = clamp((ev.clientY - r.top) / z, ch)
+      setBox({ x: Math.min(sx, cx), y: Math.min(sy, cy), r: Math.max(sx, cx), b: Math.max(sy, cy) })
     }
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
-      setPanning(false)
-      // 平移结束后的 click 不要触发「点击空白处取消选中」
-      if (moved) suppressClick.current = true
+      const box = marqueeRef.current
+      setBox(null)
+      if (!moved || !box || box.r - box.x < 2 || box.b - box.y < 2) return
+      const hits = layoutRef.current.layers
+        .filter((l) => l.visible !== false && box.x < l.x + l.w && box.r > l.x && box.y < l.y + l.h && box.b > l.y)
+        .map((l) => l.id)
+      if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        const all = Array.from(new Set([...(selected ? [selected, ...multi] : [...multi]), ...hits]))
+        if (all.length) { setSelected(all[0]); setMulti(all.slice(1)) }
+      } else if (hits.length) {
+        setSelected(hits[0]); setMulti(hits.slice(1)); setSelectedGroup(null)
+      } else selectOnly(null)
+      // 框选结束后的 click 不要触发「点击空白处取消选中」
+      suppressClick.current = true
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -1159,7 +1295,7 @@ export default function FadingUiEditor() {
           setDragOverGroup(null); setDragOverRoot(false)
         }}
         onClick={(e) => onLayerRowClick(e, l)}
-        title={`Ctrl+左键多选 · 拖动排序/拖进组${l.group ? ` · 组：${l.group}` : ''}`}>
+        title={`Ctrl/Shift+左键多选 · 拖动排序/拖进组${l.group ? ` · 组：${l.group}` : ''}`}>
         <span className="fu-layer-icn">{l.kind === 'image' ? '▧' : l.kind === 'text' ? 'T' : '▢'}</span>
         <span className="fu-layer-name">{l.name}</span>
         <button className="fu-ico" title={l.visible ? '隐藏' : '显示'}
@@ -1349,24 +1485,28 @@ export default function FadingUiEditor() {
             <span className="fu-sep" />
             <button className="fu-btn" onClick={() => setZoom((z) => Math.max(0.1, +(z - 0.1).toFixed(2)))}>－</button>
             <span className="fu-zoom">{Math.round(zoom * 100)}%</span>
-            <button className="fu-btn" onClick={() => setZoom((z) => Math.min(2, +(z + 0.1).toFixed(2)))}>＋</button>
+            <button className="fu-btn" onClick={() => setZoom((z) => Math.min(4, +(z + 0.1).toFixed(2)))}>＋</button>
             <button className="fu-btn" onClick={() => { setZoom(0.65); setPan({ x: 0, y: 0 }) }}>适应</button>
             <span className="fu-sep" />
-            <span className="fu-align-label">对齐{selectedGroup ? `「${selectedGroup}」` : selLayer?.group ? `「${selLayer.group}」` : ''}</span>
-            {([['left', '◧'], ['hcenter', '▣'], ['right', '◨'], ['top', '▔'], ['vcenter', '▤'], ['bottom', '▁']] as const).map(([d, ic]) => (
+            <span className="fu-align-label">对齐{selectedIds().length > 1 ? '→ 主图层' : '→ 画布'}</span>
+            {([['left', '◧', '左对齐'], ['hcenter', '▣', '水平居中'], ['right', '◨', '右对齐'],
+               ['top', '▔', '顶对齐'], ['vcenter', '▤', '垂直居中'], ['bottom', '▁', '底对齐']] as const).map(([d, ic, label]) => (
               <button key={d} className="fu-btn fu-align" disabled={!selLayer}
-                title={{ left: '左对齐画布', hcenter: '水平居中', right: '右对齐画布', top: '顶对齐', vcenter: '垂直居中', bottom: '底对齐' }[d]}
+                title={`${selectedIds().length > 1 ? '和首个选中素材' : '画布'}${label}（画布多选：Ctrl/Shift+点击或拖框）`}
                 onClick={() => align(d)}>{ic}</button>
             ))}
             <span className="fu-sep" />
             <span className="fu-align-label">变换</span>
-            <div className="fu-mode-switch" title="九宫格模式：拖动图层内的橙色切线调整 border；自由变换：拖动角点缩放">
+            <div className="fu-mode-switch" title="自由变换：直接拖动图层移动、拖角点缩放（默认）；.9 图：拖橙色切线改 border">
               <button disabled={!selIsImage} className={!nineMode ? 'on' : ''}
                 onClick={() => setNineMode(false)}>自由</button>
-              <button disabled={!selIsImage} className={nineMode ? 'on' : ''}
+              <button disabled={!selIsImage || selThin} className={nineMode ? 'on' : ''}
+                title={selThin ? '细长条素材按平铺拼接处理，不需要 .9 拉伸' : undefined}
                 onClick={() => setNineMode(true)}>.9 图</button>
             </div>
             <span className="fu-sep" />
+            <label className="fu-check" title="取消后画布上不显示缩放/旋转/切线手柄，只能拖动素材移动（快捷键 H）">
+              <input type="checkbox" checked={showHandles} onChange={(e) => setShowHandles(e.target.checked)} /> 显示手柄</label>
             <label className="fu-check"><input type="checkbox" checked={preview} onChange={(e) => setPreview(e.target.checked)} /> 预览（隐藏控制点）</label>
           </div>
 
@@ -1387,7 +1527,12 @@ export default function FadingUiEditor() {
                 onDragOver={(e) => e.preventDefault()} onDrop={onDrop}>
                 {sortedLayers.map((l) => {
                   const isSel = selected === l.id && !preview && !selectedGroup
-                  const nine = isSel && nineMode && l.kind === 'image'
+                  const isMulti = !isSel && multi.includes(l.id) && !preview && !selectedGroup
+                  const thin = isThinLayer(l)
+                  const autoText = l.kind === 'text' && !!l.autoSize
+                  const editing = l.kind === 'text' && editingText === l.id
+                  const chrome = showHandles && !editing
+                  const nine = isSel && chrome && nineMode && l.kind === 'image' && !thin
                   const b = l.kind === 'image' ? l.border : [0, 0, 0, 0]
                   const scale = l.kind === 'image' ? (l.borderScale ?? 1) : 1
                   const bs = b.map((v) => v * scale)
@@ -1403,7 +1548,7 @@ export default function FadingUiEditor() {
                         style={{ ...layerBoxStyle(l), zIndex: l.z + 1, ...layerVisualStyle(l) }}>
                         {l.kind === 'text' && editingText !== l.id ? l.text : null}
                       </div>
-                      <div className={`fu-layer${isSel ? ' is-sel' : ''}${nine ? ' nine-mode' : ''}`}
+                      <div className={`fu-layer${isSel ? ' is-sel' : ''}${isMulti ? ' is-multi' : ''}${nine ? ' nine-mode' : ''}${thin ? ' fu-thin' : ''}`}
                         data-layer-id={l.id}
                         style={{ ...layerBoxStyle(l), zIndex: 10000 + l.z }}
                         onClick={(e) => e.stopPropagation()}
@@ -1414,7 +1559,17 @@ export default function FadingUiEditor() {
                           selectOnly(l.id)
                           setEditingText(l.id)
                         }}>
-                        {l.kind === 'text' && editingText === l.id
+                        {editing && <div className="fu-text-align" onPointerDown={(e) => e.stopPropagation()}>
+                          {([['left', '◧', '左对齐 Ctrl+L'], ['center', '▣', '居中 Ctrl+E'], ['right', '◨', '右对齐 Ctrl+R']] as const).map(([a, ic, title]) => (
+                            <button key={a} className={l.align === a ? 'on' : ''} title={title}
+                              onClick={() => patchLayer(l.id, { align: a })}>{ic}</button>
+                          ))}
+                          <span className="fu-text-align-sep" />
+                          <button title="字号 -1" onClick={() => patchLayer(l.id, { fontSize: Math.max(4, l.fontSize - 1) })}>A-</button>
+                          <span className="fu-text-align-size">{l.fontSize}</span>
+                          <button title="字号 +1" onClick={() => patchLayer(l.id, { fontSize: Math.min(200, l.fontSize + 1) })}>A+</button>
+                        </div>}
+                        {editing
                           ? <textarea
                             autoFocus
                             className="fu-text-edit"
@@ -1426,16 +1581,24 @@ export default function FadingUiEditor() {
                             onBlur={() => setEditingText(null)}
                             onKeyDown={(e) => {
                               if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
-                                e.preventDefault(); setEditingText(null)
+                                e.preventDefault(); setEditingText(null); return
+                              }
+                              // 编辑中也能直接 Ctrl+L / E / R 切换对齐
+                              if (e.ctrlKey || e.metaKey) {
+                                const k = e.key.toLowerCase()
+                                if (k === 'l' || k === 'e' || k === 'r') {
+                                  e.preventDefault()
+                                  patchLayer(l.id, { align: k === 'l' ? 'left' : k === 'e' ? 'center' : 'right' })
+                                }
                               }
                             }}
                           />
                           : null}
-                        {isSel && <>
-                          <span className="fu-layer-tag">{l.name}{nine ? ' · .9 图' : ''}
+                        {isSel && !editing && <>
+                          <span className="fu-layer-tag">{l.name}{autoText ? ' · 自动尺寸' : ''}{nine ? ' · .9 图' : thin && l.kind === 'image' && l.fit === 'tiled' ? ' · 平铺' : ''}
                             {Math.round(l.w / (l.baseW || l.w) * 100) !== 100 || Math.round(l.h / (l.baseH || l.h) * 100) !== 100
                               ? ` · ${Math.round(l.w / (l.baseW || l.w) * 100)}% / ${Math.round(l.h / (l.baseH || l.h) * 100)}%` : ''}</span>
-                          {nine ? <>
+                          {chrome && (nine ? <>
                             <span className="fu-slice fu-slice-v" style={{ left: bs[0] }} title="左 border（显示绘制宽度，实际源像素 × 倍率）"
                               onPointerDown={sliceDown(0)}><i /><em>L {bs[0].toFixed(0)}</em></span>
                             <span className="fu-slice fu-slice-v" style={{ left: l.w - bs[2] }} title="右 border"
@@ -1444,21 +1607,27 @@ export default function FadingUiEditor() {
                               onPointerDown={sliceDown(3)}><i /><em>T {bs[3].toFixed(0)}</em></span>
                             <span className="fu-slice fu-slice-h" style={{ top: l.h - bs[1] }} title="下 border"
                               onPointerDown={sliceDown(1)}><i /><em>B {bs[1].toFixed(0)}</em></span>
-                          </> : HANDLES.map((h) => (
+                          </> : !autoText && HANDLES.map((h) => (
                             <span key={h} className={`fu-handle fu-h-${h}`}
                               onPointerDown={(e) => {
                                 e.stopPropagation(); e.preventDefault()
                                 startDrag(e, { mode: 'resize', id: l.id, handle: h,
                                   sx: e.clientX, sy: e.clientY, orig: { ...l } })
                               }} />
-                          ))}
-                          <span className="fu-rotate" title="拖动旋转（Shift 吸附 15°）"
-                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onRotateDown(e, l) }}>⟳</span>
+                          )))}
+                          {chrome && <span className="fu-rotate" title="拖动旋转（Shift 吸附 15°）"
+                            onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onRotateDown(e, l) }}>⟳</span>}
                         </>}
                       </div>
                     </Fragment>
                   )
                 })}
+                {marquee && !preview && (
+                  <div className="fu-marquee" style={{
+                    left: marquee.x, top: marquee.y,
+                    width: marquee.r - marquee.x, height: marquee.b - marquee.y,
+                  }} />
+                )}
                 {selectedGroup && groupBox && !preview && (
                   <div className="fu-group-box" style={{
                     left: groupBox.x, top: groupBox.y,
@@ -1480,13 +1649,15 @@ export default function FadingUiEditor() {
                     <span className="fu-group-box-tag" title="拖框内任意位置移动整组；双击框内某个图层可编辑该层"
                       onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onGroupMoveDown(e) }}>
                       📁 {selectedGroup} · {groupMembers.length} 层（拖框内移动整组 · 双击某层编辑单层）</span>
-                    <span className="fu-group-pivot" title="旋转支点：包围盒中心" />
-                    {HANDLES.map((h) => (
-                      <span key={h} className={`fu-handle fu-h-${h}`}
-                        onPointerDown={(e) => onGroupHandleDown(e, h)} />
-                    ))}
-                    <span className="fu-rotate" title="拖动旋转整组（Shift 吸附 15°）"
-                      onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onGroupRotateDown(e) }}>⟳</span>
+                    {showHandles && <>
+                      <span className="fu-group-pivot" title="旋转支点：包围盒中心" />
+                      {HANDLES.map((h) => (
+                        <span key={h} className={`fu-handle fu-h-${h}`}
+                          onPointerDown={(e) => onGroupHandleDown(e, h)} />
+                      ))}
+                      <span className="fu-rotate" title="拖动旋转整组（Shift 吸附 15°）"
+                        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); onGroupRotateDown(e) }}>⟳</span>
+                    </>}
                   </div>
                 )}
                 {showGrid && !preview && (
@@ -1500,7 +1671,7 @@ export default function FadingUiEditor() {
             </div>
           </div>
           <div className="fu-statusbar">
-            <span>坐标以画布左上角为原点 · 选中图片后顶部切「.9 图」可拖橙色切线调 border · 空格拖动画布 · Ctrl+滚轮缩放</span>
+            <span>画布多选：Ctrl/Shift+点击 或 空白处拖框 · 多选后「对齐」以首个选中素材为基准 · H 隐藏/显示手柄（隐藏后只能移动）· 空格拖动画布 · Ctrl+滚轮缩放至 400%</span>
             <span>{selLayer ? `已选：${selLayer.name} · x=${selLayer.x} y=${selLayer.y} w=${selLayer.w} h=${selLayer.h} · 缩放 ${(selLayer.w / (selLayer.baseW || selLayer.w) * 100).toFixed(0)}% / ${(selLayer.h / (selLayer.baseH || selLayer.h) * 100).toFixed(0)}%` : '未选中图层'}</span>
           </div>
         </main>
@@ -1590,8 +1761,12 @@ export default function FadingUiEditor() {
               <div className="fu-grid4">
                 <NumField label="X" value={selLayer.x} onChange={(v) => patchLayer(selLayer.id, { x: v })} />
                 <NumField label="Y" value={selLayer.y} onChange={(v) => patchLayer(selLayer.id, { y: v })} />
-                <NumField label="宽" value={selLayer.w} onChange={(v) => patchLayer(selLayer.id, { w: v })} />
-                <NumField label="高" value={selLayer.h} onChange={(v) => patchLayer(selLayer.id, { h: v })} />
+                <NumField label="宽" value={selLayer.w} disabled={selLayer.kind === 'text' && !!selLayer.autoSize}
+                  title={selLayer.kind === 'text' && selLayer.autoSize ? '自动尺寸由字号与文字内容决定' : undefined}
+                  onChange={(v) => patchLayer(selLayer.id, { w: v })} />
+                <NumField label="高" value={selLayer.h} disabled={selLayer.kind === 'text' && !!selLayer.autoSize}
+                  title={selLayer.kind === 'text' && selLayer.autoSize ? '自动尺寸由字号与文字内容决定' : undefined}
+                  onChange={(v) => patchLayer(selLayer.id, { h: v })} />
                 <NumField label="旋转" value={selLayer.rotate} onChange={(v) => patchLayer(selLayer.id, { rotate: v })} />
                 <NumField label="圆角" value={selLayer.radius} onChange={(v) => patchLayer(selLayer.id, { radius: v })} />
                 <label className="fu-field fu-span2"><span>透明度</span>
@@ -1682,6 +1857,9 @@ export default function FadingUiEditor() {
                 )}
               </>}
               {selLayer.kind === 'text' && <>
+                <label className="fu-check" title="开启后文本框宽高随字号 / 字距 / 文字内容自动变化，关闭后可手动拖动缩放">
+                  <input type="checkbox" checked={!!selLayer.autoSize}
+                    onChange={(e) => patchLayer(selLayer.id, { autoSize: e.target.checked })} /> 自动尺寸（随字号与文字）</label>
                 <label className="fu-field"><span>文字内容</span>
                   <textarea className="fu-input fu-textarea" rows={3} value={selLayer.text}
                     onChange={(e) => patchLayer(selLayer.id, { text: e.target.value })} /></label>
@@ -1776,13 +1954,13 @@ export default function FadingUiEditor() {
               <button className="fu-ico fu-close" onClick={() => setModal(null)}>✕</button></div>
             <ol>
               <li>左侧素材库列出 <code>public/fading_ui/</code> 里全部原版纹理。可按名字搜索、按类型筛选；拖到画布或点击添加。</li>
-              <li>画布里拖动图层移动，八个角点缩放（按住 <b>Shift</b> 等比缩放，组也一样），顶部 <b>⟳</b> 旋转（按住 Shift 吸附 15°）。文字图层<b>双击</b>可直接在画布上编辑（Esc / Ctrl+Enter 结束）。右侧属性面板可输入精确数值。</li>
+              <li>画布里拖动图层移动，八个角点缩放（按住 <b>Shift</b> 等比缩放，组也一样），顶部 <b>⟳</b> 旋转（按住 Shift 吸附 15°）。文字图层<b>双击</b>可直接在画布上编辑（Esc / Ctrl+Enter 结束）：编辑时上方小工具条可切<b>左/中/右对齐</b>、调字号，也可用 <b>Ctrl+L / Ctrl+E / Ctrl+R</b>。新建文字默认<b>自动尺寸</b>，框会随字号和文字内容自动变大变小；要手动缩放就在属性面板关掉「自动尺寸」。</li>
               <li>左侧「↺ 骨架模板」= 载入一份按原截图比例预摆好的剧情页脚手架（纸张、夹子、藤蔓、标题条、正文、选项条、状态栏…约 28 层），在它上面微调比从零开始快。会先弹窗确认，旧布局可 Ctrl+Z 找回。</li>
-              <li><b>多选与编组</b>：图层面板里 <b>Ctrl + 左键</b> 多选，面板顶部点「＋编组」或按 <b>Ctrl+G</b> 编组。拖动图层到组标题可移入组（z 会同步落到该组层级），拖动组标题可整组排序，拖到列表底部区域可移出组。</li>
+              <li><b>多选与编组</b>：图层面板或画布上 <b>Ctrl / Shift + 左键</b> 多选，画布空白处还能<b>拖框</b>多选（Ctrl / Shift 追加）。面板顶部点「＋编组」或按 <b>Ctrl+G</b> 编组。拖动图层到组标题可移入组（z 会同步落到该组层级），拖动组标题可整组排序，拖到列表底部区域可移出组。</li>
               <li><b>组整体变换</b>：点击图层面板的组名（📁）选中整组，画布上出现**整组虚线包围盒**；拖框内任意位置移动整组，8 个缩放手柄缩放整组，⟳ 旋转整组（中心十字是支点）。右侧属性面板切换为组属性。</li>
               <li><b>组图层模式</b>：选中组后，属性面板可统一调整组内所有图层的混合模式（悬停滚轮可切换）、透明度，以及组内图片的填充模式（fill / contain / cover / sliced / tiled）。组标题上的 ◉/◌ 按钮可一键隐藏/显示整组。</li>
               <li><b>编辑组内单层</b>：组框会盖住组内图层，选中组时请<b>双击框内某个图层</b>退出组模式并选中它（或直接点右侧图层面板里的行）；之后拖该层就只动它。未选中组时，拖图层本来就只移动单层。Ctrl+D 复制会保留原图层的分组，不会凭空新建组。</li>
-              <li>「网格吸附」按步长对齐坐标；「智能吸附」拖动时贴齐其它图层的边 / 中心与画布中线，并显示红色参考线。「对齐」按钮把选中层或整组包围盒对齐到画布。撤销 / 重做支持 120 步（Ctrl+Z / Ctrl+Shift+Z）。「预览」隐藏所有控制点看最终效果。</li>
+              <li>「网格吸附」按步长对齐坐标；「智能吸附」拖动时贴齐其它图层的边 / 中心与画布中线，并显示红色参考线。<b>对齐</b>按钮：单选时对齐画布，多选 ≥2 时以<b>首个选中的素材</b>为基准互相对齐。撤销 / 重做支持 120 步（Ctrl+Z / Ctrl+Shift+Z）。「预览」隐藏所有控制点看最终效果，「显示手柄」或 <b>H</b> 只隐藏变换手柄、保留移动。Ctrl+滚轮可缩放至 400%。</li>
               <li><b>存到项目</b>写入 <code>build/fading_ui_layout.json</code>（dev 接口），换机器也不丢；<b>本地存档</b>存在浏览器里。</li>
               <li>拼好后点 <b>导出 JSON</b> 把文件发我，我就能按精确坐标/尺寸改 <code>fading.css</code>，不再靠截图猜。</li>
             </ol>
@@ -1798,12 +1976,12 @@ export default function FadingUiEditor() {
   )
 }
 
-function NumField({ label, value, onChange, step = 1 }: {
-  label: string; value: number; onChange: (v: number) => void; step?: number
+function NumField({ label, value, onChange, step = 1, disabled, title }: {
+  label: string; value: number; onChange: (v: number) => void; step?: number; disabled?: boolean; title?: string
 }) {
   return (
-    <label className="fu-field"><span>{label}</span>
-      <input className="fu-input fu-num" type="number" step={step} value={Number(value.toFixed?.(2) ?? value)}
+    <label className="fu-field" title={title}><span>{label}</span>
+      <input className="fu-input fu-num" type="number" step={step} value={Number(value.toFixed?.(2) ?? value)} disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value) || 0)} /></label>
   )
 }

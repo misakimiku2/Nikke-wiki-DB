@@ -634,11 +634,14 @@ function writeFadingUiManifest() {
         const key = n.replace(/\.png$/i, '')
         const sp = sprites[key]
         const border = sp?.border?.map(Number) || [0, 0, 0, 0]
+        const size = pngSize(path.join(FADING_UI_DIR, n))
+        // 极细长条（如 marian_deco_line_04 128×8）原作是平铺拼接，不走九宫格拉伸
+        const thin = size.w > 0 && size.h > 0 && Math.min(size.w, size.h) <= 16
         return {
-          n, ...pngSize(path.join(FADING_UI_DIR, n)),
+          n, ...size,
           border,
-          // 双保险：有 border 的素材一律不标记平铺
-          tiled: FADING_TILED.test(key) && border.every((v) => v === 0),
+          // 双保险：有 border 的素材一律不标记平铺；纹理与细长条默认平铺
+          tiled: border.every((v) => v === 0) && (FADING_TILED.test(key) || thin),
         }
       })
   } catch (e) {
