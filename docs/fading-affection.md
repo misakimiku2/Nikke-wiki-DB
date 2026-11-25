@@ -20,7 +20,7 @@
 | 2 | 玛丽安的记录 | Marian + 指挥官（现在） | 2001 | 结局 8101「命运共同体」 |
 | 3 | 7号的记录 | No.7（未来） | 3001 | 结局 8201「相守的梦」 |
 
-规模：265 个页面、172 个选项、35 个结局、45 条记忆、59 张黑白 CG、174 张原版 UI 纹理。
+规模：265 个页面、172 个选项、35 个结局、45 条记忆、59 张剧情 CG（含黑白与彩色）、174 张原版 UI 纹理。
 
 结局按页号分类：
 
@@ -198,7 +198,7 @@ Manager 表 83501 的真实数值：
 
 > **重要**：这些 UI 纹理**不进入 CG 池**。它们只放在 `public/fading_ui/`，
 > 与 `cg_index.json` / `manifest.json` / `CG/` 完全没有交集。CG 池里只有小游戏的
-> 59 张黑白剧情 CG（`EventScene_FadingAffection_*`，由 `export_cg_v2.py` 走正常 CG 流程导出）。
+> 59 张剧情 CG（`EventScene_FadingAffection_*`，含黑白与彩色，由 `export_cg_v2.py` 走正常 CG 流程导出）。
 
 | 素材 | 用途 |
 |---|---|
@@ -283,8 +283,8 @@ python scripts/export_fading_ui.py            # --force 可覆盖
 | 侵蚀是否启用 | 由「该路线是否存在指向侵蚀结局 7xxx 的选项」推导（`routes[].erosion`），Manager 表没有显式开关字段。页面归属路线改用页面表 `st+9` 字段（11/12/13），不再按 id 前缀猜。 |
 | 解锁条件 | 已改为读选项/页面表的定长字段（见 2.3）。**早期版本只在带 hint 的选项上判定条件**，导致路线 1 第一页的「寻找藏身之处」被误认为可直接点。 |
 | 路线锁定的 TrueEnd | 依据「需看完前记录结局」的设定与 locale 文案，选用 8101/8201；静态表未发现明确字段。 |
-| 背景图 | 小游戏无专用背景表。**2026-11-24 起不再沿用上一幕 CG**：只有页面表自带 `cg` 的页面才出图（265 页里 202 页无配图，直接留空；35 个结局页全部自带 CG，不受影响）。 |
-| BGM / SFX | **已接入播放**（2026-11-24，见 11.10）：共 58 条音频（bgm 20 / sfx 16 / ui 15 / typing 1 / ambient 6），导出器 `build/export_fading_audio.py`。表内只有 `page.bgm` 与 `choice.sfx` 两类；UI 音 `uis_mini_fad_*`、打字音、环境音 `ambient_fad_*` 都不在任何静态表里（由 prefab / 客户端代码驱动），key 列表与「地点→环境音」的对应是**按命名推断**写死在导出器与前端常量里的，不是表字段证据。载荷是 FMOD FSB5，UnityPy 直接解出 WAV 后 ffmpeg 转 ogg。
+| 背景图 | 小游戏无专用背景表。**2026-11-24 起不再沿用上一幕 CG**：只有页面表自带 `cg` 的页面才出图（265 页里 202 页无配图，直接留空；35 个结局页全部自带 CG，不受影响）。剧情 CG、回想缩略图与详情图均不应用 `grayscale`，保留原图饱和度。 |
+| BGM / SFX | **已接入播放**（2026-11-24，见 11.10）：共 60 条音频（bgm 20 / sfx 17 / ui 15 / typing 1 / write 1 / ambient 6），导出器 `build/export_fading_audio.py`。表内只有 `page.bgm` 与 `choice.sfx` 两类；UI 音 `uis_mini_fad_*`、打字音、环境音 `ambient_fad_*` 都不在任何静态表里（由 prefab / 客户端代码驱动），key 列表与「地点→环境音」的对应是**按命名推断**写死在导出器与前端常量里的，不是表字段证据。载荷是 FMOD FSB5，UnityPy 直接解出 WAV 后 ffmpeg 转 ogg。
 | UI 布局 | 游戏页仍是 CSS 按截图比例还原；新增了 dev-only 可视化编辑器用于精确拼图，产出的坐标/尺寸/九宫格参数可导出 JSON/CSS 供替换（见第 9 节）。 |
 | 九宫格 / 平铺 | 原版 Sprite 的 border 已导出（见第 9 节）；编辑器已支持 sliced（.9 图）/ tiled，但游戏页 CSS 尚未整体切换过去。 |
 
@@ -571,6 +571,17 @@ web/src/pages/FadingPrefab.tsx  递归渲染器（动态文本、选项按原坐
 | `fx-slice` | 一次性数字撕裂（`clip-path:inset()` + `steps(9)`），结束归零 |
 | `fx-noise` | `feTurbulence` 噪波，`mix-blend-mode:overlay`，只闪一下，结束归零（原先留 `.05` 在正文区糊成一片浅灰底，已去掉） |
 
+侵蚀表现按状态触发，不随路线 2 常驻：仅在启用侵蚀条的路线里 `status.erosion >= Manager.second(50)`
+时启用暗红局部主题与结局版 `0.5` 强度的持续干扰。用户给定流程的证据链是：
+`210201 攻击(+1) → 210701 前往小径(+1) → 210801 看猫(+1) → 211201 独自进仓库(+0) → 211401 躲藏(+90)`，
+所以选择 `211401` 后从 **3% 跳到 93%**，落在页面 **2115**；该页正文首次明确写“双眼已经变得赤红”，
+下一页 **2117** 出现红眼 CG。回退到 2114 时状态恢复为 3%，侵蚀表现随之关闭。
+进入侵蚀状态时先爆发一次约 **300ms** 的完整电子故障，并播放资源池中的专用音效
+`uis_mini_fad_erosion_change`（core 池，单条 AudioClip，2.609s）：`strength=1`、`scale=26`，
+8 条画面副本沿横向、纵向与斜向锯齿裂口独立大幅错位/斜切/局部放大，6 段外框线单独撕裂并突破原边框，7 个红/青色大块随机散布在画框内外，另有短闪白、CG 错位、标题分离与撕裂噪波；随后回落到半强度持续干扰：
+在场数量降到 1~7（硬上限 8）、方块透明度减半、内容位移 `scale=13`，一次性撕裂与噪波延长并降到半透明。
+到达结局后恢复 `strength=1`。从侵蚀剧情打开的回想/记忆浮层保持暗红，不修改站点全局主题，也不改变 CG 原图色彩。
+
 断续节奏：干扰不是一直在响。`useBlocks` 里开了随机开关——亮一段 **0.9~2.2s**、
 灭一段 **0.22~0.74s**（第一版正好反过来，灭得太久），灭的时候方块数组清空、遮罩为空，
 画面完全干净。之前"整批按住 220~520ms 再齐刷刷换一批"虽然看得清，但节奏太整齐，显得刻意。
@@ -634,9 +645,11 @@ web/src/pages/FadingPrefab.tsx  递归渲染器（动态文本、选项按原坐
         └─ ffmpeg libvorbis -q:a 5 → public/fading_audio/<key>.ogg + public/data/fading_audio.json
 ```
 
-- 现在共 **59 条**：bgm 20 / sfx 16 / ui 15 / typing 1 / write 1 / ambient 6，全部命中。
+- 现在共 **60 条**：bgm 20 / sfx 17 / ui 15 / typing 1 / write 1 / ambient 6，全部命中。
   表外那三类是 `uis_mini_fad_*`（本小游戏专用 UI 音）与 `ambient_fad_*`（环境音床），
-  静态表里没有引用、由 prefab / 客户端代码驱动，所以写死在导出器的 `UI_KEYS` / `AMBIENT_KEYS` 里。
+  静态表里没有引用、由 prefab / 客户端代码驱动，所以写死在导出器的 `STATE_KEYS` / `UI_KEYS` / `AMBIENT_KEYS` 里。
+  侵蚀状态切换音是 `uis_mini_fad_erosion_change`（2.609s）；prefab 中没有找到直接绑定字符串，
+  选择依据是资源池里的专用 key 与同名 AudioClip，不是静态表字段。
 - BGM **不做单声道下混**（`export_char_voices.py` 里的 `normalize_wav` 是给雪碧图拼接用的），
   直接把原始 WAV 交给 ffmpeg，保留立体声。
 - 播放层在 `web/src/fadingAudio.ts`：一条循环 BGM（切换时 0.38s 淡出、0.9s 淡入到 0.75 音量）

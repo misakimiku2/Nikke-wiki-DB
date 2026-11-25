@@ -57,6 +57,9 @@ DATA_JSON = ROOT / "public" / "data" / "fadingaffection.json"
 
 # 静态表里没有、由 prefab / 客户端代码驱动的一族音效（uis_mini_fad_* = 本小游戏专用）。
 # 名字来自资源池 catalog 检索，用途按命名与 prefab 结构推断，接错只改这一处。
+STATE_KEYS = {
+    "uis_mini_fad_erosion_change": "sfx",         # 侵蚀状态切换
+}
 UI_KEYS = {
     "uis_mini_fad_btn": "ui",                      # 通用按钮
     "uis_mini_fad_back": "ui",                     # 返回上一节点
@@ -108,6 +111,7 @@ def needed_keys() -> dict[str, str]:
         k = ch.get("sfx")
         if k:
             keys.setdefault(k, "sfx")
+    keys.update(STATE_KEYS)
     keys.update(UI_KEYS)
     keys.update(TYPING_KEYS)
     keys.update(AMBIENT_KEYS)

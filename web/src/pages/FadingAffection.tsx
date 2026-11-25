@@ -487,6 +487,7 @@ export default function FadingAffection() {
       onGainChange={changeGain}
       onGainReset={() => { setGains({ ...DEFAULT_GAINS }); sound.current?.setGains(DEFAULT_GAINS) }}
       onType={() => sound.current?.playTyping()}
+      onErosionBurst={() => sound.current?.playSfx('uis_mini_fad_erosion_change')}
       routeUnlocked={(r) => routeUnlocked(r, found)}
       routeIsNew={(r) => !openedRoutes.has(r.no)}
     />

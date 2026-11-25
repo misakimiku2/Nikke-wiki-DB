@@ -1,13 +1,13 @@
 /**
  * FADING AFFECTION — 冷寂 COLD SILENCE 双主题 UI
- * 纯展示组件：全部装饰由 CSS + 内联 SVG 绘制，唯一图片是原版黑白 CG。
+ * 纯展示组件：全部装饰由 CSS + 内联 SVG 绘制，剧情图片使用原版 CG。
  * 主题跟随站点 <html data-theme>（light = 灰白纸张，dark = 冷钢灰）。
  */
 import type {
   FadingData, FadingRoute, FadingPage, FadingMemory, FadingStatus, FadingStatusChange,
 } from '../fadingData'
 import { fadingCgSrc } from '../fadingData'
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import FadingIntro from './FadingIntro'
 import dossierLayout from './fading_dossier_layout.json'
 import './fading-cold.css'
@@ -308,16 +308,23 @@ function endKind(id: number | null): string {
 
 /** 干扰方块：位置与尺寸都用百分比，既当可见色块，也当内容副本的遮罩矩形 */
 type Blk = { id: number; x: number; y: number; w: number; h: number; o: number; c: string; until: number }
+type BurstBlock = {
+  id: number; x: number; y: number; w: number; h: number; c: 'r' | 'c'
+  dx: number; dy: number; dx2: number; dy2: number; rot: number; rot2: number; delay: number
+}
 
 /** rAF + 时间片生成方块（setInterval 在后台窗口会被节流到秒级，实测差 60 倍）。
- *  每块自己抽签：尺寸分大中小三档，寿命 60~300ms 各自不同；在场数量 1~13 也是随机重抽的。
- *  整体上再套一层随机断续——亮 0.9~2.2s、灭 0.22~0.74s，灭时全部清空。 */
-function useBlocks(active: boolean, sceneKey: number): Blk[] {
+ *  每块自己抽签：尺寸分大中小三档，寿命 60~300ms 各自不同；在场数量也是随机重抽的。
+ *  strength=0.5 时数量上限与透明度都减半，给侵蚀路线做比结局弱的持续干扰。 */
+function useBlocks(active: boolean, sceneKey: number, strength = 1): Blk[] {
   const [blks, setBlks] = useState<Blk[]>([])
   useEffect(() => {
-    if (!active || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setBlks([]); return }
+    setBlks([])
+    if (!active || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const t0 = Date.now()
-    let id = 0, raf = 0, alive = true, on = true, phaseEnd = t0 + 900, want = 4, wantEnd = 0
+    const maxWant = Math.max(1, Math.round(13 * strength))
+    const maxBlocks = Math.max(1, Math.round(16 * strength))
+    let id = 0, raf = 0, alive = true, on = true, phaseEnd = t0 + 900, want = Math.min(4, maxWant), wantEnd = 0
     const mk = (now: number): Blk => {
       const pick = Math.random()                                  // 尺寸档位随机
       const w = pick < 0.3 ? 26 + Math.random() * 46 : pick < 0.62 ? 9 + Math.random() * 18 : 2 + Math.random() * 7
@@ -338,7 +345,7 @@ function useBlocks(active: boolean, sceneKey: number): Blk[] {
         id: ++id,
         x, y,
         w, h,
-        o: 0.45 + Math.random() * 0.5,
+        o: (0.45 + Math.random() * 0.5) * strength,
         c: r < 0.2 ? 'r' : r < 0.45 ? 'g' : '',
         until: now + 60 + Math.random() * 240,
       }
@@ -353,19 +360,20 @@ function useBlocks(active: boolean, sceneKey: number): Blk[] {
       }
       if (on) {
         // 在场数量本身也是随机的：隔 260~700ms 重新抽一次，有时一两块有时十几块
-        if (now >= wantEnd) { want = 1 + Math.floor(Math.random() * 13); wantEnd = now + 260 + Math.random() * 440 }
+        if (now >= wantEnd) { want = 1 + Math.floor(Math.random() * maxWant); wantEnd = now + 260 + Math.random() * 440 }
         setBlks((prev) => {
+          if (!alive) return prev
           const kept = prev.filter((b) => b.until > now)
           if (kept.length === prev.length && kept.length >= want) return prev
           while (kept.length < want) kept.push(mk(now))
-          return kept.length > 16 ? kept.slice(0, 16) : kept
+          return kept.length > maxBlocks ? kept.slice(0, maxBlocks) : kept
         })
       }
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => { alive = false; cancelAnimationFrame(raf) }
-  }, [active, sceneKey])
+  }, [active, sceneKey, strength])
   return blks
 }
 
@@ -388,16 +396,18 @@ function maskOf(bs: Blk[]): CSSProperties {
 }
 
 /** 干扰层：位移滤镜定义（给内容副本用）+ 方块色块 + 一次性撕裂 + 噪波 */
-function EndFx({ kind, blks }: { kind: string; blks: Blk[] }) {
+function EndFx({ kind, blks, strength = 1 }: { kind: string; blks: Blk[]; strength?: number }) {
+  const weak = strength < 1
+  const filterId = weak ? 'fx-tear-half' : 'fx-tear'
   return (
-    <div className={`cf-endfx cf-endfx-${kind}`} aria-hidden="true">
+    <div className={`cf-endfx cf-endfx-${kind}${weak ? ' cf-endfx-weak' : ''}`} aria-hidden="true">
       <svg className="fx-defs" width="0" height="0">
-        <filter id="fx-tear" x="-10%" y="-10%" width="120%" height="120%">
+        <filter id={filterId} x="-10%" y="-10%" width="120%" height="120%">
           {/* 横向几乎不变、纵向约 20px 一条 → 位移按粗水平条带整体错位，是撕裂不是磨砂 */}
           <feTurbulence type="fractalNoise" baseFrequency="0.002 0.05" numOctaves="1" seed="3" result="n">
             <animate attributeName="seed" values="2;9;17;4;12;6" dur="0.28s" repeatCount="indefinite" calcMode="discrete" />
           </feTurbulence>
-          <feDisplacementMap in="SourceGraphic" in2="n" xChannelSelector="R" yChannelSelector="G" scale="26" />
+          <feDisplacementMap in="SourceGraphic" in2="n" xChannelSelector="R" yChannelSelector="G" scale={26 * strength} />
         </filter>
       </svg>
       {blks.map((b) => (
@@ -462,6 +472,8 @@ export type FadingColdProps = {
   backView: ColdView
   /** 每露出一批文字回调一次，用来打打字音 */
   onType?: () => void
+  /** 侵蚀状态爆发的一次性音效 */
+  onErosionBurst?: () => void
   /** 当前路线状态；上限与名称仍取 Manager 表 */
   status: FadingStatus
   choices: ColdChoice[]
@@ -701,6 +713,37 @@ export default function FadingCold(p: FadingColdProps) {
   /* 换幕时序：淡出 → 新幕淡入 → CG 翻页（cf-page-turn .6s + .14s delay）
      → 翻页放完才开始逐字出正文，打字音也跟着一起开始。没有 CG 的页面直接出字。 */
   const hasCg = view === 'game' && !p.isRegionSelect && !!cgSrc
+  const routeNo = route?.no ?? 1
+  const endK = ending ? endKind(endingId) : null
+  const erosionThreshold = data.status.items.find((s) => s.key === 'erosion')?.second ?? 50
+  const erosionRevealed = endK === 'erosion' || (p.erosionActive && status.erosion >= erosionThreshold)
+  const erosionMode = erosionRevealed && (view === 'game'
+    || ((view === 'endings' || view === 'memories') && p.backView === 'game'))
+  const [erosionBurst, setErosionBurst] = useState(false)
+  const [burstBlocks, setBurstBlocks] = useState<BurstBlock[]>([])
+  const rootClass = `fad-cold-root${erosionMode ? ' cf-erosion-state' : ''}${erosionBurst ? ' cf-erosion-burst' : ''}${p.fade === 'none' ? '' : ' fade-' + p.fade}`
+  useLayoutEffect(() => {
+    if (!erosionMode || ending) { setErosionBurst(false); setBurstBlocks([]); return }
+    setBurstBlocks(Array.from({ length: 7 }, (_, i) => {
+      const dx = (Math.random() - .5) * 54
+      const dy = (Math.random() - .5) * 30
+      const rot = (Math.random() - .5) * 10
+      return {
+        id: i,
+        x: -18 + Math.random() * 96,
+        y: -10 + Math.random() * 90,
+        w: 14 + Math.random() * 18,
+        h: 8 + Math.random() * 12,
+        c: i % 2 === 0 ? 'c' : 'r',
+        dx, dy, dx2: -dx * .6, dy2: -dy * .6, rot, rot2: -rot * .5,
+        delay: Math.random() * .12,
+      }
+    }))
+    p.onErosionBurst?.()
+    setErosionBurst(true)
+    const t = window.setTimeout(() => { setErosionBurst(false); setBurstBlocks([]) }, 300)
+    return () => clearTimeout(t)
+  }, [erosionMode, ending])
   /* 手机端全屏：把小游戏面板本身全屏，站点导航栏自然被排除在全屏元素之外 */
   /* 音频设置弹窗：挂在组件层，弹窗渲染到外框上（见 .cf-modal） */
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -739,7 +782,10 @@ export default function FadingCold(p: FadingColdProps) {
   }
   const [textStart, setTextStart] = useState(!hasCg)
   const typed = useTypewriter(pageText, p.onType, textStart)
-  const blks = useBlocks(view === 'game' && !!ending, p.sceneKey)
+  const erosionFx = view === 'game' && !ending && erosionMode
+  const fxActive = view === 'game' && (!!ending || erosionFx)
+  const fxStrength = ending || erosionBurst ? 1 : 0.5
+  const blks = useBlocks(fxActive, ending ? p.sceneKey : erosionBurst ? -1 : 0, fxStrength)
 
   useEffect(() => {
     setTextStart(!hasCg)
@@ -849,7 +895,7 @@ export default function FadingCold(p: FadingColdProps) {
   /* ---------- 主菜单（标题屏） ---------- */
   if (view === 'home') {
     return (
-      <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
+      <div className={rootClass}>
         <div id="cf"><div className="stage"><div className="cf cf-fill">
           <div className="cf-frame">
             {/* 动态 CG 挂在 cf-frame 上：它铺满整块面板，也不跟着换幕一起闪 */}
@@ -929,7 +975,7 @@ export default function FadingCold(p: FadingColdProps) {
   /* ---------- 关卡选择 ---------- */
   if (view === 'routes') {
     return (
-      <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
+      <div className={rootClass}>
         <div id="cf"><div className="stage"><div className="cf cf-fill">
           <div className="cf-frame">
             <div className="cf-inner cf-inner-fill" key={p.view}>
@@ -980,7 +1026,7 @@ export default function FadingCold(p: FadingColdProps) {
   /* ---------- 回想 / 记忆 ---------- */
   if (view === 'endings' || view === 'memories') {
     return (
-      <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
+      <div className={rootClass}>
         <div id="cf"><div className="stage"><div className="cf cf-fill">
           <div className="cf-frame"><div className="cf-inner cf-inner-fill" key={p.view}>
             <div className="cf-doc-head">
@@ -1053,8 +1099,6 @@ export default function FadingCold(p: FadingColdProps) {
   }
 
   /* ---------- 剧情页 ---------- */
-  const routeNo = route?.no ?? 1
-  const endK = ending ? endKind(endingId) : null
   const endMark = endK ? END_MARK[endK] : null
   /** 这次结局是否已经进过档案：重复到达时，横幅 / 说明行 / 记录提示都要换说法 */
   const endRecorded = endingId != null && found.includes(endingId)
@@ -1197,16 +1241,35 @@ export default function FadingCold(p: FadingColdProps) {
   )
 
   return (
-    <div className={`fad-cold-root ${p.fade === 'none' ? '' : 'fade-' + p.fade}`}>
+    <div className={rootClass}>
       <div id="cf"><div className="stage"><div className="cf cf-fill">
         <div className="cf-frame">
           <div className="cf-inner cf-inner-fill" key={p.view}>
             {renderPanel()}
-            {ending && <div className="cf-ghost" style={maskOf(blks)} aria-hidden="true">{renderPanel(true)}</div>}
-            {ending && <EndFx key={p.sceneKey} kind={endKind(endingId)} blks={blks} />}
+            {fxActive && <div className={`cf-ghost${fxStrength < 1 ? ' cf-ghost-weak' : ''}`} style={maskOf(blks)} aria-hidden="true">{renderPanel(true)}</div>}
+            {fxActive && <EndFx key={ending ? p.sceneKey : erosionBurst ? 'erosion-burst' : 'erosion-state'} kind={endK || 'erosion'} blks={blks} strength={fxStrength} />}
           </div>
           {/* 边框线自己也被干扰：骑边方块落在哪，哪一段边框就被位移 */}
-          {ending && <div className="cf-ghost-frame" style={maskOf(blks)} aria-hidden="true" />}
+          {fxActive && <div className={`cf-ghost-frame${fxStrength < 1 ? ' cf-ghost-weak' : ''}`} style={maskOf(blks)} aria-hidden="true" />}
+          {erosionBurst && [1, 2, 3, 4, 5, 6, 7, 8].map((n) => (
+            <div key={n} className={`cf-burst-slice cf-burst-slice-${n}`} aria-hidden="true">{renderPanel(true)}</div>
+          ))}
+          {erosionBurst && [1, 2, 3, 4, 5, 6].map((n) => (
+            <div key={`frame-${n}`} className={`cf-frame-slice cf-frame-slice-${n}`} aria-hidden="true" />
+          ))}
+          {erosionBurst && (
+            <div className="cf-burst-fx" aria-hidden="true">
+              {burstBlocks.map((b) => (
+                <i key={b.id} className={`cf-burst-block ${b.c}`} style={{
+                  left: `${b.x}%`, top: `${b.y}%`, width: `${b.w}%`, height: `${b.h}%`,
+                  '--dx': `${b.dx}px`, '--dy': `${b.dy}px`,
+                  '--dx2': `${b.dx2}px`, '--dy2': `${b.dy2}px`,
+                  '--rot': `${b.rot}deg`, '--rot2': `${b.rot2}deg`,
+                  animationDelay: `${b.delay}s`,
+                } as CSSProperties} />
+              ))}
+            </div>
+          )}
           {/* 原版点击锁定的 HINT 选项会弹一条横向提示（uis_mini_fad_hint_toast） */}
           {p.hintToast && (
             <div className={`cf-hint-toast${p.hintClosing ? ' cf-hint-toast-closing' : ''}`} role="status">

@@ -75,7 +75,7 @@
 .cf-fig::before,.cf-fig::after{content:"";position:absolute;width:16px;height:16px;border:2px solid var(--fsteel);opacity:.65;pointer-events:none}
 .cf-fig::before{left:-2px;top:-2px;border-right:0;border-bottom:0}
 .cf-fig::after{right:-2px;bottom:-2px;border-left:0;border-top:0}
-.cf-fig img{display:block;width:100%;aspect-ratio:1;height:auto;object-fit:cover;object-position:center;filter:grayscale(1) contrast(1.03)}
+.cf-fig img{display:block;width:100%;aspect-ratio:1;height:auto;object-fit:cover;object-position:center}
 .cf-fig figcaption{position:absolute;right:-1px;bottom:-16px;background:var(--fpanel);border:1px solid var(--fline);border-top:0;color:var(--fsteel);padding:4px 9px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.14em;display:flex;align-items:center;gap:5px}
 .cf-script{margin:26px 0 22px;padding-left:18px;border-left:2px solid var(--fline);font-size:14px;line-height:2.1;color:var(--fink);min-height:90px;white-space:pre-line}
 .cf-opts{display:flex;flex-direction:column;align-items:center;gap:9px}
@@ -214,6 +214,18 @@
 .fad-cold-root{--cf-u:max(760px,calc((100vh - 86px)*.75));--cf-w:min(100%,var(--cf-u));min-height:calc(100vh - 64px);background:#080a0b;padding:20px 16px 40px;display:flex;flex-direction:column;align-items:center}
 [data-theme="light"] .fad-cold-root{background:#d5d2c9}
 .fad-cold-root>#cf{width:var(--cf-w);max-width:100%;margin:auto 0}
+
+/* 侵蚀状态只覆盖小游戏局部：即使站点选浅色，也强制保持暗红基调 */
+.fad-cold-root.cf-erosion-state{background:#080405;color-scheme:dark}
+.cf-erosion-state #cf{--fbg:#12080a;--fpanel:#1b0c0f;--fink:#ead9d8;--fmut:#aa7c82;--fline:#6e333c;--fsteel:#d94b59;--fred:#ff5866;--ffig:#0d0607;--rc-scrim:rgba(25,12,14,.94);--end-ink:invert(1) hue-rotate(180deg);--home-bg-scrim:linear-gradient(180deg,rgba(18,8,10,.55) 0%,rgba(27,12,15,.78) 46%,rgba(27,12,15,.94) 100%);--fred-ui:#ff7079}
+.cf-erosion-state #cf .stage{background:radial-gradient(ellipse at 50% 0%,#1b0a0e 0%,#080405 72%)}
+.cf-erosion-state #cf .cf-top,.cf-erosion-state #cf .cf-bar,.cf-erosion-state #cf .cf-list-head{border-bottom-color:rgba(235,116,126,.38)}
+.cf-erosion-state #cf .cf-btn:hover{background:rgba(217,75,89,.1)}
+.cf-erosion-state #cf .sb-f .sb-track{background:rgba(217,75,89,.22)}
+.cf-erosion-state #cf .sb-f .sb-mem:hover{background:rgba(217,75,89,.12)}
+.cf-erosion-state #cf .icn-png,.cf-erosion-state #cf .sb-f .sb-lb .icn-png{background-color:var(--fsteel)}
+.cf-erosion-state #cf .cf-modal-scrim{background:rgba(8,3,5,.72)}
+
 .fad-cold-top{width:760px;max-width:100%;margin:0 auto 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fad-cold-top .sp{flex:1}
 .fad-cold-top .fad-cbar{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font:600 10px/1 ui-monospace,monospace;letter-spacing:.08em;padding:8px 12px;color:var(--fink);background:var(--fpanel);border:1px solid var(--fline);transition:.15s}
@@ -233,7 +245,7 @@
 .cf-tile.locked{opacity:.48}
 .cf-tile.locked:hover{transform:none;border-color:var(--fline)}
 .cf-tile-img{aspect-ratio:1;background:var(--ffig);display:flex;align-items:center;justify-content:center;color:var(--fmut);font-size:26px}
-.cf-tile-img img{width:100%;height:100%;object-fit:cover;filter:grayscale(1)}
+.cf-tile-img img{width:100%;height:100%;object-fit:cover}
 .cf-tile-meta{padding:9px 11px}
 .cf-tile-id{display:flex;align-items:center;justify-content:space-between;gap:8px;
   font:700 9px/1 ui-monospace,monospace;color:var(--fred);letter-spacing:.1em}
@@ -267,7 +279,8 @@
 .cf-change .icn-png{width:30px;height:30px;vertical-align:middle}
 .cf-change b{font:700 14px/1 ui-monospace,monospace;letter-spacing:.02em}
 .cf-opt:hover:not(:disabled) .cf-change,.cf-opt:focus-visible .cf-change{color:#fff}
-.cf-opt:hover:not(:disabled) .cf-change .icn-png,.cf-opt:focus-visible .cf-change .icn-png{background-color:#fff;opacity:1}
+#cf .cf-opt:hover:not(:disabled) .cf-change .icn-png,
+#cf .cf-opt:focus-visible .cf-change .icn-png{background-color:#fff;opacity:1}
 .cf-hint{display:flex;align-items:center;gap:5px;font:600 10px/1.5 "PingFang SC",sans-serif;color:var(--fsteel);margin-top:5px}
 /* 已选过的选项：自绘角标，跟 HINT 徽章同一套语言（等宽大写 + 图标 + 悬停反色）。
    颜色走钢灰而不是红——红是 HINT 的专属，同屏出现两枚红标会互相抢。
@@ -342,17 +355,17 @@
 
 /* ============================================================
    场景背景：无 CG 的页面沿用场景板（原版机制：模糊压暗）
-   灰度 + 低饱和 + 模糊 + 压暗，融入档案/冷寂调性，不抢文字
+   模糊 + 压暗，融入档案/冷寂调性，不抢文字也不改变原图色彩
    ============================================================ */
 .cf-scene{position:relative;width:min(100%,380px);margin:0 auto 22px;padding:7px;border:1px solid var(--fline);background:var(--fpanel);overflow:hidden}
 .cf-scene::before,.cf-scene::after{content:"";position:absolute;width:16px;height:16px;border:2px solid var(--fsteel);opacity:.6;pointer-events:none;z-index:2}
 .cf-scene::before{left:-2px;top:-2px;border-right:0;border-bottom:0}
 .cf-scene::after{right:-2px;bottom:-2px;border-left:0;border-top:0}
-.cf-scene img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;filter:grayscale(1) contrast(.9) brightness(.62) blur(1.5px)}
+.cf-scene img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;filter:contrast(.9) brightness(.62) blur(1.5px)}
 .cf-scene::after{border-color:var(--fsteel)}
 .cf-scene-tag{position:absolute;left:14px;bottom:14px;z-index:2;display:inline-flex;align-items:center;gap:6px;padding:5px 9px;background:rgba(10,12,14,.72);color:#e8eef2;border:1px solid rgba(255,255,255,.25);font:600 8px/1 ui-monospace,monospace;letter-spacing:.16em}
 [data-theme="light"] .cf-scene-tag{background:rgba(30,28,24,.78);color:#f2f0e9}
-[data-theme="light"] .cf-scene img{filter:grayscale(.85) contrast(.92) brightness(.72) blur(1.5px)}
+[data-theme="light"] .cf-scene img{filter:contrast(.92) brightness(.72) blur(1.5px)}
 
 /* ============================================================
    开场地区选择地图（原版 map_fadingaffection + 叠加标记）
@@ -532,6 +545,7 @@
 .fad-cold-root:fullscreen{width:100vw;height:100dvh;max-width:none;padding:0;margin:0;
   display:flex;background:#0b0e10}
 [data-theme="light"] .fad-cold-root:fullscreen{background:#dcdad2}
+.fad-cold-root.cf-erosion-state:fullscreen{background:#080405}
 .fad-cold-root:fullscreen>#cf{width:100%;height:100%;max-width:none;margin:0}
 
 /* 游戏内右上角导航按钮（回退 / 主菜单），对应原版两枚图标 */
@@ -577,11 +591,14 @@
   .cf-ghost,.cf-ghost-frame{display:none}
   .cf-end-death .cf-scroll,.cf-end-erosion .cf-scroll{animation:none}
   .cf-end-block h3,figure img{animation:none}
+  .cf-erosion-burst figure img,.cf-erosion-burst .cf-head h3{animation:none}
+  .cf-burst-fx,.cf-burst-slice,.cf-frame-slice{display:none}
 }
 
 /* ============ 结局页：破碎 / 电子扰乱 ============ */
 #cf{--fxline:rgba(214,222,228,.22);--fxglow:rgba(154,169,180,.6);--fxred:rgba(192,85,85,.6)}
 [data-theme="light"] #cf{--fxline:rgba(28,34,40,.22);--fxglow:rgba(93,106,116,.55);--fxred:rgba(156,34,56,.5)}
+.cf-erosion-state #cf{--fxline:rgba(255,180,185,.24);--fxglow:rgba(255,88,102,.58);--fxred:rgba(255,45,65,.66)}
 .cf-game-fixed{position:relative}
 .cf-endfx{position:absolute;inset:0;z-index:6;pointer-events:none}
 .cf-endfx i{position:absolute;inset:0;display:block}
@@ -611,8 +628,11 @@
 /* 骑边方块还会把面板边框线一起撕掉：边框单独复制一层加同一个位移滤镜 */
 .cf-ghost-frame{position:absolute;inset:-2px;z-index:7;pointer-events:none;border:1px solid var(--fline);filter:url(#fx-tear)}
 .cf-ghost{position:absolute;inset:0;z-index:6;pointer-events:none;filter:url(#fx-tear);display:flex;flex-direction:column;padding:inherit}
+.cf-ghost.cf-ghost-weak,.cf-ghost-frame.cf-ghost-weak{filter:url(#fx-tear-half)}
 /* 副本只是给遮罩里的区域用，自己不要再跑一遍入场动画 */
 .cf-ghost *{animation:none}
+.cf-endfx-weak .fx-slice{animation-duration:3s;filter:opacity(.5)}
+.cf-endfx-weak .fx-noise{animation-duration:3.8s;filter:opacity(.5)}
 
 /* 画面本体：死亡 / 侵蚀结局进场震一下，侵蚀再叠一层偏色 */
 .cf-end-death .cf-scroll,.cf-end-erosion .cf-scroll{animation:fx-shake 1.3s cubic-bezier(.3,.8,.4,1) backwards}
@@ -624,6 +644,64 @@
 @keyframes fx-img{0%,100%{transform:none;filter:none}10%{transform:translateX(-4px);filter:brightness(1.25)}22%{transform:translateX(3px)}38%{transform:translateX(-2px);filter:none}56%{transform:translateX(1px)}72%{transform:none}}
 .cf-end-block h3{animation:fx-title 1.7s steps(4) backwards}
 @keyframes fx-title{0%{text-shadow:3px 0 var(--fxred),-3px 0 var(--fxglow);transform:translateX(-3px)}24%{text-shadow:-3px 0 var(--fxred),3px 0 var(--fxglow);transform:translateX(2px)}52%{text-shadow:1px 0 var(--fxred),-1px 0 var(--fxglow);transform:none}76%,100%{text-shadow:none;transform:none}}
+
+/* 侵蚀状态被触发时先爆发一次完整电子故障，再回落到半强度持续干扰 */
+.cf-erosion-burst figure img{animation:fx-img .3s steps(3) backwards}
+.cf-erosion-burst .cf-head h3{animation:fx-title .3s steps(4) backwards}
+.cf-erosion-burst .cf-endfx .fx-slice{animation-duration:.3s}
+.cf-erosion-burst .cf-endfx .fx-noise{animation-duration:.32s}
+
+/* 画面本体按横向裂口切片：每条独立大幅错位，裂口内局部放大 */
+.cf-burst-slice{position:absolute;inset:0;z-index:7;pointer-events:none;display:flex;flex-direction:column;padding:inherit;transform-origin:center;filter:drop-shadow(3px 0 rgba(255,45,65,.55)) drop-shadow(-3px 0 rgba(45,225,255,.45)) saturate(1.22) contrast(1.08);animation-duration:.3s;animation-timing-function:steps(3);animation-fill-mode:both;will-change:transform}
+.cf-burst-slice *{animation:none!important}
+.cf-burst-slice-1{clip-path:polygon(0 7%,10% 5%,22% 8%,38% 5%,55% 7%,72% 4%,88% 7%,100% 5%,100% 16%,86% 14%,68% 17%,50% 15%,31% 18%,14% 15%,0 17%);animation-name:cf-tear-1}
+.cf-burst-slice-2{clip-path:polygon(0 23%,12% 21%,26% 24%,42% 21%,58% 25%,74% 22%,90% 24%,100% 22%,100% 37%,84% 35%,66% 38%,48% 36%,30% 39%,12% 36%,0 38%);animation-name:cf-tear-2}
+.cf-burst-slice-3{clip-path:polygon(0 42%,14% 40%,28% 43%,44% 41%,62% 44%,80% 41%,100% 43%,100% 55%,82% 53%,64% 56%,46% 54%,27% 57%,10% 54%,0 56%);animation-name:cf-tear-3}
+.cf-burst-slice-4{clip-path:polygon(0 61%,16% 59%,32% 62%,50% 60%,68% 63%,84% 60%,100% 62%,100% 74%,80% 72%,62% 75%,44% 73%,25% 76%,0 73%);animation-name:cf-tear-4}
+.cf-burst-slice-5{clip-path:polygon(0 83%,14% 81%,30% 84%,48% 82%,66% 85%,82% 82%,100% 84%,100% 95%,84% 93%,66% 96%,48% 94%,30% 97%,12% 94%,0 96%);animation-name:cf-tear-5}
+.cf-burst-slice-6{clip-path:polygon(9% 0,14% 8%,11% 18%,16% 30%,12% 44%,17% 58%,13% 72%,16% 86%,12% 100%,23% 100%,20% 86%,24% 72%,20% 56%,25% 42%,21% 28%,24% 14%,20% 0);animation-name:cf-tear-6}
+.cf-burst-slice-7{clip-path:polygon(73% 0,77% 9%,74% 20%,79% 33%,75% 47%,80% 61%,76% 75%,79% 88%,75% 100%,87% 100%,84% 88%,88% 75%,84% 61%,89% 47%,85% 33%,89% 20%,85% 9%,88% 0);animation-name:cf-tear-7}
+.cf-burst-slice-8{clip-path:polygon(0 28%,12% 25%,24% 29%,36% 26%,48% 30%,60% 27%,72% 31%,84% 28%,100% 32%,100% 45%,86% 42%,72% 46%,58% 43%,44% 47%,30% 44%,16% 48%,0 45%);animation-name:cf-tear-8}
+@keyframes cf-tear-1{0%,100%{transform:none}12%{transform:translate3d(-42px,-4px,0) scale(1.1) skewX(1.2deg)}32%{transform:translate3d(34px,3px,0) scale(1.06) skewX(-.8deg)}54%{transform:translate3d(-26px,-2px,0) scale(1.12)}76%{transform:translate3d(16px,1px,0) scale(1.04)}}
+@keyframes cf-tear-2{0%,100%{transform:none}12%{transform:translate3d(58px,-7px,0) scale(1.28) skewX(-1.4deg)}34%{transform:translate3d(-48px,6px,0) scale(1.2) skewX(1deg)}56%{transform:translate3d(34px,-4px,0) scale(1.34)}78%{transform:translate3d(-22px,3px,0) scale(1.18)}}
+@keyframes cf-tear-3{0%,100%{transform:none}14%{transform:translate3d(-46px,-3px,0) scale(1.42)}36%{transform:translate3d(52px,5px,0) scale(1.28)}58%{transform:translate3d(-32px,-4px,0) scale(1.36)}80%{transform:translate3d(20px,2px,0) scale(1.2)}}
+@keyframes cf-tear-4{0%,100%{transform:none}12%{transform:translate3d(50px,-5px,0) scale(1.2) skewX(1.3deg)}30%{transform:translate3d(-44px,4px,0) scale(1.14) skewX(-1deg)}52%{transform:translate3d(30px,-3px,0) scale(1.24)}74%{transform:translate3d(-18px,2px,0) scale(1.1)}}
+@keyframes cf-tear-5{0%,100%{transform:none}14%{transform:translate3d(-38px,3px,0) scale(1.14)}38%{transform:translate3d(34px,-4px,0) scale(1.2)}60%{transform:translate3d(-24px,2px,0) scale(1.12)}82%{transform:translate3d(14px,-1px,0) scale(1.06)}}
+@keyframes cf-tear-6{0%,100%{transform:none}12%{transform:translate3d(-8px,52px,0) scale(1.24) skewY(1.8deg)}34%{transform:translate3d(7px,-46px,0) scale(1.18) skewY(-1.2deg)}56%{transform:translate3d(-5px,34px,0) scale(1.3)}78%{transform:translate3d(4px,-22px,0) scale(1.16)}}
+@keyframes cf-tear-7{0%,100%{transform:none}14%{transform:translate3d(9px,-58px,0) scale(1.34) skewY(-2deg)}36%{transform:translate3d(-7px,44px,0) scale(1.24) skewY(1.3deg)}58%{transform:translate3d(6px,-32px,0) scale(1.4)}80%{transform:translate3d(-4px,20px,0) scale(1.2)}}
+@keyframes cf-tear-8{0%,100%{transform:none}12%{transform:translate3d(42px,34px,0) scale(1.22) rotate(2deg)}34%{transform:translate3d(-38px,-30px,0) scale(1.16) rotate(-1.4deg)}56%{transform:translate3d(28px,-22px,0) scale(1.28) rotate(1deg)}78%{transform:translate3d(-18px,16px,0) scale(1.14)}}
+
+/* 外框也撕成独立线段，位移比内容更远，能明显突破原边框 */
+.cf-frame-slice{position:absolute;inset:-1px;z-index:9;pointer-events:none;border:1px solid var(--fline);filter:drop-shadow(3px 0 rgba(255,45,65,.75)) drop-shadow(-3px 0 rgba(45,225,255,.65));transform-origin:center;animation-duration:.3s;animation-timing-function:steps(3);animation-fill-mode:both;will-change:transform}
+.cf-frame-slice-1{clip-path:polygon(0 0,100% 0,100% 13%,88% 10%,72% 15%,55% 11%,38% 16%,20% 12%,0 15%);animation-name:cf-frame-tear-1}
+.cf-frame-slice-2{clip-path:polygon(0 35%,14% 38%,30% 34%,48% 39%,66% 35%,84% 40%,100% 36%,100% 55%,82% 52%,64% 57%,46% 53%,28% 58%,10% 54%,0 57%);animation-name:cf-frame-tear-2}
+.cf-frame-slice-3{clip-path:polygon(0 78%,16% 75%,34% 80%,52% 76%,70% 81%,86% 77%,100% 80%,100% 100%,0 100%);animation-name:cf-frame-tear-3}
+.cf-frame-slice-4{clip-path:polygon(0 0,8% 7%,5% 18%,10% 31%,6% 45%,11% 59%,7% 73%,10% 87%,6% 100%,18% 100%,15% 87%,19% 73%,15% 59%,20% 45%,16% 31%,20% 18%,16% 7%,19% 0);animation-name:cf-frame-tear-4}
+.cf-frame-slice-5{clip-path:polygon(82% 0,86% 8%,83% 20%,88% 34%,84% 48%,89% 62%,85% 76%,88% 90%,84% 100%,100% 100%,100% 0);animation-name:cf-frame-tear-5}
+.cf-frame-slice-6{clip-path:polygon(0 18%,16% 21%,32% 17%,48% 22%,64% 18%,80% 23%,100% 19%,100% 31%,82% 28%,66% 33%,50% 29%,32% 34%,16% 30%,0 32%);animation-name:cf-frame-tear-6}
+@keyframes cf-frame-tear-1{0%,100%{transform:none}14%{transform:translate3d(-64px,-8px,0) scale(1.05) skewX(-1.2deg)}36%{transform:translate3d(52px,6px,0) scale(1.03)}58%{transform:translate3d(-36px,4px,0) scale(1.06)}80%{transform:translate3d(24px,-3px,0)}}
+@keyframes cf-frame-tear-2{0%,100%{transform:none}12%{transform:translate3d(72px,5px,0) scale(1.06) skewX(1.4deg)}34%{transform:translate3d(-58px,-6px,0) scale(1.03)}56%{transform:translate3d(40px,4px,0) scale(1.07)}78%{transform:translate3d(-26px,-2px,0)}}
+@keyframes cf-frame-tear-3{0%,100%{transform:none}14%{transform:translate3d(56px,9px,0) scale(1.04) skewX(-1deg)}38%{transform:translate3d(-48px,-7px,0) scale(1.06)}60%{transform:translate3d(32px,5px,0) scale(1.03)}82%{transform:translate3d(-18px,-3px,0)}}
+@keyframes cf-frame-tear-4{0%,100%{transform:none}12%{transform:translate3d(-48px,0,0) scale(1.05) skewY(1.5deg)}34%{transform:translate3d(38px,0,0) scale(1.03) skewY(-1deg)}58%{transform:translate3d(-28px,0,0) scale(1.06)}80%{transform:translate3d(16px,0,0)}}
+@keyframes cf-frame-tear-5{0%,100%{transform:none}14%{transform:translate3d(52px,0,0) scale(1.06) skewY(-1.6deg)}36%{transform:translate3d(-42px,0,0) scale(1.03) skewY(1.1deg)}60%{transform:translate3d(30px,0,0) scale(1.05)}82%{transform:translate3d(-18px,0,0)}}
+@keyframes cf-frame-tear-6{0%,100%{transform:none}12%{transform:translate3d(36px,-44px,0) scale(1.05) rotate(1.5deg)}34%{transform:translate3d(-32px,38px,0) scale(1.03) rotate(-1deg)}58%{transform:translate3d(24px,-26px,0) scale(1.06)}80%{transform:translate3d(-14px,16px,0)}}
+
+/* 辅助色块随机散落在画框内外，不再使用贯穿全框的条带 */
+.cf-burst-fx{position:absolute;inset:-96px;z-index:8;pointer-events:none;overflow:visible}
+.cf-burst-fx::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,45,65,.4),rgba(255,255,255,.48),rgba(45,225,255,.38));mix-blend-mode:screen;animation:cf-burst-flash .07s steps(2) forwards}
+.cf-burst-fx::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(180deg,transparent 0 3px,rgba(255,255,255,.14) 3px 4px);mix-blend-mode:overlay;animation:cf-burst-scan .3s steps(4) backwards}
+.cf-burst-block{position:absolute;opacity:0;mix-blend-mode:screen;border:1px solid rgba(255,255,255,.22);animation:cf-block-jitter .3s steps(3) both;will-change:transform}
+.cf-burst-block.r{background:rgba(255,45,65,.52);box-shadow:0 0 22px rgba(255,45,65,.24)}
+.cf-burst-block.c{background:rgba(45,225,255,.46);box-shadow:0 0 22px rgba(45,225,255,.22)}
+@keyframes cf-burst-flash{0%{opacity:.9}35%{opacity:.25}100%{opacity:0}}
+@keyframes cf-burst-scan{0%{opacity:.8;transform:translateY(-6%)}35%{opacity:.35;transform:translateY(5%)}70%{opacity:.16;transform:translateY(-2%)}100%{opacity:0;transform:none}}
+@keyframes cf-block-jitter{
+  0%{opacity:0;transform:translate3d(0,0,0) rotate(0)}
+  12%{opacity:.78;transform:translate3d(var(--dx),var(--dy),0) rotate(var(--rot))}
+  34%{opacity:.48;transform:translate3d(var(--dx2),var(--dy2),0) rotate(var(--rot2))}
+  58%{opacity:.68;transform:translate3d(var(--dx),var(--dy),0) rotate(var(--rot))}
+  100%{opacity:0;transform:none}
+}
 
 /* 静音开关（与游戏内导航按钮同规格） */
 .cf-sound{display:grid;place-items:center;width:28px;height:26px;cursor:pointer;padding:0;color:var(--fsteel);background:var(--fpanel);border:1px solid var(--fline);border-radius:3px;transition:.15s}
@@ -702,7 +780,7 @@
 .cf-modal-box.cf-peek{width:min(520px,100%);padding:16px 16px 18px}
 .cf-peek-art{margin:0 0 14px;border:1px solid var(--fline);background:var(--ffig);
   display:flex;align-items:center;justify-content:center;overflow:hidden}
-.cf-peek-art img{display:block;width:100%;max-height:44vh;object-fit:contain;filter:grayscale(1)}
+.cf-peek-art img{display:block;width:100%;max-height:44vh;object-fit:contain}
 .cf-peek-text{margin:0;font-size:12px;line-height:2;color:var(--fink);white-space:pre-line}
 .cf-peek-short{margin:0 0 10px;font-size:11px;letter-spacing:.04em;color:var(--fsteel)}
 .cf-peek-hint{margin:12px 0 0;font-size:11px;line-height:1.8;color:var(--fmut);
