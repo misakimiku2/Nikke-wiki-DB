@@ -262,6 +262,12 @@
 .cf-hint-badge .ico{width:14px;height:14px}
 .cf-opt:hover:not(:disabled):not(.cf-opt-hintlocked) .cf-hint-badge,
 .cf-opt:focus-visible:not(.cf-opt-hintlocked) .cf-hint-badge{background:var(--fbg);border-color:var(--fbg);color:var(--fink)}
+.cf-changes{display:inline-flex;align-items:center;gap:10px;flex:none;margin-left:10px;white-space:nowrap}
+.cf-change{display:inline-flex;align-items:center;gap:5px;color:var(--fsteel)}
+.cf-change .icn-png{width:30px;height:30px;vertical-align:middle}
+.cf-change b{font:700 14px/1 ui-monospace,monospace;letter-spacing:.02em}
+.cf-opt:hover:not(:disabled) .cf-change,.cf-opt:focus-visible .cf-change{color:#fff}
+.cf-opt:hover:not(:disabled) .cf-change .icn-png,.cf-opt:focus-visible .cf-change .icn-png{background-color:#fff;opacity:1}
 .cf-hint{display:flex;align-items:center;gap:5px;font:600 10px/1.5 "PingFang SC",sans-serif;color:var(--fsteel);margin-top:5px}
 /* 已选过的选项：自绘角标，跟 HINT 徽章同一套语言（等宽大写 + 图标 + 悬停反色）。
    颜色走钢灰而不是红——红是 HINT 的专属，同屏出现两枚红标会互相抢。

@@ -43,6 +43,19 @@ export type FadingPage = {
 }
 
 export type FadingStatus = { hp: number; food: number; erosion: number }
+export type FadingStatusChange = { hp: number; food: number; erosion: number }
+
+export function applyFadingStatusChange(
+  status: FadingStatus,
+  change: FadingStatusChange,
+  max: FadingStatus,
+): FadingStatus {
+  return {
+    hp: Math.max(0, Math.min(max.hp, status.hp + change.hp)),
+    food: Math.max(0, Math.min(max.food, status.food + change.food)),
+    erosion: Math.max(0, Math.min(max.erosion, status.erosion + change.erosion)),
+  }
+}
 
 /** Manager 表 83501 里的一条状态定义：数值原样带出，不在前端猜增减 */
 export type FadingStatusItem = {
@@ -69,6 +82,7 @@ export type FadingChoice = {
   sfx: string | null
   dest: number | null
   candidates: number[]
+  statusChange: FadingStatusChange
 }
 
 export type FadingFirst = {

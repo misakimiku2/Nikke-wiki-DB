@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf,
-  memoryGrantedHere, unlockedMemoryIds, locationOf,
-  type FadingData, type FadingPage, type FadingRoute, type UnlockReq,
+  memoryGrantedHere, unlockedMemoryIds, locationOf, applyFadingStatusChange,
+  type FadingData, type FadingPage, type FadingRoute, type UnlockReq, type FadingStatus,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
 import { FadingAudio, loadFadingAudio, DEFAULT_GAINS, type FadingAudioMap, type FadingAudioGains } from '../fadingAudio'
@@ -90,7 +90,8 @@ export default function FadingAffection() {
   const [view, setView] = useState<ColdView>('home')
   const [route, setRoute] = useState<FadingRoute | null>(null)
   const [node, setNode] = useState<number | null>(null)
-  const [history, setHistory] = useState<{ id: number; text: string; title?: string }[]>([])
+  const [status, setStatus] = useState<FadingStatus>({ hp: 10, food: 1, erosion: 0 })
+  const [history, setHistory] = useState<{ id: number; text: string; title?: string; status: FadingStatus }[]>([])
   const [found, setFound] = useState<number[]>(() => loadArr(LS_ENDINGS))
   const [checked, setChecked] = useState<number[]>(() => loadArr(LS_CHECKED))
   const [seen, setSeen] = useState<number[]>(() => loadArr(LS_SEEN))
@@ -123,7 +124,10 @@ export default function FadingAffection() {
   const lastPreview = useRef(0)
 
   useEffect(() => {
-    loadFadingData().then((d) => setData(d)).catch((e) => setError(String(e)))
+    loadFadingData().then((d) => {
+      setData(d)
+      setStatus({ ...d.status.init })
+    }).catch((e) => setError(String(e)))
     loadFadingAudio().then(setAudioMap).catch(() => setAudioMap({}))
   }, [])
   /* 初始静音 / 音量在构造时就带上，别指望 effect 补——实例比 effect 晚到（见 fadingAudio 注释） */
@@ -285,7 +289,7 @@ export default function FadingAffection() {
     if (!req) return true
     if (req.kind === 'memory') return unlockedMem.has(req.id)
     if (req.kind === 'ending') return req.page != null && found.includes(req.page)
-    return (data?.status.init.food ?? 0) >= req.id
+    return status.food >= req.id
   }
 
   function reqLockText(req: UnlockReq): string {
@@ -302,6 +306,7 @@ export default function FadingAffection() {
     setFound([]); setChecked([]); setSeen([])
     foundRef.current = []; checkedRef.current = []; seenRef.current = []
     setHistory([]); setView('home'); setRoute(null); setNode(null)
+    setStatus(data ? { ...data.status.init } : { hp: 10, food: 1, erosion: 0 })
   }
 
   function start(r: FadingRoute) {
@@ -309,6 +314,7 @@ export default function FadingAffection() {
     ui('uis_mini_fad_routeselect_start')
     transition(() => {
       setRoute(r); setNode(r.start)
+      setStatus(data ? { ...data.status.init } : { hp: 10, food: 1, erosion: 0 })
       markSeen(r.start)
       setHistory([]); setView('game')
     }, 'view')
@@ -337,20 +343,21 @@ export default function FadingAffection() {
     transition(() => setView(v), 'view')
   }
 
-  /**
-   * 推进到下一页。原版的状态（体力/粮食/侵蚀度）在静态表里没有任何增减量，
-   * 死亡/侵蚀结局都由表里的选项或页面 next 显式指向，所以这里不做数值判定。
-   *
+  /** 推进到下一页，并应用选项表里的 hp / food / erosion 增量。
    * 结局页例外：落上去只是「待确认」，不写任何存档。结局与它授予的记忆要等玩家
    * 在结局面板点「重新记录」才入库（见 confirmRestart）；直接点「返回上一节点」
-   * 等于放弃这次记录——结局页也不会记进访问过，因此对应的记忆仍是锁着的。
-   */
+   * 等于放弃这次记录——结局页也不会记进访问过，因此对应的记忆仍是锁着的。 */
   function commit(next: number, choiceId?: number) {
     if (!data) return
+    const change = choiceId != null
+      ? data.choices[String(choiceId)]?.statusChange
+      : { hp: 0, food: 0, erosion: 0 }
+    const nextStatus = applyFadingStatusChange(status, change ?? { hp: 0, food: 0, erosion: 0 }, data.status.max)
+    setStatus(nextStatus)
     setNode(next)
     const p = data.pages[String(next)]
     setHistory((h) => [...h, {
-      id: next, text: p?.text || '', title: p?.ending?.title,
+      id: next, text: p?.text || '', title: p?.ending?.title, status: nextStatus,
     }].slice(-120))
     if (choiceId != null) grant(checkedRef, setChecked, LS_CHECKED, choiceId)
     if (!p?.ending) markSeen(next)
@@ -394,6 +401,7 @@ export default function FadingAffection() {
     transition(() => {
       setHistory((h) => h.slice(0, -1))
       setNode(prev?.id ?? route?.start ?? null)
+      setStatus(prev?.status ?? (data ? { ...data.status.init } : { hp: 10, food: 1, erosion: 0 }))
     })
   }
 
@@ -421,6 +429,7 @@ export default function FadingAffection() {
           locked,
           lockText: locked && c.req ? reqLockText(c.req) : undefined,
           checked: isChecked,
+          statusChange: c.statusChange,
           disabled: locked && !hintLocked,
           hintOnly: hintLocked,
           onClick: () => {
@@ -448,7 +457,7 @@ export default function FadingAffection() {
       isRegionSelect={isIntro}
       fade={fade}
       sceneKey={scene}
-      status={data.status}
+      status={status}
       erosionActive={!!route?.erosion}
       choices={coldChoices}
       ending={ending || null}

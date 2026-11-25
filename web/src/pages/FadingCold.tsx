@@ -4,7 +4,7 @@
  * 主题跟随站点 <html data-theme>（light = 灰白纸张，dark = 冷钢灰）。
  */
 import type {
-  FadingData, FadingRoute, FadingPage, FadingMemory,
+  FadingData, FadingRoute, FadingPage, FadingMemory, FadingStatus, FadingStatusChange,
 } from '../fadingData'
 import { fadingCgSrc } from '../fadingData'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
@@ -76,9 +76,8 @@ const END_MARK: Record<string, { src: string; alt: string }> = {
  *  各带一枚 btn_memory 图。路线归属的依据是 RouteTable 的 intro 字段：
  *  路线 1、2 = `event_text_adv_plus_intro_maria`（"MARIA - {0}"）→ marian，
  *  路线 3 = `event_text_adv_plus_intro_header_commander`（"IN ACTION"）→ commander。
- *  erosion 版在 prefab 里默认 inactive，八张表除 Manager 的状态定义外没有任何 erosion 字段，
- *  状态增减量也已证实不存在（8 张表 4 字节窗口全扫，[-9,-1] 命中 0），
- *  所以表里唯一能证实的侵蚀信号是结局类型字段（=4，即 7xxx 那 6 页）——侵蚀版只在这类页面启用。 */
+ *  erosion 版在 prefab 里默认 inactive，表里唯一能证实的侵蚀皮肤信号是结局类型字段
+ *  （=4，即 7xxx 那 6 页），因此侵蚀版只在这类页面启用。 */
 function memSkin(routeNo: number, kind: string | null): 'marian' | 'commander' | 'erosion' {
   if (kind === 'erosion') return 'erosion'
   return routeNo === 3 ? 'commander' : 'marian'
@@ -420,11 +419,33 @@ export type ColdChoice = {
   locked?: boolean
   lockText?: string
   checked?: boolean
+  statusChange?: FadingStatusChange
   disabled?: boolean
   /** 带 HINT 的锁定项：点击只弹提示、不推进剧情 */
   hintOnly?: boolean
   onClick: () => void
 }
+function OptionStatusChange({ change }: { change: FadingStatusChange | undefined }) {
+  if (!change) return null
+  const items: { kind: 'hp' | 'food' | 'erosion'; label: string; value: number }[] = [
+    { kind: 'hp', label: '体力', value: change.hp },
+    { kind: 'food', label: '粮食', value: change.food },
+    { kind: 'erosion', label: '侵蚀', value: change.erosion },
+  ]
+  const shown = items.filter((item) => item.value !== 0)
+  if (shown.length === 0) return null
+  return (
+    <span className="cf-changes">
+      {shown.map(({ kind, label, value }) => (
+        <span className="cf-change" key={kind} title={`${label} ${value > 0 ? '+' : ''}${value}`}
+          aria-label={`${label} ${value > 0 ? '+' : ''}${value}`}>
+          <PNGIcon kind={kind} /><b>{value > 0 ? '+' : ''}{value}</b>
+        </span>
+      ))}
+    </span>
+  )
+}
+
 export type FadingColdProps = {
   data: FadingData
   view: ColdView
@@ -441,8 +462,8 @@ export type FadingColdProps = {
   backView: ColdView
   /** 每露出一批文字回调一次，用来打打字音 */
   onType?: () => void
-  /** Manager 表原样导出：items + init + max，状态不做增减 */
-  status: FadingData['status']
+  /** 当前路线状态；上限与名称仍取 Manager 表 */
+  status: FadingStatus
   choices: ColdChoice[]
   ending: { title: string; hint: string } | null
   endingId: number | null
@@ -606,14 +627,13 @@ function AudioSettingsButton({ open, onOpen }: { open: boolean; onOpen: () => vo
   )
 }
 
-/** 状态栏：体力/粮食上排，侵蚀长条下排。数值全部来自 Manager 表：
- *  粮食上限只有 1 份，是随身物品而不是消耗条。内存按钮不在这里（见 MemButton）。 */
-function StatusBar({ status, erosionActive }: {
-  status: FadingData['status']; erosionActive: boolean
+/** 状态栏：体力/粮食上排，侵蚀长条下排。内存按钮不在这里（见 MemButton）。 */
+function StatusBar({ status, defs, erosionActive }: {
+  status: FadingStatus; defs: FadingData['status']; erosionActive: boolean
 }) {
-  const find = (k: 'hp' | 'food' | 'erosion') => status.items.find((s) => s.key === k)
+  const find = (k: 'hp' | 'food' | 'erosion') => defs.items.find((s) => s.key === k)
   const hp = find('hp'), food = find('food'), eros = find('erosion')
-  const pct = eros?.max ? Math.round((status.init.erosion / eros.max) * 100) : 0
+  const pct = eros?.max ? Math.round((status.erosion / eros.max) * 100) : 0
   const mark = eros?.max && eros.second < eros.max
     ? Math.round((eros.second / eros.max) * 100) : null
   return (
@@ -623,11 +643,11 @@ function StatusBar({ status, erosionActive }: {
         <div className="sb-row1">
           <div className="sb-stat" title={hp ? `体力 ${hp.max}` : undefined}>
             <PNGIcon kind="hp" />
-            <b>{status.init.hp}<small>/{hp?.max ?? status.max.hp}</small></b>
+            <b>{status.hp}<small>/{hp?.max ?? defs.max.hp}</small></b>
           </div>
           <div className="sb-stat" title={food ? `粮食 ${food.max} 份` : undefined}>
             <PNGIcon kind="food" />
-            <b>{status.init.food}<small>/{food?.max ?? status.max.food}</small></b>
+            <b>{status.food}<small>/{food?.max ?? defs.max.food}</small></b>
           </div>
         </div>
         <div className={`sb-row2 ${erosionActive ? '' : 'off'}`}>
@@ -1072,6 +1092,7 @@ export default function FadingCold(p: FadingColdProps) {
                         原作只有一枚「Checked」戳、没有百分比，早年那行「Checked +1%」的 +1% 是编的。 */}
                     {c.checked && <span className="cf-checked"><I n="check" />CHECKED</span>}
                   </span>
+                  {!c.locked && <OptionStatusChange change={c.statusChange} />}
                   {/* HINT 徽章常驻：原版即使选项被锁（如未拿到「袭击」）也贴着 HINT，
                       解锁条件只管提示文字 / 能不能点。徽章占据右侧箭头的位置。 */}
                   {c.hint
@@ -1169,7 +1190,7 @@ export default function FadingCold(p: FadingColdProps) {
           }}>
           {body}
         </div>{/* /cf-scroll */}
-        <StatusBar status={status} erosionActive={p.erosionActive} />
+        <StatusBar status={status} defs={data.status} erosionActive={p.erosionActive} />
         <MemButton skin={memSkin(routeNo, endK)} onClick={p.onMemClick} />
       </div>
     </>
