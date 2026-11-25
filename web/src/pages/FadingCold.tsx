@@ -7,7 +7,7 @@ import type {
   FadingData, FadingRoute, FadingPage, FadingMemory, FadingStatus, FadingStatusChange,
 } from '../fadingData'
 import { fadingCgSrc } from '../fadingData'
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import FadingIntro from './FadingIntro'
 import dossierLayout from './fading_dossier_layout.json'
 import './fading-cold.css'
@@ -76,10 +76,9 @@ const END_MARK: Record<string, { src: string; alt: string }> = {
  *  各带一枚 btn_memory 图。路线归属的依据是 RouteTable 的 intro 字段：
  *  路线 1、2 = `event_text_adv_plus_intro_maria`（"MARIA - {0}"）→ marian，
  *  路线 3 = `event_text_adv_plus_intro_header_commander`（"IN ACTION"）→ commander。
- *  erosion 版在 prefab 里默认 inactive，表里唯一能证实的侵蚀皮肤信号是结局类型字段
- *  （=4，即 7xxx 那 6 页），因此侵蚀版只在这类页面启用。 */
-function memSkin(routeNo: number, kind: string | null): 'marian' | 'commander' | 'erosion' {
-  if (kind === 'erosion') return 'erosion'
+ *  进入暗红侵蚀状态或侵蚀结局时使用白色 erosion 卡面。 */
+function memSkin(routeNo: number, kind: string | null, erosion: boolean): 'marian' | 'commander' | 'erosion' {
+  if (erosion || kind === 'erosion') return 'erosion'
   return routeNo === 3 ? 'commander' : 'marian'
 }
 const MEM_BTN = (skin: 'marian' | 'commander' | 'erosion') =>
@@ -262,39 +261,188 @@ function RegionMap({ choices }: { choices: ColdChoice[] }) {
  *  重打会在看不见的地方把打字咔哒和笔刷音放出来，原作点开内存回到同一页也是直接给全文。
  *  start=false 时先不出字：有 CG 的页面要等翻页放完，正文和打字音才一起开始。 */
 const TYPE_MS = 24
+const REDACT_NORMAL_MS = 250
+const REDACT_GLITCH_MS = 400
+const REDACT_TOTAL_MS = REDACT_NORMAL_MS + REDACT_GLITCH_MS
 
 function useTypewriter(text: string, onReveal?: () => void, start = true) {
-  const [n, setN] = useState(start ? text.length : 0)
+  const { plain, ranges } = useMemo(() => redactionTimeline(text), [text])
+  const [n, setN] = useState(start ? plain.length : 0)
+  const [skipped, setSkipped] = useState(false)
+  const [activeRedaction, setActiveRedaction] = useState<number | null>(null)
+  const nRef = useRef(n)
   const stopped = useRef(false)
+  const activeRef = useRef<number | null>(null)
+  const rafRef = useRef(0)
+  const guardRef = useRef(0)
+  const pauseRef = useRef(0)
   const cb = useRef(onReveal)
   cb.current = onReveal
   useEffect(() => {
+    cancelAnimationFrame(rafRef.current)
+    clearTimeout(guardRef.current)
+    clearTimeout(pauseRef.current)
     stopped.current = false
-    // CG 翻页没放完之前先空着，别提前把正文和打字音放出来
-    if (!start) { setN(0); return }
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setN(text.length); return }
+    activeRef.current = null
+    nRef.current = 0
+    setSkipped(false)
+    setActiveRedaction(null)
     setN(0)
-    const t0 = performance.now()
-    let raf = 0
-    let guard = 0
-    let shown = 0
-    const step = (now: number) => {
-      if (stopped.current) return
-      const v = Math.min(Math.floor((now - t0) / TYPE_MS), text.length)
-      if (v > shown) { shown = v; cb.current?.() }
-      setN(v)
-      if (v < text.length) raf = requestAnimationFrame(step)
+    // CG 翻页没放完之前先空着，别提前把正文和打字音放出来
+    if (!start) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      nRef.current = plain.length
+      setN(plain.length)
+      return
     }
-    raf = requestAnimationFrame(step)
-    /* 后台页面不跑 rAF，兜底把剩余文字补齐，免得选项永远出不来 */
-    guard = window.setTimeout(() => { stopped.current = true; setN(text.length) }, text.length * TYPE_MS + 400)
-    return () => { cancelAnimationFrame(raf); clearTimeout(guard) }
-  }, [text, start])
+    let last = performance.now()
+    let carry = 0
+    let shown = 0
+    const finish = () => {
+      stopped.current = true
+      activeRef.current = null
+      setActiveRedaction(null)
+      setSkipped(true)
+      nRef.current = plain.length
+      setN(plain.length)
+    }
+    const pause = (index: number) => {
+      activeRef.current = index
+      setActiveRedaction(index)
+      pauseRef.current = window.setTimeout(() => {
+        if (stopped.current) return
+        activeRef.current = null
+        setActiveRedaction(null)
+        last = performance.now()
+        if (nRef.current < plain.length) rafRef.current = requestAnimationFrame(step)
+      }, REDACT_TOTAL_MS + 80)
+    }
+    const step = (now: number) => {
+      if (stopped.current || activeRef.current != null) return
+      carry += now - last
+      last = now
+      let next = nRef.current
+      let pauseAt = -1
+      while (carry >= TYPE_MS && next < plain.length) {
+        next++
+        carry -= TYPE_MS
+        if (next > shown) { shown = next; cb.current?.() }
+        const redaction = ranges.findIndex((r) => r.end === next)
+        if (redaction >= 0) { pauseAt = redaction; break }
+      }
+      nRef.current = next
+      setN(next)
+      if (pauseAt >= 0) { pause(pauseAt); return }
+      if (next < plain.length) rafRef.current = requestAnimationFrame(step)
+    }
+    rafRef.current = requestAnimationFrame(step)
+    /* 后台页面不跑 rAF，兜底把剩余文字和演绎一次补齐，免得选项永远出不来 */
+    guardRef.current = window.setTimeout(finish, plain.length * TYPE_MS + ranges.length * (REDACT_TOTAL_MS + 80) + 600)
+    return () => {
+      stopped.current = true
+      cancelAnimationFrame(rafRef.current)
+      clearTimeout(guardRef.current)
+      clearTimeout(pauseRef.current)
+    }
+  }, [text, start, plain, ranges])
   return {
-    shown: n >= text.length ? text : text.slice(0, n),
-    done: n >= text.length,
-    skip: () => { stopped.current = true; setN(text.length) },
+    shown: plain.slice(0, n),
+    done: n >= plain.length && activeRedaction === null,
+    skipped,
+    skip: () => {
+      stopped.current = true
+      activeRef.current = null
+      cancelAnimationFrame(rafRef.current)
+      clearTimeout(guardRef.current)
+      clearTimeout(pauseRef.current)
+      setActiveRedaction(null)
+      setSkipped(true)
+      nRef.current = plain.length
+      setN(plain.length)
+    },
   }
+}
+
+const REDACT_TAG = /\[\[REDACT\]\]([\s\S]*?)\[\[\/REDACT\]\]/g
+const REDACT_CHARS = '▓▒░#%&?/\\<>+=*'
+
+function redactionTimeline(text: string): { plain: string; ranges: { start: number; end: number }[] } {
+  let plain = ''
+  let last = 0
+  const ranges: { start: number; end: number }[] = []
+  for (const m of text.matchAll(REDACT_TAG)) {
+    const at = m.index ?? 0
+    plain += text.slice(last, at)
+    const start = plain.length
+    plain += m[1]
+    ranges.push({ start, end: plain.length })
+    last = at + m[0].length
+  }
+  plain += text.slice(last)
+  return { plain, ranges }
+}
+
+function stripRedactionTags(text: string): string {
+  return redactionTimeline(text).plain
+}
+
+function scramble(text: string): string {
+  return [...text].map((ch) => ch === ' ' ? ' ' : REDACT_CHARS[Math.floor(Math.random() * REDACT_CHARS.length)]).join('')
+}
+
+function RedactedSpan({ text, animate }: { text: string; animate: boolean }) {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const [stage, setStage] = useState<'normal' | 'glitch' | 'block'>(!animate || reduced ? 'block' : 'normal')
+  const [noise, setNoise] = useState(text)
+  useLayoutEffect(() => {
+    if (!animate || reduced) { setStage('block'); return }
+    setStage('normal')
+    setNoise(text)
+    let timer = 0
+    const glitchAt = window.setTimeout(() => {
+      setStage('glitch')
+      setNoise(scramble(text))
+      timer = window.setInterval(() => setNoise(scramble(text)), 50)
+    }, REDACT_NORMAL_MS)
+    const blockAt = window.setTimeout(() => {
+      clearInterval(timer)
+      setStage('block')
+    }, REDACT_TOTAL_MS)
+    return () => { clearTimeout(glitchAt); clearTimeout(blockAt); clearInterval(timer) }
+  }, [text, animate, reduced])
+  return (
+    <span className="cf-redact" aria-label={text} title={text}>
+      <span className={`cf-redact-normal${stage === 'normal' ? ' on' : ''}`} aria-hidden="true">{text}</span>
+      <span className={`cf-redact-glitch${stage === 'glitch' ? ' on' : ''}`} aria-hidden="true">{noise}</span>
+      <span className={`cf-redact-block${stage === 'block' ? ' on' : ''}`} aria-hidden="true" />
+    </span>
+  )
+}
+
+function RedactedText({ text, shownCount, animate = true }: { text: string; shownCount: number; animate?: boolean }) {
+  const parts: { text: string; redacted: boolean }[] = []
+  let last = 0
+  for (const m of text.matchAll(REDACT_TAG)) {
+    const at = m.index ?? 0
+    if (at > last) parts.push({ text: text.slice(last, at), redacted: false })
+    parts.push({ text: m[1], redacted: true })
+    last = at + m[0].length
+  }
+  if (last < text.length) parts.push({ text: text.slice(last), redacted: false })
+  let left = Math.max(0, shownCount)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (left <= 0) return null
+        const take = Math.min(left, part.text.length)
+        left -= take
+        if (!part.redacted || take < part.text.length) {
+          return <span key={i}>{part.text.slice(0, take)}</span>
+        }
+        return <RedactedSpan key={i} text={part.text} animate={animate} />
+      })}
+    </>
+  )
 }
 
 /** 结局类型：按页号前缀（6xxx 死亡 / 7xxx 侵蚀 / 8xxx TRUE / 9xxx HIDDEN） */
@@ -621,7 +769,7 @@ function PeekDialog({ p, peek, onClose }: { p: FadingColdProps; peek: Peek; onCl
           <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
         </div>
         {src && <figure className="cf-peek-art"><img src={src} alt={page.cg || ''} /></figure>}
-        <p className="cf-peek-text">{page.text}</p>
+        <p className="cf-peek-text"><RedactedText text={page.text} shownCount={stripRedactionTags(page.text).length} animate={false} /></p>
         {page.ending?.hint && <p className="cf-peek-hint">{page.ending.hint}</p>}
         {mark && <div className="cf-peek-mark"><img src={mark.src} alt={mark.alt} /></div>}
       </div>
@@ -1109,12 +1257,12 @@ export default function FadingCold(p: FadingColdProps) {
               <>
                 <RegionMap choices={choices} />
                 <p className="cf-map-hint">在地图上选择要前往的地区</p>
-                <div className="cf-script">{pageText}</div>
+                <div className="cf-script"><RedactedText text={pageText} shownCount={stripRedactionTags(pageText).length} /></div>
               </>
             ) : (
               <>
                 {cg(cgAlt || undefined, cgSrc || undefined)}
-                <div className={`cf-script ${typed.done ? '' : 'typing'}`}>{typed.shown}</div>
+                <div className={`cf-script ${typed.done ? '' : 'typing'}`}><RedactedText text={pageText} shownCount={typed.shown.length} animate={!typed.skipped} /></div>
               </>
             )}
             <div className={`cf-opts ${typed.done || p.isRegionSelect ? 'ready' : 'pending'}`}
@@ -1129,7 +1277,7 @@ export default function FadingCold(p: FadingColdProps) {
                   }}>
                   <span className="ix">{c.index}</span>
                   <span className="tx">
-                    {c.locked ? '???' : c.text}
+                    {c.locked ? '???' : <RedactedText text={c.text} shownCount={stripRedactionTags(c.text).length} animate={typed.done || !!p.isRegionSelect} />}
                     {c.hint && !c.locked && <span className="cf-hint"><I n="eye" /> {c.hint}</span>}
                     {c.locked && c.lockText && <span className="cf-hint cf-hint-locked"><I n="lock" /> {c.lockText}</span>}
                     {/* 已选过：自绘角标，和 HINT 徽章同一套语言（等宽大写 + 对勾 + 悬停反色）。
@@ -1235,7 +1383,7 @@ export default function FadingCold(p: FadingColdProps) {
           {body}
         </div>{/* /cf-scroll */}
         <StatusBar status={status} defs={data.status} erosionActive={p.erosionActive} />
-        <MemButton skin={memSkin(routeNo, endK)} onClick={p.onMemClick} />
+        <MemButton skin={memSkin(routeNo, endK, erosionMode)} onClick={p.onMemClick} />
       </div>
     </>
   )
