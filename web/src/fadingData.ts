@@ -1,5 +1,10 @@
 /** FADING AFFECTION 活动小游戏的分支数据（由 nikke_extract/scripts/export_fadingaffection.py 导出） */
 
+import type { ContentLang } from './lang'
+
+export type FadingLocale = 'zh-CN' | 'en' | 'ko' | 'ja'
+export type FadingLocales = Record<FadingLocale, Record<string, string>>
+
 export type UnlockReq = {
   /** memory = 需要指定记忆；ending = 需要看过指定结局；state = 状态门槛（粮食） */
   kind: 'memory' | 'ending' | 'state'
@@ -10,6 +15,7 @@ export type UnlockReq = {
   memory?: string
   memoryKind?: 'save' | 'deleted' | 'fragment'
   name: string
+  nameKey?: string | null
 }
 
 export type FadingRoute = {
@@ -18,9 +24,11 @@ export type FadingRoute = {
   name: string
   nameKey: string
   desc: string
+  descKey?: string | null
   startKey: string
   start: number
   intro: string
+  introKey?: string | null
   introText: string
   unlock: string | null
   /** 该路线是否启用侵蚀度：原作只为路线 2 写了侵蚀数值 */
@@ -39,11 +47,12 @@ export type FadingPage = {
   grant?: number | null
   next: number | null
   links: number[]
-  ending?: { title: string; hint: string }
+  ending?: { title: string; hint: string; titleKey?: string | null; hintKey?: string | null }
 }
 
 export type FadingStatus = { hp: number; food: number; erosion: number }
 export type FadingStatusChange = { hp: number; food: number; erosion: number }
+export type FadingStatusFeedback = { id: number; hp: number; food: number }
 
 export function applyFadingStatusChange(
   status: FadingStatus,
@@ -101,8 +110,11 @@ export type FadingMemory = {
   route: number
   index: number
   name: string
+  nameKey?: string | null
   desc: string
+  descKey?: string | null
   short: string
+  shortKey?: string | null
   grantPage: number | null
   grantPages: number[]
 }
@@ -112,6 +124,7 @@ export type FadingData = {
   event: string
   title: string
   subtitle: string
+  locales: FadingLocales
   status: { items: FadingStatusItem[]; init: FadingStatus; max: FadingStatus }
   backgrounds: Record<string, string>
   memories: FadingMemory[]
@@ -121,6 +134,71 @@ export type FadingData = {
   choices: Record<string, FadingChoice>
   firstChoices: FadingFirst[]
   cgHashes: Record<string, string>
+}
+
+export function fadingText(data: FadingData, key: string | null | undefined, lang: ContentLang, fallback = ''): string {
+  if (!key) return fallback
+  const plain = key.includes(':') ? key.slice(key.indexOf(':') + 1) : key
+  const locale: FadingLocale = lang === 'zh' ? 'zh-CN' : lang
+  return data.locales[locale]?.[plain] || data.locales['zh-CN']?.[plain] || fallback
+}
+
+export function localizeFadingData(data: FadingData, lang: ContentLang): FadingData {
+  const tr = (key: string | null | undefined, fallback: string) => fadingText(data, key, lang, fallback)
+  const req = (value: UnlockReq | null): UnlockReq | null => value
+    ? { ...value, name: tr(value.nameKey, value.name) }
+    : null
+  const routes = data.routes.map((r) => ({
+    ...r,
+    name: tr(r.nameKey, r.name),
+    desc: tr(r.descKey, r.desc),
+    intro: tr(r.introKey, r.intro),
+    introText: tr(r.startKey, r.introText),
+    unlockRequirement: req(r.unlockRequirement),
+  }))
+  const pages = Object.fromEntries(Object.entries(data.pages).map(([id, p]) => [id, {
+    ...p,
+    text: tr(p.key, p.text),
+    ending: p.ending ? {
+      ...p.ending,
+      title: tr(p.ending.titleKey, p.ending.title),
+      hint: tr(p.ending.hintKey, p.ending.hint),
+    } : undefined,
+  }]))
+  const choices = Object.fromEntries(Object.entries(data.choices).map(([id, c]) => [id, {
+    ...c,
+    text: tr(c.key, c.text),
+    hint: tr(c.hintKey, c.hint),
+    req: req(c.req),
+  }]))
+  const firstChoices = data.firstChoices.map((c) => ({
+    ...c,
+    text: tr(c.key, c.text),
+    unlock: req(c.unlock),
+  }))
+  const memories = data.memories.map((m) => ({
+    ...m,
+    name: tr(m.nameKey, m.name),
+    desc: tr(m.descKey, m.desc),
+    short: tr(m.shortKey, m.short),
+  }))
+  const memoryById = new Map(memories.map((m) => [m.id, m]))
+  const memoryByPage = Object.fromEntries(Object.entries(data.memoryByPage).map(([id, m]) => [
+    id, memoryById.get(m.id) ?? m,
+  ]))
+  return {
+    ...data,
+    routes,
+    pages,
+    choices,
+    firstChoices,
+    memories,
+    memoryByPage,
+    status: {
+      ...data.status,
+      items: data.status.items.map((item) => ({ ...item, name: tr(item.nameKey, item.name) })),
+    },
+  }
 }
 
 /** Manager 表里的状态定义（官方名称 / 上限 / 第二数值） */

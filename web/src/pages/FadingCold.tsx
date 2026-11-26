@@ -4,10 +4,12 @@
  * 主题跟随站点 <html data-theme>（light = 灰白纸张，dark = 冷钢灰）。
  */
 import type {
-  FadingData, FadingRoute, FadingPage, FadingMemory, FadingStatus, FadingStatusChange,
+  FadingData, FadingRoute, FadingPage, FadingMemory, FadingStatus, FadingStatusChange, FadingStatusFeedback,
 } from '../fadingData'
 import { fadingCgSrc } from '../fadingData'
+import { useFadingUI } from '../fadingI18n'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Link } from 'react-router-dom'
 import FadingIntro from './FadingIntro'
 import dossierLayout from './fading_dossier_layout.json'
 import './fading-cold.css'
@@ -63,7 +65,7 @@ const ROUTE_ART = (no: number) => `/fading_ui/marian_routeselect_0${no}.png`
 /** 结局类型字标（DEATH END / TRUE END / HIDDEN END / 504 ERROR）。
  *  结局类型是页面表的真实字段：-34 正文 key 字符串之后 +19 的 u8，
  *  1=death 2=true 3=hidden 4=erosion，265 页与 id 前缀零例外吻合。
- *  四张都是深色墨迹（实测不透明像素 100% 亮度低于 80），垫在纸片上才读得出来。 */
+ *  DEATH END 在深浅主题都保留原素材红，不随深色主题反色。 */
 const END_MARK: Record<string, { src: string; alt: string }> = {
   death: { src: '/fading_ui/icn_ending_death.png', alt: 'DEATH END' },
   true: { src: '/fading_ui/icn_ending_true.png', alt: 'TRUE END' },
@@ -85,10 +87,10 @@ const MEM_BTN = (skin: 'marian' | 'commander' | 'erosion') =>
   `/fading_ui/btn_marian_memory${skin === 'marian' ? '' : '_' + skin}.png`
 
 /** 地区标记在地图上的百分比坐标（按原版游戏截图标定） */
-const REGION_POS: Record<string, { x: number; y: number }> = {
-  '旧市区': { x: 19, y: 62 },
-  '湖': { x: 41, y: 39 },
-  '新市区': { x: 74, y: 30 },
+const REGION_POS: Record<'old' | 'lake' | 'city', { x: number; y: number }> = {
+  old: { x: 19, y: 62 },
+  lake: { x: 41, y: 39 },
+  city: { x: 74, y: 30 },
 }
 const MAP_SRC = '/fading_icons/map_mono.png'
 
@@ -228,13 +230,14 @@ function DossierPlate() {
 
 /** 开场地区选择：原版地图 + 可点标记 */
 function RegionMap({ choices }: { choices: ColdChoice[] }) {
+  const t = useFadingUI()
   return (
     <div className="cf-map">
       <div className="cf-map-frame">
-        <img src={MAP_SRC} alt="地区地图" />
-        <span className="cf-map-label">FIELD MAP / 旧市地区域</span>
+        <img src={MAP_SRC} alt={t('region_map')} />
+        <span className="cf-map-label">{t('field_map')}</span>
         {choices.map((c, i) => {
-          const pos = REGION_POS[c.text] ?? { x: 50, y: 50 }
+          const pos = c.region ? REGION_POS[c.region] : { x: 50, y: 50 }
           return (
             <button
               key={c.key}
@@ -581,14 +584,16 @@ export type ColdChoice = {
   disabled?: boolean
   /** 带 HINT 的锁定项：点击只弹提示、不推进剧情 */
   hintOnly?: boolean
+  region?: 'old' | 'lake' | 'city'
   onClick: () => void
 }
 function OptionStatusChange({ change }: { change: FadingStatusChange | undefined }) {
+  const t = useFadingUI()
   if (!change) return null
   const items: { kind: 'hp' | 'food' | 'erosion'; label: string; value: number }[] = [
-    { kind: 'hp', label: '体力', value: change.hp },
-    { kind: 'food', label: '粮食', value: change.food },
-    { kind: 'erosion', label: '侵蚀', value: change.erosion },
+    { kind: 'hp', label: t('hp'), value: change.hp },
+    { kind: 'food', label: t('food'), value: change.food },
+    { kind: 'erosion', label: t('erosion'), value: change.erosion },
   ]
   const shown = items.filter((item) => item.value !== 0)
   if (shown.length === 0) return null
@@ -624,6 +629,7 @@ export type FadingColdProps = {
   onErosionBurst?: () => void
   /** 当前路线状态；上限与名称仍取 Manager 表 */
   status: FadingStatus
+  statusFeedback: FadingStatusFeedback | null
   choices: ColdChoice[]
   ending: { title: string; hint: string } | null
   endingId: number | null
@@ -673,32 +679,33 @@ function useDialogClose(onClose: () => void) {
 }
 
 /** 记忆分三类（LootItem 表）：已储存 / 已删除 / 仅剩一部分 */
-const MEM_KIND: Record<FadingMemory['kind'], string> = {
-  save: '已储存', deleted: '已删除', fragment: '仅剩一部分',
-}
+const MEM_KIND_KEY = {
+  save: 'kind_save', deleted: 'kind_deleted', fragment: 'kind_fragment',
+} as const
 
 /** 音频设置弹窗：两条推子（音乐 / 音效）+ 静音、重置、完成。
  *  铺在外框内的居中遮罩上——手机竖屏也保证完整可见，不会像下来菜单那样贴边溢出。 */
 function AudioSettingsDialog({ p, onClose }: { p: FadingColdProps; onClose: () => void }) {
+  const t = useFadingUI()
   const box = useRef<HTMLDivElement>(null)
   useDialogClose(onClose)
   /* 打开时把焦点放到第一根推子，键盘左右键就能调 */
   useEffect(() => { box.current?.querySelector<HTMLInputElement>('input')?.focus() }, [])
   const rows: { k: 'bgm' | 'sfx'; label: string; hint: string }[] = [
-    { k: 'bgm', label: '音乐', hint: 'BGM / 环境音' },
-    { k: 'sfx', label: '音效', hint: '按钮 / 打字' },
+    { k: 'bgm', label: t('music'), hint: t('music_hint') },
+    { k: 'sfx', label: t('sfx'), hint: t('sfx_hint') },
   ]
   return (
-    <div className="cf-modal" role="dialog" aria-modal="true" aria-label="音频设置">
+    <div className="cf-modal" role="dialog" aria-modal="true" aria-label={t('audio_settings')}>
       {/* 遮罩本身是按钮：点空白处关闭，键盘也能落到它上面 */}
-      <button className="cf-modal-scrim" onClick={onClose} aria-label="关闭音频设置" tabIndex={-1} />
+      <button className="cf-modal-scrim" onClick={onClose} aria-label={t('close_audio')} tabIndex={-1} />
       <div className="cf-modal-box" ref={box}>
         <div className="cf-modal-head">
           <span>
-            <h3>音频设置</h3>
+            <h3>{t('audio_settings')}</h3>
             <small>AUDIO / VOLUME</small>
           </span>
-          <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
+          <button className="cf-modal-x" onClick={onClose} title={t('close')} aria-label={t('close')}>×</button>
         </div>
         {rows.map(({ k, label, hint }) => {
           const v = Math.round(p.gains[k] * 100)
@@ -706,7 +713,7 @@ function AudioSettingsDialog({ p, onClose }: { p: FadingColdProps; onClose: () =
             <label className="cf-set-row" key={k}>
               <span className="cf-set-lb">{label}<em>{hint}</em></span>
               <input type="range" min={0} max={100} step={1} value={v}
-                aria-label={`${label}音量`}
+                aria-label={`${label} VOLUME`}
                 onChange={(e) => p.onGainChange(k, Number(e.target.value) / 100)} />
               <span className="cf-set-val">{v}</span>
             </label>
@@ -714,11 +721,11 @@ function AudioSettingsDialog({ p, onClose }: { p: FadingColdProps; onClose: () =
         })}
         <div className="cf-set-foot">
           <button className={`cf-set-btn${p.muted ? ' on' : ''}`} onClick={p.onToggleMute}>
-            <I n={p.muted ? 'mute' : 'sound'} /> {p.muted ? '已静音' : '全部静音'}
+            <I n={p.muted ? 'mute' : 'sound'} /> {p.muted ? t('muted') : t('mute_all')}
           </button>
           <span className="cf-set-foot-r">
-            <button className="cf-set-btn" onClick={p.onGainReset}>恢复默认</button>
-            <button className="cf-set-btn solid" onClick={onClose}>完成</button>
+            <button className="cf-set-btn" onClick={p.onGainReset}>{t('reset_default')}</button>
+            <button className="cf-set-btn solid" onClick={onClose}>{t('done')}</button>
           </span>
         </div>
       </div>
@@ -732,20 +739,21 @@ type Peek = { kind: 'ending'; page: FadingPage } | { kind: 'memory'; mem: Fading
 /** 回想 / 记忆详情：列表里只放摘要，完整正文在这里读。
  *  结局页的 body（ending.text）本来就在页面表里，卡片上只露了 title / hint。 */
 function PeekDialog({ p, peek, onClose }: { p: FadingColdProps; peek: Peek; onClose: () => void }) {
+  const t = useFadingUI()
   useDialogClose(onClose)
 
   if (peek.kind === 'memory') {
     const m = peek.mem
     return (
-      <div className="cf-modal" role="dialog" aria-modal="true" aria-label="记忆详情">
-        <button className="cf-modal-scrim" onClick={onClose} aria-label="关闭" tabIndex={-1} />
+      <div className="cf-modal" role="dialog" aria-modal="true" aria-label={t('memory_detail')}>
+        <button className="cf-modal-scrim" onClick={onClose} aria-label={t('close')} tabIndex={-1} />
         <div className="cf-modal-box cf-peek">
           <div className="cf-modal-head">
             <span>
               <h3>{m.name}</h3>
-              <small>R{m.route} · {String(m.index).padStart(2, '0')} · {MEM_KIND[m.kind]}</small>
+              <small>R{m.route} · {String(m.index).padStart(2, '0')} · {t(MEM_KIND_KEY[m.kind])}</small>
             </span>
-            <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
+            <button className="cf-modal-x" onClick={onClose} title={t('close')} aria-label={t('close')}>×</button>
           </div>
           <p className="cf-peek-short">{m.short}</p>
           <p className="cf-peek-text">{m.desc}</p>
@@ -758,20 +766,20 @@ function PeekDialog({ p, peek, onClose }: { p: FadingColdProps; peek: Peek; onCl
   const src = fadingCgSrc(p.data, page.cg)
   const mark = END_MARK[endKind(page.id)]
   return (
-    <div className="cf-modal" role="dialog" aria-modal="true" aria-label="结局详情">
-      <button className="cf-modal-scrim" onClick={onClose} aria-label="关闭" tabIndex={-1} />
+    <div className="cf-modal" role="dialog" aria-modal="true" aria-label={t('ending_detail')}>
+      <button className="cf-modal-scrim" onClick={onClose} aria-label={t('close')} tabIndex={-1} />
       <div className="cf-modal-box cf-peek">
         <div className="cf-modal-head">
           <span>
             <h3>{page.ending?.title}</h3>
             <small>#{String(page.id).slice(-4)} · ENDING · ROUTE {ROMAN[(page.route ?? 1) - 1] ?? 'I'}</small>
           </span>
-          <button className="cf-modal-x" onClick={onClose} title="关闭" aria-label="关闭">×</button>
+          <button className="cf-modal-x" onClick={onClose} title={t('close')} aria-label={t('close')}>×</button>
         </div>
         {src && <figure className="cf-peek-art"><img src={src} alt={page.cg || ''} /></figure>}
         <p className="cf-peek-text"><RedactedText text={page.text} shownCount={stripRedactionTags(page.text).length} animate={false} /></p>
         {page.ending?.hint && <p className="cf-peek-hint">{page.ending.hint}</p>}
-        {mark && <div className="cf-peek-mark"><img src={mark.src} alt={mark.alt} /></div>}
+        {mark && <div className={`cf-peek-mark cf-peek-mark-${endKind(page.id)}`}><img src={mark.src} alt={mark.alt} /></div>}
       </div>
     </div>
   )
@@ -779,18 +787,52 @@ function PeekDialog({ p, peek, onClose }: { p: FadingColdProps; peek: Peek; onCl
 
 /** 设置键：开合状态提到 FadingCold，弹窗要渲染在外框层（不能被正文区裁掉）。 */
 function AudioSettingsButton({ open, onOpen }: { open: boolean; onOpen: () => void }) {
+  const t = useFadingUI()
   return (
     <button className={`cf-sound${open ? ' on' : ''}`} onClick={onOpen}
-      title="音频设置" aria-haspopup="dialog" aria-expanded={open}>
+      title={t('audio_settings')} aria-haspopup="dialog" aria-expanded={open}>
       <I n="sliders" />
     </button>
   )
 }
 
+const STATUS_GLYPHS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#@%&?/\\|<>+=*'
+
+function AnimatedValue({ value }: { value: number }) {
+  const [shown, setShown] = useState(String(value))
+  const previous = useRef(value)
+  useEffect(() => {
+    const from = previous.current
+    previous.current = value
+    if (from === value || value > from) {
+      setShown(String(value))
+      return
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(String(value))
+      return
+    }
+    const scramble = () => Array.from({ length: 3 }, () => STATUS_GLYPHS[Math.floor(Math.random() * STATUS_GLYPHS.length)]).join('')
+    const started = performance.now()
+    setShown(scramble())
+    const timer = window.setInterval(() => {
+      if (performance.now() - started < 240) setShown(scramble())
+      else {
+        window.clearInterval(timer)
+        setShown(String(value))
+      }
+    }, 48)
+    return () => window.clearInterval(timer)
+  }, [value])
+  return <span className="sb-num">{shown}</span>
+}
+
 /** 状态栏：体力/粮食上排，侵蚀长条下排。内存按钮不在这里（见 MemButton）。 */
-function StatusBar({ status, defs, erosionActive }: {
+function StatusBar({ status, defs, erosionActive, feedback }: {
   status: FadingStatus; defs: FadingData['status']; erosionActive: boolean
+  feedback: FadingStatusFeedback | null
 }) {
+  const t = useFadingUI()
   const find = (k: 'hp' | 'food' | 'erosion') => defs.items.find((s) => s.key === k)
   const hp = find('hp'), food = find('food'), eros = find('erosion')
   const pct = eros?.max ? Math.round((status.erosion / eros.max) * 100) : 0
@@ -801,22 +843,36 @@ function StatusBar({ status, defs, erosionActive }: {
       <div className="sb-main">
         {/* 体力/粮食只留图标与数字，名称不再写出来（图标本身就是识别符） */}
         <div className="sb-row1">
-          <div className="sb-stat" title={hp ? `体力 ${hp.max}` : undefined}>
-            <PNGIcon kind="hp" />
-            <b>{status.hp}<small>/{hp?.max ?? defs.max.hp}</small></b>
+          <div className="sb-stat-wrap">
+            <div className="sb-stat" title={hp ? `${hp.name} ${hp.max}` : undefined}>
+              <PNGIcon kind="hp" />
+              <b><AnimatedValue value={status.hp} /><small>/{hp?.max ?? defs.max.hp}</small></b>
+            </div>
+            {feedback && feedback.hp < 0 && (
+              <span key={`hp-${feedback.id}`} className="sb-delta sb-delta-hp" aria-hidden="true">
+                <PNGIcon kind="hp" />{feedback.hp}
+              </span>
+            )}
           </div>
-          <div className="sb-stat" title={food ? `粮食 ${food.max} 份` : undefined}>
-            <PNGIcon kind="food" />
-            <b>{status.food}<small>/{food?.max ?? defs.max.food}</small></b>
+          <div className="sb-stat-wrap">
+            <div className="sb-stat" title={food ? `${food.name} ${food.max}` : undefined}>
+              <PNGIcon kind="food" />
+              <b><AnimatedValue value={status.food} /><small>/{food?.max ?? defs.max.food}</small></b>
+            </div>
+            {feedback && feedback.food < 0 && (
+              <span key={`food-${feedback.id}`} className="sb-delta sb-delta-food" aria-hidden="true">
+                <PNGIcon kind="food" />{feedback.food}
+              </span>
+            )}
           </div>
         </div>
         <div className={`sb-row2 ${erosionActive ? '' : 'off'}`}>
           {erosionActive ? (
             <>
-              <span className="sb-lb"><PNGIcon kind="erosion" /> {eros?.name || '侵蚀度'}</span>
+              <span className="sb-lb"><PNGIcon kind="erosion" /> {eros?.name || t('erosion')}</span>
               <div className="sb-track">
                 <i style={{ width: `${pct}%` }} />
-                {mark != null && <em style={{ left: `${mark}%` }} title={`达到 ${eros?.second} 进入侵蚀状态`} />}
+                {mark != null && <em style={{ left: `${mark}%` }} title={t('erosion_threshold', { n: eros?.second ?? 0 })} />}
               </div>
               <span className="sb-pct">{pct}%</span>
             </>
@@ -836,25 +892,28 @@ function StatusBar({ status, defs, erosionActive }: {
 function MemButton({ skin, onClick }: {
   skin: 'marian' | 'commander' | 'erosion'; onClick: () => void
 }) {
+  const t = useFadingUI()
   return (
-    <button className={`sb-mem sb-mem-card sb-mem-${skin}`} onClick={onClick} title="内存 / MEMORY">
+    <button className={`sb-mem sb-mem-card sb-mem-${skin}`} onClick={onClick} title={t('memory_card_title')}>
       <img src={MEM_BTN(skin)} alt="" draggable={false} />
-      <span className="sb-mem-lb">内存</span>
+      <span className="sb-mem-lb">{t('memory')}</span>
     </button>
   )
 }
 
 /** 游戏内右上角导航：回退上一节点 / 返回主菜单（对应原版两枚图标按钮） */
 function GameNav({ canBack, onBack, onHome }: { canBack: boolean; onBack: () => void; onHome: () => void }) {
+  const t = useFadingUI()
   return (
     <div className="cf-gamenav">
-      <button className="cf-navbtn" disabled={!canBack} onClick={onBack} title="返回上一节点"><I n="back" /></button>
-      <button className="cf-navbtn" onClick={onHome} title="返回主菜单"><I n="exit" /></button>
+      <button className="cf-navbtn" disabled={!canBack} onClick={onBack} title={t('back_node')}><I n="back" /></button>
+      <button className="cf-navbtn" onClick={onHome} title={t('back_home')}><I n="exit" /></button>
     </div>
   )
 }
 
 export default function FadingCold(p: FadingColdProps) {
+  const t = useFadingUI()
   const { data, view, route, pageText, cgSrc, cgAlt, status, choices, ending,
     endingId, memoryUnlocked, found, endings, memories, unlockedMemories } = p
 
@@ -1062,8 +1121,8 @@ export default function FadingCold(p: FadingColdProps) {
                     连 children 一起被摇掉；不要封装成组件，否则链接文字仍会进包。 */}
                 {import.meta.env.DEV && (
                   <>
-                    <a className="cf-devlink" href="/game/fadingaffection/editor" title="UI 拼图编辑器（仅开发模式）">🛠 UI 编辑器</a>
-                    <button className="cf-devlink" title="强制解锁全部进度（仅开发模式）" onClick={() => {
+                    <a className="cf-devlink" href="/game/fadingaffection/editor" title={t('dev_ui_editor')}>🛠 UI 编辑器</a>
+                    <button className="cf-devlink" title={t('dev_unlock_all')} onClick={() => {
                       const pages = Object.values(p.data.pages)
                       localStorage.setItem('nikke_fading_seen_v1', JSON.stringify(pages.map(x => x.id)))
                       localStorage.setItem('nikke_fading_endings_v1', JSON.stringify(pages.filter(x => x.ending).map(x => x.id)))
@@ -1073,15 +1132,15 @@ export default function FadingCold(p: FadingColdProps) {
                 )}
                 {/* 手机端顶栏位置用来放全屏（正式功能）；dev 按钮由 CSS 在窄屏隐藏 */}
                 <button className="cf-devlink cf-fullscreen" onClick={toggleFullscreen}
-                  title={isFullscreen ? '退出全屏' : '小游戏全屏'}>
-                  {isFullscreen ? '⛶ 退出' : '⛶ 全屏'}
+                  title={isFullscreen ? t('exit_fullscreen') : t('game_fullscreen')}>
+                  {isFullscreen ? `⛶ ${t('close')}` : `⛶ ${t('game_fullscreen')}`}
                 </button>
                 <button className="cf-sound" onClick={p.onToggleMute}
-                  title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
+                  title={p.muted ? t('unmute') : t('mute')} aria-pressed={p.muted}>
                   <I n={p.muted ? 'mute' : 'sound'} />
                 </button>
                 <AudioSettingsButton open={settingsOpen} onOpen={() => setSettingsOpen(true)} />
-                <button className="cf-clear" onClick={p.onClearSave} title="清除存档" aria-label="清除存档"><I n="trash" /></button>
+                <button className="cf-clear" onClick={p.onClearSave} title={t('clear_save')} aria-label={t('clear_save')}><I n="trash" /></button>
               </span>
             </div>
             <div className="cf-hero">
@@ -1093,21 +1152,22 @@ export default function FadingCold(p: FadingColdProps) {
             </div>{/* /cf-home-head */}
             <div className="cf-home-body">
             <div className="cf-home-art" aria-hidden="true">{/* 标题屏这里全留给动态 CG */}</div>
-            {/* 三个动作按钮贴在分割线上方，导语落到线下——标题屏没有卡片，
+            {/* 动作按钮贴在分割线上方，导语落到线下——标题屏没有卡片，
                 按钮留在原位会让下半块空成一片。 */}
             <div className="cf-acts cf-home-acts">
               {/* 原版在主菜单点「탐색 시작」才进关卡选择，这里照做：开始记录 = 切到关卡屏 */}
               <button className="cf-btn on" onClick={() => p.onNavigate('routes')}>
-                <I n="play" /> 开始记录
+                <I n="play" /> {t('start_record')}
               </button>
-              <button className="cf-btn" onClick={() => p.onNavigate('memories')}><I n="mem" /> 记忆 {unlockedMemories.size}/{data.memories.length}</button>
-              <button className="cf-btn" onClick={() => p.onNavigate('endings')}><I n="book" /> 回想 {found.length}/{endings.length}</button>
+              <Link className="cf-btn cf-story-link" to="/story/663" title={t('enter_story')}>
+                <I n="book" /> {t('story')}
+              </Link>
+              <button className="cf-btn" onClick={() => p.onNavigate('memories')}><I n="mem" /> {t('memories')} {unlockedMemories.size}/{data.memories.length}</button>
+              <button className="cf-btn" onClick={() => p.onNavigate('endings')}><I n="book" /> {t('endings')} {found.length}/{endings.length}</button>
             </div>
             <div className="cf-home-block">
             <p className="cf-lead">
-              三段记录，三种人生。体力、粮食、侵蚀度标记着玛丽亚的处境，
-              某些分支只有达成特定状态才会开启——死亡并非终点，
-              留下的记忆是解锁新路线与新地点的钥匙。
+              {t('home_lead')}
             </p>
             </div>{/* /cf-home-block */}
             </div>{/* /cf-home-body */}
@@ -1129,10 +1189,10 @@ export default function FadingCold(p: FadingColdProps) {
             <div className="cf-inner cf-inner-fill" key={p.view}>
             <div className="cf-doc-head">
               <button className="cf-back" onClick={() => p.onNavigate('home')}>
-                <I n="arrow" /> 返回主菜单
+                <I n="arrow" /> {t('back_home')}
               </button>
               <div className="cf-list-head">
-                <h2>记录选择</h2>
+                <h2>{t('route_select')}</h2>
                 <small>{data.routes.length} RECORDS / SUBJECT MARIA</small>
               </div>
             </div>
@@ -1156,7 +1216,7 @@ export default function FadingCold(p: FadingColdProps) {
                     )}
                     <div className="cf-rc-body">
                       <h4>{ok ? r.name : 'NO SIGNAL'}</h4>
-                      <p>{ok ? r.desc : `观看【${req?.name ?? '前一条记录的结局'}】后解锁`}</p>
+                      <p>{ok ? r.desc : t('unlock_after_ending', { name: req?.name || t('previous_ending') })}</p>
                       <div className="go">{ok ? <>OPEN <PNGIcon kind="arrow" /></> : <><PNGIcon kind="lock" /> LOCKED</>}</div>
                     </div>
                   </div>
@@ -1179,10 +1239,10 @@ export default function FadingCold(p: FadingColdProps) {
           <div className="cf-frame"><div className="cf-inner cf-inner-fill" key={p.view}>
             <div className="cf-doc-head">
               <button className="cf-back" onClick={() => p.onNavigate(p.backView)}>
-                <I n="arrow" /> {p.backView === 'game' ? '返回剧情' : '返回路线选择'}
+                <I n="arrow" /> {p.backView === 'game' ? t('back_story') : t('back_routes')}
               </button>
               <div className="cf-list-head">
-                <h2>{view === 'endings' ? '回想' : '记忆'}</h2>
+                <h2>{view === 'endings' ? t('endings') : t('memories')}</h2>
                 <small>{view === 'endings' ? `${found.length} / ${endings.length} ENDINGS` : `${unlockedMemories.size} / ${data.memories.length} MEMORIES`}</small>
               </div>
             </div>
@@ -1202,8 +1262,8 @@ export default function FadingCold(p: FadingColdProps) {
                         <div className="cf-tile-img">{got && src ? <img src={src} alt="" loading="lazy" /> : '?'}</div>
                         <div className="cf-tile-meta">
                           <div className="cf-tile-id"><span>#{String(ep.id).slice(-4)}</span>{got && <I n="arrow" />}</div>
-                          <div className="cf-tile-name">{got ? ep.ending?.title : '尚未收录的结局'}</div>
-                          <div className="cf-tile-hint">{got ? ep.ending?.hint : '继续探索以解锁'}</div>
+                          <div className="cf-tile-name">{got ? ep.ending?.title : t('ending_locked')}</div>
+                          <div className="cf-tile-hint">{got ? ep.ending?.hint : t('explore_unlock')}</div>
                         </div>
                       </div>
                     )
@@ -1212,7 +1272,7 @@ export default function FadingCold(p: FadingColdProps) {
               ) : (
                 <>
                   <p className="cf-lead" style={{ textAlign: 'left', margin: '0 0 16px' }}>
-                    记录在 NIMPH 里的记忆，是开启新路线的钥匙。
+                    {t('memories_lead')}
                   </p>
                   <div className="cf-mgrid">
                     {memories.map((m) => {
@@ -1230,7 +1290,7 @@ export default function FadingCold(p: FadingColdProps) {
                             <span>R{m.route} · {String(m.index).padStart(2, '0')}</span>
                             {got && <I n="arrow" />}
                           </div>
-                          <div className="cf-memo-name">{got ? m.name : '未储存的记忆'}</div>
+                          <div className="cf-memo-name">{got ? m.name : t('memory_locked')}</div>
                           <div className="cf-memo-short">{got ? m.short : '???'}</div>
                         </div>
                       )
@@ -1256,7 +1316,7 @@ export default function FadingCold(p: FadingColdProps) {
             {p.isRegionSelect ? (
               <>
                 <RegionMap choices={choices} />
-                <p className="cf-map-hint">在地图上选择要前往的地区</p>
+                <p className="cf-map-hint">{t('choose_region')}</p>
                 <div className="cf-script"><RedactedText text={pageText} shownCount={stripRedactionTags(pageText).length} /></div>
               </>
             ) : (
@@ -1284,7 +1344,7 @@ export default function FadingCold(p: FadingColdProps) {
                         原作只有一枚「Checked」戳、没有百分比，早年那行「Checked +1%」的 +1% 是编的。 */}
                     {c.checked && <span className="cf-checked"><I n="check" />CHECKED</span>}
                   </span>
-                  {!c.locked && <OptionStatusChange change={c.statusChange} />}
+                  {c.checked && !c.locked && <OptionStatusChange change={c.statusChange} />}
                   {/* HINT 徽章常驻：原版即使选项被锁（如未拿到「袭击」）也贴着 HINT，
                       解锁条件只管提示文字 / 能不能点。徽章占据右侧箭头的位置。 */}
                   {c.hint
@@ -1297,14 +1357,14 @@ export default function FadingCold(p: FadingColdProps) {
               {p.canNext && !p.isRegionSelect && (
                 <button className="cf-next" style={order(choices.length)}
                   onClick={(e) => { e.stopPropagation(); p.onNext() }}>
-                  <span className="tx">点击画面继续</span>
+                  <span className="tx">{t('click_continue')}</span>
                   <span className="arrow"><I n="arrow" /></span>
                 </button>
               )}
               {ending && (
                 <div className="cf-end-block" style={{ textAlign: 'center', marginTop: 18, ...order(choices.length) }}>
                   {/* 原版这里不是文字，而是一枚按结局类型盖下去的字标 */}
-                  <div className="cf-end-mark">
+                  <div className={`cf-end-mark cf-end-mark-${endK}`}>
                     {endMark && <img src={endMark.src} alt={endMark.alt} />}
                     <span className="no">#{endingId}</span>
                   </div>
@@ -1314,27 +1374,27 @@ export default function FadingCold(p: FadingColdProps) {
                     /* 结局页落上去只是「待确认」：这段记忆要按「重新记录」才写进存档，
                        点「返回上一节点」等于放弃，所以文案要跟状态走 */
                     <div className="unlock" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, margin: '20px 0', padding: '9px 16px', border: '1px solid var(--fline)', color: 'var(--fsteel)', fontSize: 12 }}>
-                      <I n="mem" /> {endRecorded ? '已记录：' : '记录后可获得：'}{memoryUnlocked.name}
+                      <I n="mem" /> {endRecorded ? t('memory_saved_prefix') : t('memory_pending_prefix')}{memoryUnlocked.short}
                     </div>
                   )}
                   <div className="acts" style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
                     <button className="cf-btn on" onClick={(e) => {
                       e.stopPropagation()
                       /* 文案在点击这一刻抓下来：紧接着就会换幕回到路线开场，ending 会变成 null */
-                      notify(endRecorded ? '无新纪录' : `已记录：${ending.title}`)
+                      notify(endRecorded ? t('no_new_record') : t('recorded', { name: ending.title }))
                       p.onRestart()
                     }}>
-                      <I n="refresh" /> 重新记录
+                      <I n="refresh" /> {t('restart')}
                     </button>
                     <button className="cf-btn" onClick={(e) => { e.stopPropagation(); p.onNavigate('endings') }}>
-                      <I n="book" /> 回想
+                      <I n="book" /> {t('endings')}
                     </button>
                   </div>
                   {/* 这一行把规则说清楚：结局页只是待确认，返回上一节点不会留档 */}
                   <p className="cf-end-note">
                     {endRecorded
-                      ? '该结局已记录在档案中'
-                      : '仅「重新记录」会保存，返回上一节点视为放弃'}
+                      ? t('ending_recorded_note')
+                      : t('ending_unrecorded_note')}
                   </p>
                 </div>
               )}
@@ -1350,11 +1410,11 @@ export default function FadingCold(p: FadingColdProps) {
     <>
           <div className="cf-bar">
         <span><I n="arrow" /> CHAPTER {ROMAN[routeNo - 1] ?? routeNo} · {routeNo === 3 ? 'NO.7' : 'MARIA'}</span>
-        <span className="cf-bar-route"><I n="file" /> {route?.name || '记录'}</span>
+        <span className="cf-bar-route"><I n="file" /> {route?.name || t('record')}</span>
         <span className="cf-bar-right">
           <b><I n="chip" /> MEM {unlockedMemories.size} / ARC {found.length}</b>
           <button className="cf-sound" onClick={p.onToggleMute}
-            title={p.muted ? '取消静音' : '静音'} aria-pressed={p.muted}>
+            title={p.muted ? t('unmute') : t('mute')} aria-pressed={p.muted}>
             <I n={p.muted ? 'mute' : 'sound'} />
           </button>
           <AudioSettingsButton open={settingsOpen} onOpen={() => setSettingsOpen(true)} />
@@ -1364,7 +1424,7 @@ export default function FadingCold(p: FadingColdProps) {
       <div className={`cf-game cf-game-fixed ${ending ? 'cf-end-' + endKind(endingId) : ''}`}>
         <div className="cf-head">
           <div className="ix">{ROMAN[routeNo - 1] ?? routeNo}</div>
-          <h3>{route?.name || '记录'}</h3>
+          <h3>{route?.name || t('record')}</h3>
           <div className="sub"><I n="target" /> SUBJECT {routeNo === 3 ? 'NO.7' : 'MARIA'} / {String(routeNo).padStart(3, '0')}</div>
         </div>
         {/* key=sceneKey：每换一幕重挂载，让淡入 / CG 翻页 / 选项级联重新播放 */}
@@ -1382,7 +1442,7 @@ export default function FadingCold(p: FadingColdProps) {
           }}>
           {body}
         </div>{/* /cf-scroll */}
-        <StatusBar status={status} defs={data.status} erosionActive={p.erosionActive} />
+        <StatusBar status={status} defs={data.status} erosionActive={p.erosionActive} feedback={p.statusFeedback} />
         <MemButton skin={memSkin(routeNo, endK, erosionMode)} onClick={p.onMemClick} />
       </div>
     </>

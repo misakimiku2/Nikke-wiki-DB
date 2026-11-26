@@ -2122,6 +2122,14 @@ img { display: block; }
   clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
 }
 .story-grid .story-card:hover { border-color: var(--line-2); transform: translateY(-3px); }
+.story-grid .story-card-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column;
+  color: inherit; text-decoration: none;
+}
+.story-grid .story-card-main:focus-visible,
+.story-grid .story-branch-game:focus-visible {
+  outline: 2px solid var(--red); outline-offset: -3px;
+}
 .story-grid .story-cover {
   position: relative; width: 100%; aspect-ratio: 3 / 4;
   overflow: hidden; background: var(--surface-2);
@@ -2200,6 +2208,24 @@ img { display: block; }
   font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace; font-size: 9.5px;
   letter-spacing: .07em; color: var(--dim-2);
 }
+.story-grid .story-branch-game {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--red-line);
+  background: linear-gradient(110deg, var(--red-soft), transparent 88%);
+  text-decoration: none; transition: background .18s, color .18s;
+}
+.story-branch-title {
+  font-size: 11px; font-weight: 900; letter-spacing: .045em; color: var(--text);
+  white-space: nowrap;
+}
+.story-branch-enter {
+  margin-top: 3px;
+  font-size: 10px; font-weight: 700; color: var(--red); white-space: nowrap;
+}
+.story-grid .story-branch-game:hover { background: var(--red); }
+.story-grid .story-branch-game:hover .story-branch-title,
+.story-grid .story-branch-game:hover .story-branch-enter { color: #fff; }
 .story-meta .tag {
   color: var(--cyan); border: 1px solid var(--cyan);
   padding: 0 5px; line-height: 1.5;
@@ -4531,6 +4557,8 @@ body.immersive-mode .cv-shell .cv-main {
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
 .eh-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.eh-game-link { border-color: var(--red-line); color: var(--red); }
+.eh-game-link:hover { border-color: var(--red); background: var(--red); color: #fff; }
 
 /* 没有专属 poster、也没有封面 CG 的单元：退化为纯文字卡片，不留空图区 */
 .event-hero.no-art { grid-template-columns: minmax(0, 1fr); }

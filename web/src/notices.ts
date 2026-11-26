@@ -28,6 +28,68 @@ export type Notice = {
 
 export const NOTICES: Notice[] = [
   {
+    slug: 'marian-minigame-four-languages',
+    date: '2026-11-26',
+    tag: '功能',
+    title: {
+      zh: 'Marian 接入「FADING AFFECTION」小游戏，玛丽亚博士资料与四语版上线',
+      en: 'Marian gets FADING AFFECTION, Doctor Maria and four-language mini-game support',
+      ko: 'Marian에 「FADING AFFECTION」 미니게임과 마리아 박사 자료, 4개 언어 지원 추가',
+      ja: 'Marianに「FADING AFFECTION」ミニゲームとマリア博士資料、4言語対応を追加',
+    },
+    thumb: '/charmi/c9041_00.webp',
+    body: [
+      {
+        zh: 'Marian 活动剧情卡片与章节目录主视觉新增「FADING AFFECTION」分支小游戏入口；小游戏主界面也新增「活动剧情」按钮，可随时返回 Marian。',
+        en: 'The Marian event card and chapter-page key visual now link to the FADING AFFECTION mini-game. The game’s main menu also has an Event Story button for returning to Marian at any time.',
+        ko: 'Marian 이벤트 카드와 챕터 목록 키 비주얼에 「FADING AFFECTION」 분기 미니게임 진입점이 추가되었습니다. 미니게임 메인 화면에도 「이벤트」 버튼이 생겨 언제든 Marian으로 돌아갈 수 있습니다.',
+        ja: 'Marianのイベントカードとチャプター一覧のキービジュアルに「FADING AFFECTION」ミニゲーム入口を追加しました。ゲームのメイン画面にも「イベント」ボタンが加わり、いつでもMarianへ戻れます。',
+      },
+      {
+        img: '/notice/marian-minigame-home.webp',
+        cap: {
+          zh: 'FADING AFFECTION 小游戏主界面',
+          en: 'FADING AFFECTION main menu',
+          ko: 'FADING AFFECTION 미니게임 메인 화면',
+          ja: 'FADING AFFECTION ミニゲームのメイン画面',
+        },
+      },
+      {
+        zh: '玛丽亚博士资料正式收录：官方全身立绘、头像与实时 Spine 模型均已上线，并补入 Marian 登场角色与角色详情页。',
+        en: 'Doctor Maria is now in the archive with her official full-body art, portrait and live Spine model, and has been added to Marian’s featured characters and character profile.',
+        ko: '마리아 박사 자료를 정식 수록했습니다: 공식 전신 일러스트, 초상, 실시간 Spine 모델을 모두 공개하고 Marian 등장 캐릭터와 캐릭터 상세 페이지에도 추가했습니다.',
+        ja: 'マリア博士の資料を正式収録しました：公式全身立ち絵、ポートレート、リアルタイムSpineモデルを公開し、Marianの登場キャラクターとキャラクター詳細ページにも追加しています。',
+      },
+      {
+        img: '/char/c9041_00.webp',
+        cap: {
+          zh: '玛丽亚博士官方立绘',
+          en: 'Doctor Maria official full-body art',
+          ko: '마리아 박사 공식 전신 일러스트',
+          ja: 'マリア博士の公式全身立ち絵',
+        },
+      },
+      {
+        zh: '小游戏完成中 / 英 / 韩 / 日四语化：265 页剧情、172 个选项、路线、提示、45 条记忆与 35 个结局均使用客户端官方文本；直接使用网站顶栏语言切换，当前节点与本地存档保持不变。',
+        en: 'The mini-game is now localized in Chinese, English, Korean and Japanese: 265 story pages, 172 choices, routes, hints, 45 memories and 35 endings use the client’s official text. Use the website’s top-bar language switch; your current node and local save are preserved.',
+        ko: '미니게임이 중국어 / 영어 / 한국어 / 일본어 4개 언어를 지원합니다: 265개 스토리 페이지, 172개 선택지, 경로, 힌트, 기억 45개, 결말 35개에 클라이언트 공식 텍스트를 사용했습니다. 웹사이트 상단 언어 전환을 그대로 사용하며 현재 노드와 로컬 저장 데이터는 유지됩니다.',
+        ja: 'ミニゲームを中国語 / English / 한국어 / 日本語の4言語に対応しました：265ページ、172選択肢、ルート、ヒント、記憶45件、結末35件にクライアント公式テキストを使用しています。サイト上部の言語切替をそのまま使え、現在のノードとローカルセーブは保持されます。',
+      },
+      {
+        zh: '小游戏状态与档案系统完善：体力 / 粮食 / 侵蚀度按选项消耗，返回上一节点会恢复对应状态；结局需确认「重新记录」后入库，记忆 / 回想进度即时保存，路线 NEW 角标按实际访问状态更新。新增音量设置、静音、全屏与清除存档入口。',
+        en: 'The status and archive systems are complete: HP / food / erosion change by choice, and going back restores the matching state. Endings are saved only after confirming Record Again; memory and ending progress saves immediately, and route NEW badges follow actual visits. Volume, mute, fullscreen and clear-save controls are added.',
+        ko: '상태와 기록 시스템을 보완했습니다: 선택지에 따라 체력 / 식량 / 침식도가 소모되며 이전 노드로 돌아가면 해당 상태가 복원됩니다. 결말은 「다시 기록」을 확인해야 저장되고, 기억 / 결말 진행도는 즉시 저장되며 경로 NEW 표시는 실제 방문 상태를 따릅니다. 음량, 음소거, 전체화면, 저장 데이터 삭제 기능도 추가했습니다.',
+        ja: 'ステータスとアーカイブシステムを整えました：選択肢に応じて体力 / 食料 / 侵蝕度が変化し、前のノードへ戻ると対応する状態が復元されます。結末は「もう一度記録」の確認後に保存され、記憶 / 結末の進捗は即時保存、ルートのNEW表示は実際の訪問状態に追従します。音量、ミュート、全画面、セーブ消去も追加しました。',
+      },
+      {
+        zh: '侵蚀演出与手机端体验优化：侵蚀状态加入局部强故障、专用音效与白色记忆卡表现，涂改笔刷改为中央无缝平铺；360px 手机端主菜单四个按钮固定单行，长文本与记忆 / 回想列表同步适配。',
+        en: 'Erosion effects and mobile play are improved: erosion now uses localized heavy glitching, a dedicated sound effect and a white memory card, while the redaction brush tiles seamlessly from the center. On 360px phones the four main-menu buttons stay in one row, with long text and memory / ending lists adapted to fit.',
+        ko: '침식 연출과 모바일 경험을 개선했습니다: 침식 상태에 국소 강한 글리치, 전용 효과음, 흰색 메모리 카드를 적용하고 브러시는 중앙에서 끊김 없이 타일링됩니다. 360px 휴대폰에서는 메인 메뉴 네 버튼이 한 줄로 유지되며 긴 문장과 기억 / 결말 목록도 함께 최적화했습니다.',
+        ja: '侵蝕演出とモバイル体験を改善しました：侵蝕状態に局部の強いグリッチ、専用効果音、白いメモリカードを追加し、黒塗りブラシは中央からシームレスにタイル状に繰り返します。360pxスマートフォンではメインメニューの4ボタンが1行に固定され、長文と記憶 / 結末一覧も最適化されます。',
+      },
+    ],
+  },
+  {
     slug: 'cg-covers-refresh',
     date: '2026-11-22',
     tag: '数据',

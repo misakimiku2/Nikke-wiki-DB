@@ -84,33 +84,42 @@ export default function Story() {
         <div className="story-grid">
           {shown.map((u) => {
             const title = pickLang(lang, u.title, u.titles?.en, u.titles?.ko, u.titles?.ja)
+            const hasBranchGame = u.id === 663
             return (
-              <Link key={u.id} to={`/story/${u.id}`} className="story-card">
-                <div className="story-cover">
-                  {u.cover
-                    ? <img src={`/cover/${u.cover}.webp`} alt="" loading="lazy" />
-                    : (
-                      /* 没有可用 CG 的剧情用排印式封面兜底：首字描边水印。
-                         标题、句数已在卡片正文里，这里不再重复。 */
-                      <span className="story-cover-fallback" aria-hidden>
-                        <span className="scf-mark">{title.slice(0, 1)}</span>
-                      </span>
-                    )}
-                  <span className="story-no">
-                    {u.chapter !== null && u.chapter !== undefined
-                      ? String(u.chapter).padStart(2, '0')
-                      : u.label.slice(0, 2)}
-                  </span>
-                </div>
-                <div className="story-body">
-                  <h3>{title}</h3>
-                  <div className="story-meta">
-                    <span>{nf(u.lines)} {t('unit_lines')}</span>
-                    <span>{u.segments} {t('unit_segs')}</span>
-                    {u.source === 'locale_fill' && <span className="tag">{t('story_fill')}</span>}
+              <article key={u.id} className={`story-card${hasBranchGame ? ' has-branch-game' : ''}`}>
+                <Link to={`/story/${u.id}`} className="story-card-main">
+                  <div className="story-cover">
+                    {u.cover
+                      ? <img src={`/cover/${u.cover}.webp`} alt="" loading="lazy" />
+                      : (
+                        /* 没有可用 CG 的剧情用排印式封面兜底：首字描边水印。
+                           标题、句数已在卡片正文里，这里不再重复。 */
+                        <span className="story-cover-fallback" aria-hidden>
+                          <span className="scf-mark">{title.slice(0, 1)}</span>
+                        </span>
+                      )}
+                    <span className="story-no">
+                      {u.chapter !== null && u.chapter !== undefined
+                        ? String(u.chapter).padStart(2, '0')
+                        : u.label.slice(0, 2)}
+                    </span>
                   </div>
-                </div>
-              </Link>
+                  <div className="story-body">
+                    <h3>{title}</h3>
+                    <div className="story-meta">
+                      <span>{nf(u.lines)} {t('unit_lines')}</span>
+                      <span>{u.segments} {t('unit_segs')}</span>
+                      {u.source === 'locale_fill' && <span className="tag">{t('story_fill')}</span>}
+                    </div>
+                  </div>
+                </Link>
+                {hasBranchGame && (
+                  <Link to="/game/fadingaffection" className="story-branch-game">
+                    <span className="story-branch-title">FADING AFFECTION</span>
+                    <span className="story-branch-enter">{t('story_branch_enter')}</span>
+                  </Link>
+                )}
+              </article>
             )
           })}
         </div>

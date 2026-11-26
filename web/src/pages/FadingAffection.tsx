@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   loadFadingData, fadingCgSrc, choicesFor, firstFor, endingsOf,
-  memoryGrantedHere, unlockedMemoryIds, locationOf, applyFadingStatusChange,
-  type FadingData, type FadingPage, type FadingRoute, type UnlockReq, type FadingStatus,
+  memoryGrantedHere, unlockedMemoryIds, locationOf, applyFadingStatusChange, localizeFadingData,
+  type FadingData, type FadingPage, type FadingRoute, type UnlockReq, type FadingStatus, type FadingStatusFeedback,
 } from '../fadingData'
 import { usePageTitle } from '../usePageTitle'
+import { useLang } from '../lang'
+import { useFadingUI } from '../fadingI18n'
 import { FadingAudio, loadFadingAudio, DEFAULT_GAINS, type FadingAudioMap, type FadingAudioGains } from '../fadingAudio'
 import FadingCold, { type ColdView, type ColdChoice } from './FadingCold'
 
@@ -52,10 +54,16 @@ export function ambientKeyFor(node: number | null): string | null {
 }
 
 /** 开场选地点的三条专用音效（旧市区 / 湖 / 新市区） */
-const FIRSTSELECT: Record<string, string> = {
-  旧市区: 'uis_mini_fad_special_firstselect_city',
-  湖: 'uis_mini_fad_special_firstselect_river',
-  新市区: 'uis_mini_fad_special_firstselect_newcity',
+function firstSelectSfx(dest: number | null): string {
+  const region = Math.floor((dest ?? 0) / 100) % 10
+  return region === 2 ? 'uis_mini_fad_special_firstselect_river'
+    : region === 3 ? 'uis_mini_fad_special_firstselect_newcity'
+      : 'uis_mini_fad_special_firstselect_city'
+}
+
+function firstSelectRegion(dest: number | null): 'old' | 'lake' | 'city' {
+  const region = Math.floor((dest ?? 0) / 100) % 10
+  return region === 2 ? 'lake' : region === 3 ? 'city' : 'old'
 }
 
 /** 主菜单曲 = `event_bgm_maria-n_smile`。
@@ -84,13 +92,18 @@ function routeUnlocked(route: FadingRoute, found: number[]): boolean {
 }
 
 export default function FadingAffection() {
-  usePageTitle('FADING AFFECTION · 渐逝的爱意')
-  const [data, setData] = useState<FadingData | null>(null)
+  const { lang } = useLang()
+  const t = useFadingUI()
+  const [rawData, setRawData] = useState<FadingData | null>(null)
+  const data = useMemo(() => rawData ? localizeFadingData(rawData, lang) : null, [rawData, lang])
+  usePageTitle(data ? `${data.title} · ${t('game_subtitle')}` : 'FADING AFFECTION')
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<ColdView>('home')
   const [route, setRoute] = useState<FadingRoute | null>(null)
   const [node, setNode] = useState<number | null>(null)
   const [status, setStatus] = useState<FadingStatus>({ hp: 10, food: 1, erosion: 0 })
+  const [statusFeedback, setStatusFeedback] = useState<FadingStatusFeedback | null>(null)
+  const feedbackId = useRef(0)
   const [history, setHistory] = useState<{ id: number; text: string; title?: string; status: FadingStatus }[]>([])
   const [found, setFound] = useState<number[]>(() => loadArr(LS_ENDINGS))
   const [checked, setChecked] = useState<number[]>(() => loadArr(LS_CHECKED))
@@ -125,11 +138,18 @@ export default function FadingAffection() {
 
   useEffect(() => {
     loadFadingData().then((d) => {
-      setData(d)
+      setRawData(d)
       setStatus({ ...d.status.init })
+      setStatusFeedback(null)
     }).catch((e) => setError(String(e)))
     loadFadingAudio().then(setAudioMap).catch(() => setAudioMap({}))
   }, [])
+  useEffect(() => {
+    if (!data) return
+    setRoute((current) => current ? data.routes.find((r) => r.no === current.no) ?? current : current)
+    setHintToast(null)
+    setHintClosing(false)
+  }, [data])
   /* 初始静音 / 音量在构造时就带上，别指望 effect 补——实例比 effect 晚到（见 fadingAudio 注释） */
   useEffect(() => {
     if (audioMap && !sound.current) sound.current = new FadingAudio(audioMap, { muted, gains })
@@ -293,13 +313,14 @@ export default function FadingAffection() {
   }
 
   function reqLockText(req: UnlockReq): string {
-    if (req.kind === 'memory') return `需要【${req.name}】`
-    if (req.kind === 'ending') return `观看【${req.name}】结局后解锁`
-    return `需要${req.name}`
+    if (req.kind === 'memory') return t('req_memory', { name: req.name })
+    if (req.kind === 'ending') return t('req_ending', { name: req.name })
+    const foodName = data?.status.items.find((item) => item.key === 'food')?.name || t('food')
+    return t('req_state_value', { name: foodName, n: req.id })
   }
 
   function clearSave() {
-    if (!window.confirm('清除全部本地进度？\n（结局、记忆、访问过的页面、已选选项全部重置）')) return
+    if (!window.confirm(t('clear_confirm'))) return
     ;[LS_ENDINGS, LS_CHECKED, LS_SEEN].forEach((k) => {
       try { localStorage.removeItem(k) } catch { /* ignore */ }
     })
@@ -307,6 +328,7 @@ export default function FadingAffection() {
     foundRef.current = []; checkedRef.current = []; seenRef.current = []
     setHistory([]); setView('home'); setRoute(null); setNode(null)
     setStatus(data ? { ...data.status.init } : { hp: 10, food: 1, erosion: 0 })
+    setStatusFeedback(null)
   }
 
   function start(r: FadingRoute) {
@@ -315,6 +337,7 @@ export default function FadingAffection() {
     transition(() => {
       setRoute(r); setNode(r.start)
       setStatus(data ? { ...data.status.init } : { hp: 10, food: 1, erosion: 0 })
+      setStatusFeedback(null)
       markSeen(r.start)
       setHistory([]); setView('game')
     }, 'view')
@@ -353,6 +376,11 @@ export default function FadingAffection() {
       ? data.choices[String(choiceId)]?.statusChange
       : { hp: 0, food: 0, erosion: 0 }
     const nextStatus = applyFadingStatusChange(status, change ?? { hp: 0, food: 0, erosion: 0 }, data.status.max)
+    const hpDelta = nextStatus.hp - status.hp
+    const foodDelta = nextStatus.food - status.food
+    if (hpDelta < 0 || foodDelta < 0) {
+      setStatusFeedback({ id: ++feedbackId.current, hp: hpDelta, food: foodDelta })
+    }
     setStatus(nextStatus)
     setNode(next)
     const p = data.pages[String(next)]
@@ -402,6 +430,7 @@ export default function FadingAffection() {
       setHistory((h) => h.slice(0, -1))
       setNode(prev?.id ?? route?.start ?? null)
       setStatus(prev?.status ?? (data ? { ...data.status.init } : { hp: 10, food: 1, erosion: 0 }))
+      setStatusFeedback(null)
     })
   }
 
@@ -412,9 +441,10 @@ export default function FadingAffection() {
         return {
           key: c.key, index: CN_NUM[i] ?? `${i + 1}.`,
           text: c.text, locked,
+          region: firstSelectRegion(c.dest),
           lockText: locked && c.unlock ? reqLockText(c.unlock) : undefined,
           disabled: locked,
-          onClick: () => { ui(FIRSTSELECT[c.text] || 'uis_mini_fad_special_firstselect'); go(c.dest) },
+          onClick: () => { ui(firstSelectSfx(c.dest)); go(c.dest) },
         }
       })
     : choices.map((c, i) => {
@@ -443,8 +473,8 @@ export default function FadingAffection() {
         }
       })
 
-  if (error) return <div style={{ padding: 80, textAlign: 'center', color: '#ccc' }}>数据加载失败：{error}</div>
-  if (!data) return <div style={{ padding: 80, textAlign: 'center', color: '#ccc' }}>正在读取活动数据…</div>
+  if (error) return <div style={{ padding: 80, textAlign: 'center', color: '#ccc' }}>{t('load_error')}{error}</div>
+  if (!data) return <div style={{ padding: 80, textAlign: 'center', color: '#ccc' }}>{t('loading')}</div>
 
   return (
     <FadingCold
@@ -458,6 +488,7 @@ export default function FadingAffection() {
       fade={fade}
       sceneKey={scene}
       status={status}
+      statusFeedback={statusFeedback}
       erosionActive={!!route?.erosion}
       choices={coldChoices}
       ending={ending || null}

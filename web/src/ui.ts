@@ -166,6 +166,7 @@ const DICT = {
   unit_lines: ['句', 'lines', '자', '句'],
   unit_segs: ['段', 'segments', '개', '片'],
   story_start: ['开始阅读', 'Start Reading', '읽기 시작', '読み始める'],
+  story_branch_enter: ['进入小游戏 →', 'Play Mini Game →', '미니게임 시작 →', 'ミニゲームを遊ぶ →'],
   story_cast: ['登场角色', 'Featured Characters', '등장 캐릭터', '登場キャラクター'],
   story_cast_expand: ['展开', 'Expand', '펼치기', '展開'],
   story_cast_collapse: ['收起', 'Collapse', '접기', '折りたたむ'],

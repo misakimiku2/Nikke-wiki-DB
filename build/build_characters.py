@@ -97,6 +97,7 @@ EXTRA = {
     # 11/19 活动「SKY ON THE ROCK」的具名 NPC：Locale 只有 npc_825_name（赛菲/Sephie），
     # 无数字条目；立绘资源代号 c9045 取自 spinestandingcharactergroup 的 standing 路径
     9045: ("c9045", "赛菲", "Sephie"),
+    9041: ("c9041", "玛丽亚博士", "Doctor Maria", "マリア博士", "닥터 마리아"),
     936: ("c936", "麦克斯", "Max"),
     946: ("c946", "露露", "Ruru"),
     967: ("c967", "露咪", "Lumi"),
@@ -231,10 +232,13 @@ def build_characters(con_target):
         ))
 
     have = {r[0] for r in rows}
-    for cid, (code, zh, en) in EXTRA.items():
+    for cid, names in EXTRA.items():
         if cid in have:
             continue
-        rows.append((cid, code, zh, en, None, None, None,
+        code, zh, en = names[:3]
+        ja = names[3] if len(names) > 3 else None
+        ko = names[4] if len(names) > 4 else None
+        rows.append((cid, code, zh, en, ja, ko, None,
                      None, None, None, None, None, None, None, None, None, 0))
     have = {r[0] for r in rows}
     for cid, e in CN_EXTRA.items():

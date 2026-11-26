@@ -45,7 +45,7 @@
 .cf-stats b{font:800 22px/1 "Arial Black",Helvetica,sans-serif;color:var(--fsteel)}
 .cf-stats span{display:block;margin-top:7px;font:500 9px/1 ui-monospace,monospace;letter-spacing:.16em;color:var(--fmut)}
 .cf-acts{display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
-.cf-btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font:700 11px/1 inherit;letter-spacing:.1em;padding:11px 19px;background:transparent;border:1px solid var(--fline);color:var(--fink);transition:.16s}
+.cf-btn{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font:700 11px/1 inherit;letter-spacing:.1em;padding:11px 19px;background:transparent;border:1px solid var(--fline);color:var(--fink);text-decoration:none;transition:.16s}
 .cf-btn:hover{border-color:var(--fsteel);background:rgba(150,170,185,.08)}
 .cf-btn.on{border-color:var(--fsteel);background:var(--fsteel);color:var(--fbg)}
 .cf-routes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:30px}
@@ -131,10 +131,11 @@
 .cf-end .acts{display:flex;justify-content:center;gap:10px}
 /* 按钮下的一句话：结局页只是待确认，返回上一节点不留档 */
 .cf-end-note{margin:12px 0 0;font-size:10px;line-height:1.8;letter-spacing:.02em;color:var(--fmut)}
-/* 结局字标：素材自带透明，直接压在页面上。四张实测不透明像素全是深色墨迹
-   （亮度 <80），浅色主题就是原样；深色主题用 invert+hue-rotate 提亮并保住色相。 */
+/* 结局字标：素材自带透明，直接压在页面上。DEATH END 保留原素材红，
+   不随深色主题反色成粉色；其余字标仍按主题调整。 */
 .cf-end-mark{display:flex;flex-direction:column;align-items:center;gap:4px;margin-bottom:2px}
 .cf-end-mark img{display:block;width:min(238px,56%);height:auto;filter:var(--end-ink)}
+.cf-end-mark-death img{filter:none}
 .cf-end-mark .no{font:500 9px/1 ui-monospace,monospace;letter-spacing:.3em;color:var(--fmut)}
 
 /* F 状态栏主题化（用 ID 提高优先级，覆盖后面的通用 .sb-f） */
@@ -160,7 +161,18 @@
 /* ============ 统一状态栏：体力/粮食上排 · 侵蚀长条下排 · 内存右下 ============ */
 .sb{position:relative;display:flex;flex-direction:column;gap:9px;margin-top:22px;padding:14px 16px 15px}
 .sb-row1{display:flex;gap:26px;align-items:baseline}
+.sb-stat-wrap{position:relative;display:inline-flex;align-items:baseline}
+.sb-delta{position:absolute;left:0;top:-8px;z-index:8;display:inline-flex;align-items:center;gap:5px;
+  color:#782B41;font:800 17px/1 ui-monospace,monospace;white-space:nowrap;pointer-events:none;
+  animation:sb-delta-float .9s ease-out forwards}
+.sb-stat-wrap .sb-delta .icn-png{width:27px;height:27px;vertical-align:middle;background-color:currentColor}
 .sb-stat{display:flex;align-items:baseline;gap:8px}
+.sb-num{display:inline-block;min-width:3ch;text-align:right}
+@keyframes sb-delta-float{
+  0%{opacity:0;transform:translateY(8px)}
+  18%{opacity:1}
+  100%{opacity:0;transform:translateY(-34px)}
+}
 .sb-lb{font-size:10px;letter-spacing:.1em;opacity:.72;display:inline-flex;align-items:center;gap:7px}
 .sb-lb .icn-png{width:27px;height:27px;vertical-align:-9px}
 .sb-stat b{font-size:17px;font-weight:800;line-height:1}
@@ -603,6 +615,7 @@
   .cf-end-block h3,figure img{animation:none}
   .cf-erosion-burst figure img,.cf-erosion-burst .cf-head h3{animation:none}
   .cf-burst-fx,.cf-burst-slice,.cf-frame-slice{display:none}
+  .sb-delta{display:none}
 }
 
 /* ============ 结局页：破碎 / 电子扰乱 ============ */
@@ -797,6 +810,7 @@
   padding-left:10px;border-left:2px solid var(--fline)}
 .cf-peek-mark{display:flex;justify-content:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--fline)}
 .cf-peek-mark img{display:block;width:min(190px,52%);height:auto;filter:var(--end-ink)}
+.cf-peek-mark-death img{filter:none}
 
 /* ============ 竖屏：顶部区与内存卡 ============
    360×740 实测正文从 y=220 才开始（占屏 30%）：章节栏折三行、标题折三行，
@@ -834,9 +848,12 @@
      右侧只剩静音 + 删除两枚图标后，整行 143+70 远小于可用 316。 */
   .cf-top .cf-mark{display:none}
   .cf-top-id{white-space:nowrap;letter-spacing:.14em}
-  /* 三个动作按钮挤进一行：360 下原文 121+128+128+间隙=397 > 可用 308，必然折两行 */
+  /* 主菜单四个按钮在手机端固定单行等分，文字与进度计数都不换行 */
   .cf-acts{gap:8px}
   .cf-btn{padding:9px 12px;font-size:10px;letter-spacing:.06em;gap:7px}
+  .cf-home-acts{flex-wrap:nowrap;gap:6px}
+  .cf-home-acts .cf-btn{flex:1 1 0;min-width:0;justify-content:center;padding:9px 4px;font-size:9px;letter-spacing:0;gap:3px;white-space:nowrap}
+  .cf-home-acts .cf-btn .ico{width:10px;height:10px;flex:none}
 
   /* 回想：auto-fill 在 314px 可用宽下只排 1 列、1:1 的图 314 高，一屏只看得见一个。
      竖屏固定两列 + 4:3 图，35 个结局从 35 屏收到 18 屏。 */

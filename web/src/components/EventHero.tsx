@@ -72,6 +72,11 @@ export default function EventHero({
         {preview && <p className="eh-lede">{preview}…</p>}
         <div className="eh-actions">
           <Link className="btn primary" to={`/story/${detail.id}?ch=0`}>{t('story_start')}</Link>
+          {detail.id === 663 && (
+            <Link className="btn eh-game-link" to="/game/fadingaffection">
+              FADING AFFECTION
+            </Link>
+          )}
         </div>
       </div>
     </section>
