@@ -72,7 +72,7 @@ if (!template.includes('<div id="root"></div>')) {
 }
 
 const chars = readJSON(path.join(PUB, 'data/characters.json')).items
-const storyUnits = readJSON(path.join(PUB, 'data/story_index.json')).items
+const storyUnits = readJSON(path.join(PUB, 'data/story_index.json')).items.filter((u) => u.cat !== 'extra')
 const cgItems = readJSON(path.join(PUB, 'data/cg_index.json')).items
 const skillsByChar = readJSON(path.join(PUB, 'data/char_skills.json')).items
 const charImages = readJSON(path.join(PUB, 'data/char_images.json'))

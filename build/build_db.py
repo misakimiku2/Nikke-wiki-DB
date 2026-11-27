@@ -287,6 +287,7 @@ def collect_story_units():
     other_root = os.path.join(SRC, "其他剧情")
     seen_buckets = set()
     count_before = len(units)
+    removed_daily_lines = 0
     for subdir, fname, cat, label, weight in OTHER_MODULES:
         folder = os.path.join(other_root, subdir)
         if not os.path.isdir(folder):
@@ -302,7 +303,35 @@ def collect_story_units():
                 # MessengerDialogTable 里的独立巴拉房间在角色页展示，剧情内嵌
                 # 短信由 build/export_story_sms.mjs 映射回各自剧情单元并在阅读器
                 # 里以内嵌气泡显示；这里不再单独建一个短信单元。
-                data = [item for item in data if item.get("bucket") != "MessengerDialogTable"]
+                existing_group_lines = set()
+                for _, segs in units:
+                    for seg in segs:
+                        group_key = seg["group_key"]
+                        for raw in seg["lines"]:
+                            line_key = iter_line_fields(raw)["line_key"]
+                            if group_key and line_key:
+                                existing_group_lines.add((group_key, line_key))
+                filtered = []
+                for item in data:
+                    if item.get("bucket") == "MessengerDialogTable":
+                        continue
+                    groups = []
+                    for grp in item.get("groups", []):
+                        group_key = grp.get("group") or grp.get("group_key") or ""
+                        lines = []
+                        for raw in grp.get("lines") or []:
+                            line_key = iter_line_fields(raw)["line_key"]
+                            if group_key and line_key and (group_key, line_key) in existing_group_lines:
+                                removed_daily_lines += 1
+                            else:
+                                lines.append(raw)
+                        if lines:
+                            groups.append({**grp, "lines": lines})
+                    if groups:
+                        filtered.append({**item, "groups": groups})
+                data = filtered
+                if removed_daily_lines:
+                    log(f"  日常对话去重：删除 {removed_daily_lines:,} 句重复台词")
             added = 0
             for idx, item in enumerate(data, start=1):
                 bucket = item.get("bucket") or item.get("event") or item.get("key") or f"{cat}_{idx}"

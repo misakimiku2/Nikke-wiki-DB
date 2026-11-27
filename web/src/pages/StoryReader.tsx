@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   accentFor, charPortraitSmall, loadCharImages, loadCharMi, loadCharacters, loadStoryCast,
-  loadStoryFlow, loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
+  isStoryUnitVisible, loadStoryFlow, loadStoryIndex, loadStorySms, loadStoryUnit, mainBase, nf,
   type CharImages, type Character, type CounselFlow, type StoryCgRef, type StoryDetail, type StorySmsData, type StorySmsGroup, type StorySegment, type StoryUnit,
 } from '../data'
 import SpinePlayer from '../components/SpinePlayer'
@@ -516,11 +516,17 @@ export default function StoryReader() {
     setDetail(null)
     setPicks({})
     if (!id) return
-    loadStoryUnit(id).then(setDetail).catch(() => setDetail(null))
-    loadStoryIndex().then(setIndex).catch(() => {})
+    loadStoryIndex().then((index) => setIndex(index.filter(isStoryUnitVisible))).catch(() => {})
+    loadStoryUnit(id).then((story) => {
+      if (!isStoryUnitVisible(story)) {
+        navigate('/story', { replace: true })
+        return
+      }
+      setDetail(story)
+    }).catch(() => setDetail(null))
     loadCharacters().then(setChars).catch(() => {})
     loadStoryFlow().then(setFlowMap).catch(() => {})
-  }, [id])
+  }, [id, navigate])
 
   // 登场角色卡：单元 → 角色 id（story_cast.json）→ 角色档案；头像素材顺手预热
   useEffect(() => {

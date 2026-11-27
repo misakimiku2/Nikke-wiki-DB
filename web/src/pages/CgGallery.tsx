@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  CG_BG_CAT, CG_CATS, catRank, loadCgIndex, loadSkillcutCgs, loadSpineModels, loadStoryIndex, nf,
+  CG_BG_CAT, CG_CATS, catRank, isStoryUnitVisible, loadCgIndex, loadSkillcutCgs, loadSpineModels, loadStoryIndex, nf,
   setLinks, visibleCgs,
   type CgIndex, type CgItem, type StoryUnit,
 } from '../data'
@@ -190,7 +190,7 @@ export default function CgGallery() {
 
   // 单元展示顺序：剧情分类（主线→活动→个人→…）在前，同分类内按 story_index 原序
   const orderedUnits = useMemo(() => {
-    return [...units].sort((a, b) => catRank(a.cat) - catRank(b.cat))
+    return units.filter(isStoryUnitVisible).sort((a, b) => catRank(a.cat) - catRank(b.cat))
   }, [units])
 
   /** 剧情筛选候选：站内 CG 实际关联到的单元（带张数，多剧情引用各计一次），按展示顺序排 */

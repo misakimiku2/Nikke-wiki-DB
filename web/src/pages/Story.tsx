@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { loadStoryIndex, nf, type StoryUnit } from '../data'
+import { isStoryUnitVisible, loadStoryIndex, nf, type StoryUnit } from '../data'
 import { pickLang, useLang } from '../lang'
 import { useUI, type UIKey } from '../ui'
 
@@ -15,10 +15,11 @@ export default function Story() {
     loadStoryIndex().then(setUnits).catch(() => setUnits([]))
   }, [])
 
+  const listedUnits = useMemo(() => units?.filter(isStoryUnitVisible) ?? [], [units])
+
   const cats = useMemo(() => {
-    if (!units) return []
     const seen: { cat: string; label: string; n: number; lines: number }[] = []
-    for (const u of units) {
+    for (const u of listedUnits) {
       const hit = seen.find((s) => s.cat === u.cat)
       if (hit) {
         hit.n += 1
@@ -28,7 +29,7 @@ export default function Story() {
       }
     }
     return seen
-  }, [units])
+  }, [listedUnits])
 
   // 当前分类写进 URL：从阅读器返回时才能回到原来的分类，而不是重置到主线
   const wanted = params.get('cat') || 'main'
@@ -41,10 +42,7 @@ export default function Story() {
     setParams(p, { replace: true })
   }
 
-  const shown = useMemo(() => {
-    if (!units) return []
-    return units.filter((u) => u.cat === cat)
-  }, [units, cat])
+  const shown = useMemo(() => listedUnits.filter((u) => u.cat === cat), [listedUnits, cat])
 
   if (!units) return <div className="loading">LOADING…</div>
 
@@ -62,7 +60,7 @@ export default function Story() {
               封面编辑
             </button>
           )}
-          {nf(units.length)} EPISODES · {nf(units.reduce((a, b) => a + b.lines, 0))} LINES
+          {nf(listedUnits.length)} EPISODES · {nf(listedUnits.reduce((a, b) => a + b.lines, 0))} LINES
         </div>
       </div>
 

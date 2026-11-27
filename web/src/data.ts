@@ -1323,6 +1323,10 @@ export type StoryUnit = {
   cover?: string | null
 }
 
+export function isStoryUnitVisible(unit: Pick<StoryUnit, 'cat'>): boolean {
+  return unit.cat !== 'extra'
+}
+
 /** [说话人, 说话人ID, 简体中文, 英文, 韩文, 日文] */
 export type StoryLine = [string, string, string, string?, string?, string?]
 

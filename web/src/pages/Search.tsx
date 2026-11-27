@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Pager, pageParam } from '../components/Pager'
 import {
-  CAT_ORDER, accentFor, charPortrait, loadCgIndex, loadCharImages, loadCharMeta, loadCharMi, loadCharacters,
+  CAT_ORDER, accentFor, charPortrait, isStoryUnitVisible, loadCgIndex, loadCharImages, loadCharMeta, loadCharMi, loadCharacters,
   loadStoryIndex, mainBase, nf, SPEC_BURST, SPEC_CLS, SPEC_CORP, SPEC_ELEMENT, SPEC_WEAPON,
   tintFor, visibleCgs, whereOf,
   type CgIndex, type CharImages, type CharMetaMap, type Character, type StoryUnit,
@@ -71,6 +71,7 @@ export default function Search() {
   const t = useUI()
   const [idx, setIdx] = useState<Row[] | null>(null)
   const [units, setUnits] = useState<StoryUnit[]>([])
+  const [unitsReady, setUnitsReady] = useState(false)
   const [chars, setChars] = useState<Character[]>([])
   const [cg, setCg] = useState<CgIndex | null>(null)
   const [imgs, setImgs] = useState<CharImages>({})
@@ -87,7 +88,10 @@ export default function Search() {
   const timer = useRef<number | null>(null)
 
   useEffect(() => {
-    loadStoryIndex().then(setUnits).catch(() => {})
+    loadStoryIndex().then((index) => {
+      setUnits(index)
+      setUnitsReady(true)
+    }).catch(() => setUnitsReady(true))
     loadCharacters().then(setChars).catch(() => {})
     loadCgIndex().then(setCg).catch(() => {})
     loadCharImages().then(setImgs).catch(() => {})
@@ -147,6 +151,11 @@ export default function Search() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, charPage, cgPage, unitPage, linePage])
 
+  const visibleUnits = useMemo(() => units.filter(isStoryUnitVisible), [units])
+  const hiddenUnitIds = useMemo(
+    () => new Set(units.filter((u) => !isStoryUnitVisible(u)).map((u) => u.id)),
+    [units],
+  )
   const unitMap = useMemo(() => {
     const m: Record<number, StoryUnit> = {}
     for (const u of units) m[u.id] = u
@@ -161,7 +170,7 @@ export default function Search() {
       let s = `${it.n} ${it.s || ''}`
       for (const lk of cg.links[it.n] || []) {
         const u = unitMap[lk.u]
-        if (u) s += ` ${u.title} ${u.label}`
+        if (u && isStoryUnitVisible(u)) s += ` ${u.title} ${u.label}`
       }
       hay[it.n] = s.toLowerCase()
     }
@@ -202,23 +211,30 @@ export default function Search() {
   const unitHits = useMemo(() => {
     if (debounced.length < 1) return []
     const k = debounced.toLowerCase()
-    const out = units.filter((u) => `${u.title} ${u.label} ${u.bucket}`.toLowerCase().includes(k))
+    const out = visibleUnits.filter((u) => `${u.title} ${u.label} ${u.bucket}`.toLowerCase().includes(k))
     out.sort((a, b) => Number(!a.title.toLowerCase().startsWith(k)) - Number(!b.title.toLowerCase().startsWith(k)))
     return out
-  }, [units, debounced])
+  }, [visibleUnits, debounced])
 
   // 台词先做全量统计（不再截断），展示层按页渲染。
   // 小写文本缓存一次，避免每次按键都对 52 万行做 toLowerCase。
   const lowerLines = useMemo(() => (idx ? idx.map((r) => r[0].toLowerCase()) : null), [idx])
+  const visibleLineCount = useMemo(() => {
+    if (!idx) return 0
+    let count = 0
+    for (const row of idx) if (!hiddenUnitIds.has(row[1])) count++
+    return count
+  }, [idx, hiddenUnitIds])
   const lineHits = useMemo(() => {
     if (!lowerLines || debounced.length < 1) return []
     const k = debounced.toLowerCase()
     const out: number[] = []
     for (let i = 0; i < lowerLines.length; i++) {
+      if (hiddenUnitIds.has(idx![i][1])) continue
       if (lowerLines[i].includes(k)) out.push(i)
     }
     return out
-  }, [lowerLines, debounced])
+  }, [lowerLines, idx, hiddenUnitIds, debounced])
 
   // 说话人显示名：索引里存的是说话人中文名，用角色档案映射成当前语言的显示名
   // （台词里的说话人不一定有角色档案，如旁白/特殊说话人，映射不到就原样展示）。
@@ -237,7 +253,7 @@ export default function Search() {
   const catLabel = (u: StoryUnit) =>
     CAT_ORDER.includes(u.cat) ? t(`cat_${u.cat}` as UIKey) : u.label
 
-  const loading = !idx || !cg
+  const loading = !idx || !cg || !unitsReady
   const total = charHits.length + cgHits.length + unitHits.length + lineHits.length
 
   // 页码钳制：URL 上的页码可能超出当前命中数（换过关键词的旧链接），渲染时压回范围内
@@ -258,7 +274,7 @@ export default function Search() {
         <div className="meta">
           {loading
             ? 'LOADING INDEX…'
-            : `${nf(chars.length)} CHARS · ${nf(cgTotal)} CG · ${nf(units.length)} UNITS · ${nf(idx!.length)} LINES`}
+            : `${nf(chars.length)} CHARS · ${nf(cgTotal)} CG · ${nf(visibleUnits.length)} UNITS · ${nf(visibleLineCount)} LINES`}
         </div>
       </div>
 
