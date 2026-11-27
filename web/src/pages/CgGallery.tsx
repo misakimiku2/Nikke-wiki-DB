@@ -15,6 +15,7 @@ const CG_CAT_KEY: Record<string, UIKey> = {
   '04_角色过场': 'cg_cat_chara',
   '05_其他动态CG': 'cg_cat_other',
   '06_剧情背景': 'cg_cat_bg',
+  '07_珍藏品CG': 'cg_cat_favorite',
 }
 
 const PAGE = 60

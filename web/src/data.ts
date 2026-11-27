@@ -715,7 +715,11 @@ export type CharStoryRec = {
   chapters?: CharStoryChapter[]
 }
 
-export type CharStoriesData = Record<string, { stories: CharStoryRec[]; counsel: CharStoryRec[] }>
+export type CharStoriesData = Record<string, {
+  stories: CharStoryRec[]
+  counsel: CharStoryRec[]
+  favorite?: { name: string; story: number }
+}>
 
 let cacheStories: CharStoriesData | null = null
 
@@ -1422,7 +1426,7 @@ export async function loadStoryUnit(id: string | number): Promise<StoryDetail> {
 }
 
 export const CAT_ORDER = [
-  'main', 'event', 'nikke', 'sub', 'side_story', 'gaiden', 'counseling', 'daily', 'extra',
+  'main', 'event', 'nikke', 'favorite', 'sub', 'side_story', 'gaiden', 'counseling', 'daily', 'extra',
 ]
 
 export function catRank(cat: string): number {
@@ -1459,6 +1463,8 @@ export type CgLink = {
   s4?: { en: string; ko: string; ja: string }
   /** 段落标题的 en/ko/ja（Locale 官方名 / 主线段名表，缺失回退 p） */
   p4?: { en: string; ko: string; ja: string }
+  /** favorite = 珍藏品奖励对应的剧情，不是行内 CG 转场 */
+  r?: 'favorite'
 }
 
 export type CgIndex = {
@@ -1567,6 +1573,7 @@ export const CG_CATS = [
   { key: '04_角色过场', label: '角色过场' },
   { key: '05_其他动态CG', label: '其他' },
   { key: '06_剧情背景', label: '剧情背景' },
+  { key: '07_珍藏品CG', label: '珍藏品' },
 ]
 
 /** 纯剧情背景板（black 黑场 / 场景图等）：阅读器铺在人物/模型下面的资产，

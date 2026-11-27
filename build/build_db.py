@@ -38,6 +38,7 @@ SCHEMA = os.path.join(ROOT, "build", "schema.sql")
 CG_FLAGS = os.path.join(ROOT, "build", "cg_flags.json")
 CG_EXCLUDE = os.path.join(ROOT, "build", "cg_exclude.json")
 MAIN_SECTION_NAMES = os.path.join(ROOT, "build", "main_section_names.json")
+FAVORITE_META = os.path.join(SRC, "staging", "favorite_wallpapers.json")
 
 
 def load_excluded_cg():
@@ -52,6 +53,7 @@ def load_excluded_cg():
 OTHER_MODULES = [
     ("活动剧情",            "活动剧情_全量.json",        "event",     "活动剧情",        10),
     ("妮姬个人剧情",        "妮姬个人剧情_全量.json",    "nikke",     "妮姬个人剧情",    20),
+    ("珍藏品剧情",          "珍藏品剧情_全量.json",      "favorite",  "珍藏品剧情",      25),
     ("支线剧情",            "支线剧情_全量.json",        "sub",       "支线剧情",        30),
     ("支线故事",            "支线故事_全量.json",        "side_story","支线故事",        40),
     ("外传与前哨基地日常",  "",                          "gaiden",    "外传与日常",      50),
@@ -467,6 +469,7 @@ LINE_SUFFIX = re.compile(r"^(.*)_(\d+)$")
 PREFIX_RULES = [
     (re.compile(r"^d_main_(\d+)"),        ("main",       "主线剧情",     1)),
     (re.compile(r"^d_nikke_"),            ("nikke",      "妮姬个人剧情", 20)),
+    (re.compile(r"^treasurestory_"),      ("favorite",   "珍藏品剧情",   25)),
     (re.compile(r"^d_counseling_"),       ("counseling", "咨询对话",     60)),
     (re.compile(r"^d_contents_"),         ("event",      "活动剧情",     10)),
     (re.compile(r"^event_"),              ("event",      "活动剧情",     10)),
@@ -894,12 +897,40 @@ def import_cg_links(con):
                 rows.append((cg, lid, line_key, "script", uid, sid))
                 n_hit += 1
 
+    assets = {n for (n,) in con.execute("SELECT name FROM cg_assets")}
+
+    # ---- 珍藏品壁纸 -> 珍藏品剧情 ----
+    # 壁纸是完成珍藏品任务后解锁的奖励，不在对话行中切换；链接只表示对应关系，
+    # 因此使用独立 match_type，前端不能把它描述成“这段台词出现了该 CG”。
+    favorite_links = 0
+    if os.path.exists(FAVORITE_META):
+        with open(FAVORITE_META, encoding="utf-8") as f:
+            favorite_meta = json.load(f)
+        for item in favorite_meta.get("items", []):
+            cg = item.get("name")
+            if cg not in assets:
+                continue
+            for group in item.get("storyGroups", []):
+                hit = con.execute("""
+                    SELECT s.unit_id, s.id, l.id, l.line_key
+                    FROM story_segments s JOIN story_lines l ON l.segment_id=s.id
+                    WHERE s.group_key=? AND l.text_zh IS NOT NULL AND l.text_zh<>''
+                    ORDER BY l.seq, l.id LIMIT 1
+                """, (group,)).fetchone()
+                if not hit:
+                    continue
+                uid, sid, lid, line_key = hit
+                if (cg, lid) in seen:
+                    continue
+                seen.add((cg, lid))
+                rows.append((cg, lid, line_key, "favorite_story", uid, sid))
+                favorite_links += 1
+
     # ---- bg / 前景配对 ----
     # 脚本表常常只写 EventScene_X_bg（或只写 EventScene_X），阅读器要两层叠起来
     # 才还原游戏画面。这里把另一半补到同一行；只做同名配对，不再按 CG 名猜章节。
     # （旧逻辑把「没被脚本引用的 CG」一律塞进所属章节首段，正是第一章开头
     #   凭空冒出无关 CG 的根因。）
-    assets = {n for (n,) in con.execute("SELECT name FROM cg_assets")}
     pairs = 0
     for cg, lid, lk, _mt, uid, sid in list(rows):
         base = cg[:-3] if cg.endswith("_bg") else cg
@@ -926,7 +957,7 @@ def import_cg_links(con):
     linked = con.execute("SELECT COUNT(DISTINCT cg_name) FROM cg_links").fetchone()[0]
     log(f"  上游行级 CG 转场 {n_ev:,} 处（{n_miss} 个 key 不在库内，多为已清空台词的残表）"
         f" → 链接 {n_hit:,} 条；bg/前景配对补 {pairs:,} 条")
-    log(f"  链接合计 {len(rows):,} 条，覆盖 CG {linked:,} 个")
+    log(f"  链接合计 {len(rows):,} 条，覆盖 CG {linked:,} 个；珍藏品对应剧情 {favorite_links:,} 条")
 
 
 def apply_cg_flags(con):

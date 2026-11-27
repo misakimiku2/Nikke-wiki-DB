@@ -31,6 +31,7 @@ const CV_CAT_KEY: Record<string, UIKey> = {
   '04_角色过场': 'cg_cat_chara',
   '05_其他动态CG': 'cg_cat_other',
   '06_剧情背景': 'cg_cat_bg',
+  '07_珍藏品CG': 'cg_cat_favorite',
 }
 
 function fmtTime(t: number): string {
@@ -182,6 +183,7 @@ export default function CgView() {
   const canAnimate = useModel && status.duration > 0
   /** 剧情段落：封面按整集（自身 + 成员）取并集，连图集的封面常常不是剧情里出现的那一帧 */
   const links = useMemo(() => (index ? setLinks(index, name) : []), [index, name])
+  const favoriteLinks = links.length > 0 && links.every((lk) => lk.r === 'favorite')
   /** 出现段落覆盖的剧情文本总句数（各段行数求和），信息栏与段落数并排展示 */
   const totalLines = useMemo(
     () => links.reduce((a, lk) => a + (lk.n || 0), 0),
@@ -538,7 +540,7 @@ export default function CgView() {
             const mergedCount = index?.merges?.[it.n]
             const setSize = Array.isArray(mergedCount) ? mergedCount.length + 1 : 0
             return (
-              <Fragment key={it.h}>
+              <Fragment key={it.n}>
                 <button
                   className={`cv-dir-item ${it.n === name ? 'on' : ''}`}
                   title={it.n}
@@ -553,7 +555,7 @@ export default function CgView() {
                   <div className="cv-dir-sub">
                     {setMembers.map((m) => (
                       <button
-                        key={m.h}
+                        key={m.n}
                         className={`cv-dir-item cv-dir-subitem ${m.n === name ? 'on' : ''}`}
                         title={m.n}
                         onClick={() => navigate(`/cg/${encodeURIComponent(m.n)}`)}
@@ -740,7 +742,7 @@ export default function CgView() {
               {isSpine || isBurst ? t('cg_live_model') : t('cg_static_illust')}
             </span>
             <span className="cv-tag">{fmt(t('cg_links_n'), { n: links.length })}</span>
-            <span className="cv-tag">{fmt(t('cg_text_lines'), { m: totalLines })}</span>
+            {!favoriteLinks && <span className="cv-tag">{fmt(t('cg_text_lines'), { m: totalLines })}</span>}
           </div>
           {absorbedBy && (
             <div className="cv-absorbed">
@@ -811,7 +813,7 @@ export default function CgView() {
         )}
 
         <section className="cv-links">
-          <h2>{fmt(t('cg_links_title'), { n: links.length })}</h2>
+          <h2>{fmt(t(favoriteLinks ? 'cg_favorite_links_title' : 'cg_links_title'), { n: links.length })}</h2>
           {links.length > 0 ? (
             links.map((lk, k) => {
               const u = unitMap[lk.u]

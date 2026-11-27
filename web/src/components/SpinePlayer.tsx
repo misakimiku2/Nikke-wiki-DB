@@ -713,8 +713,10 @@ export default function SpinePlayer({
         // 过滤掉，下拉的 value 指向一个不存在的 option，看起来像选了空的
         // 「更多表情」。所以挑选 idle 时先排除 bg_ / talk_ 这类前缀。
         const isIdleName = (a: string) => /(^|_)idle$/i.test(a)
+        const isIdleVariant = (a: string) => /(^|_)idle_(?:all|\d+)$/i.test(a)
         const visibleAnims = animNames.filter((a) => !/^(bg_|talk_)/i.test(a))
-        const idleFirst = visibleAnims.find(isIdleName) || visibleAnims[0] || animNames[0] || ''
+        const idleFirst = visibleAnims.find(isIdleName) || visibleAnims.find(isIdleVariant)
+          || visibleAnims[0] || animNames[0] || ''
         const first = (pickDefaultAnim && pickDefaultAnim(animNames, name)) || idleFirst
         setAnim(first)
 

@@ -462,8 +462,8 @@ export default function CharacterDetail() {
   const [combat, setCombat] = useState<Set<string>>(new Set())
   /** 大招 cut-in 索引；null = 还没加载完（避免加载完前误判「无模型」回退姿态） */
   const [skillcut, setSkillcut] = useState<SkillcutIndex | null>(null)
-  /** 舞台姿态：stand 立绘（站姿模型/静态图），aim 背身射击，cover 掩体，burst 大招 */
-  const [pose, setPose] = useState<'stand' | 'aim' | 'cover' | 'burst'>('stand')
+  /** 舞台姿态：stand 立绘，aim 背身射击，cover 掩体，burst 大招，favorite 珍藏品场景 */
+  const [pose, setPose] = useState<'stand' | 'aim' | 'cover' | 'burst' | 'favorite'>('stand')
   /** 站姿模型的第二形态：0=形态①（基础），1=形态②（变体） */
   const [form, setForm] = useState(0)
   const [pick, setPick] = useState<string | null>(null)
@@ -660,15 +660,20 @@ export default function CharacterDetail() {
     () => (current && skillcut ? skillcutModelName(current, skillcut) : null),
     [current, skillcut],
   )
+  const favoriteName = id ? storiesMap[String(id)]?.favorite?.name || null : null
+  const favoriteStory = id ? storiesMap[String(id)]?.favorite?.story || null : null
   // 切了皮肤后当前姿态的模型不存在（该皮肤没出战斗/大招模型）就退回立绘
   useEffect(() => {
     if (pose === 'aim' && !combatAvail.aim) setPose('stand')
     else if (pose === 'cover' && !combatAvail.cover) setPose('stand')
     else if (pose === 'burst' && current && skillcut && !burstName) setPose('stand')
-  }, [combatAvail, burstName, pose, current, skillcut])
+    else if (pose === 'favorite' && !favoriteName) setPose('stand')
+  }, [combatAvail, burstName, favoriteName, pose, current, skillcut])
   const combatName = pose === 'aim' ? combatAvail.aim : pose === 'cover' ? combatAvail.cover : null
-  /** 舞台挂的是不是实时模型（立绘站姿/战斗姿态/大招都算） */
-  const stageLive = pose === 'stand' ? hasModel : pose === 'burst' ? !!burstName : !!combatName
+  /** 舞台挂的是不是实时模型（立绘站姿/战斗姿态/大招/珍藏品都算） */
+  const stageLive = pose === 'stand' ? hasModel
+    : pose === 'burst' ? !!burstName
+      : pose === 'favorite' ? !!favoriteName : !!combatName
   const skills = id ? skillData.items[String(id)] : null
   const rel = id ? storiesMap[String(id)] : null
   const relStories = rel?.stories ?? []
@@ -714,7 +719,7 @@ export default function CharacterDetail() {
   )
   const chips = useMemo(
     () => (pose === 'burst' ? pickBurstChips(shownAnims, burstName || undefined)
-      : pickChips(shownAnims, pose === 'stand' ? CHIP_DEFS : COMBAT_CHIP_DEFS)),
+      : pickChips(shownAnims, pose === 'stand' || pose === 'favorite' ? CHIP_DEFS : COMBAT_CHIP_DEFS)),
     [shownAnims, pose, burstName],
   )
   const extras = useMemo(() => {
@@ -759,9 +764,10 @@ export default function CharacterDetail() {
   const resetView = useCallback(() => spineRef.current?.resetView(), [])
   const saveFrame = useCallback(() => {
     const nm = pose === 'stand' ? current
-      : pose === 'burst' ? (burstName || current) : (combatName || current)
+      : pose === 'burst' ? (burstName || current)
+        : pose === 'favorite' ? (favoriteName || current) : (combatName || current)
     spineRef.current?.saveFrame(`${nm}_${status.anim}_${status.time.toFixed(2)}.png`)
-  }, [current, burstName, combatName, pose, status.anim, status.time])
+  }, [current, burstName, favoriteName, combatName, pose, status.anim, status.time])
 
   /** 群聊里每个发言人的官方头肩头像；没有头像的 NPC 返回 null */
   const avatarOf = useCallback((cid: number) => {
@@ -770,7 +776,7 @@ export default function CharacterDetail() {
   }, [imgs, mi])
 
   // ---- 时间轴（与 CG 查看器同一套交互：拖动时暂停、松手续播、交还焦点）----
-  const canSeek = hasModel && modelReady && status.duration > 0
+  const canSeek = stageLive && modelReady && status.duration > 0
   const onSeekStart = () => {
     if (!canSeek) return
     wasPlaying.current = status.playing
@@ -793,7 +799,7 @@ export default function CharacterDetail() {
   // 键盘：空格播放/暂停，R 复位取景。只排除文本类输入；type=range 必须放行，
   // 否则拖过时间轴后焦点留在滑块上，空格播放/暂停会失效
   useEffect(() => {
-    if (!hasModel) return
+    if (!stageLive) return
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       const tag = t?.tagName
@@ -806,7 +812,7 @@ export default function CharacterDetail() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [hasModel, toggle, resetView])
+  }, [stageLive, toggle, resetView])
 
   if (!list) return <div className="loading">LOADING…</div>
   if (!c) return <div className="empty">CHARACTER NOT FOUND</div>
@@ -1281,6 +1287,16 @@ export default function CharacterDetail() {
               ) : (
                 <div className="char-empty-mark">{c.name.slice(0, 1)}</div>
               )
+            ) : pose === 'favorite' && favoriteName ? (
+              <SpinePlayer
+                name={favoriteName}
+                dir="spine"
+                controls={false}
+                controllerRef={spineRef}
+                onTick={setStatus}
+                onReady={() => setModelReady(true)}
+                onError={() => setPose('stand')}
+              />
             ) : pose === 'burst' && burstName ? (
               <SpinePlayer
                 name={burstName}
@@ -1313,7 +1329,7 @@ export default function CharacterDetail() {
               <div className="char-loading"><span className="cv-spin" />{t('char_loading_model')}</div>
             )}
             {/* 有战斗/大招模型时徽标换成姿态切换；否则维持原来的实时徽标 */}
-            {(combatAvail.aim || combatAvail.cover || burstName) ? (
+            {(combatAvail.aim || combatAvail.cover || burstName || favoriteName) ? (
               <div className={`char-modes ${modesOpen ? '' : 'is-collapsed'}`}>
                 <div className="char-modes-tabs">
                   <button className={pose === 'stand' ? 'on' : ''} onClick={() => setPose('stand')}>
@@ -1334,6 +1350,11 @@ export default function CharacterDetail() {
                       {t('pose_burst')}
                     </button>
                   )}
+                  {favoriteName && (
+                    <button className={pose === 'favorite' ? 'on' : ''} onClick={() => setPose('favorite')}>
+                      {t('pose_favorite')}
+                    </button>
+                  )}
                 </div>
                 <button
                   className="char-modes-toggle"
@@ -1348,6 +1369,12 @@ export default function CharacterDetail() {
               <div className={`char-live ${modelReady ? 'on' : ''}`}>
                 <i />{modelReady ? t('cg_live_model') : t('char_live_loading')}
               </div>
+            )}
+
+            {pose === 'favorite' && favoriteStory && (
+              <Link className="char-favorite-story" to={`/story/${favoriteStory}?ch=0`}>
+                {t('favorite_story_open')} →
+              </Link>
             )}
 
             {/* 皮肤切换条：绝对定位浮在舞台底部居中，不占布局——收起/展开
@@ -1392,7 +1419,7 @@ export default function CharacterDetail() {
           </div>
 
           {/* 实时模型控制条：表情 / 时间轴 / 速度 / 取景 / 保存当前帧 */}
-          {hasModel && (
+          {stageLive && (
             <div className="char-bar">
               <div className="char-anims">
                 {/* 第二形态切换：仅站姿模型存在成套变体动画时出现 */}
@@ -1413,7 +1440,8 @@ export default function CharacterDetail() {
                 {chips.length === 0 && (
                   <span className="char-anims-hint">
                     {pose === 'stand' ? t('anims_loading_stand')
-                      : pose === 'burst' ? t('anims_loading_burst') : t('anims_loading_combat')}
+                      : pose === 'burst' ? t('anims_loading_burst')
+                        : pose === 'favorite' ? t('anims_loading_favorite') : t('anims_loading_combat')}
                   </span>
                 )}
                 {chips.map((c2) => (
@@ -1432,11 +1460,13 @@ export default function CharacterDetail() {
                     value={onMore ? status.anim : ''}
                     onChange={(e) => e.target.value && spineRef.current?.setAnim(e.target.value)}
                     title={pose === 'stand' ? t('more_anims_stand')
-                      : pose === 'burst' ? t('more_anims_burst') : t('more_anims_combat')}
+                      : pose === 'burst' ? t('more_anims_burst')
+                        : pose === 'favorite' ? t('more_anims_favorite') : t('more_anims_combat')}
                   >
                     <option value="">
                       {pose === 'stand' ? t('more_anims_stand')
-                        : pose === 'burst' ? t('more_anims_burst') : t('more_anims_combat')}
+                        : pose === 'burst' ? t('more_anims_burst')
+                        : pose === 'favorite' ? t('more_anims_favorite') : t('more_anims_combat')}
                     </option>
                     {extras.map((a) => <option key={a} value={a}>{animLabel(a, t)}</option>)}
                   </select>

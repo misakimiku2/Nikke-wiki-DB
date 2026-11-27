@@ -42,7 +42,7 @@ type Block = {
 }
 
 /** 这些分类按「章节列表 → 单章正文」阅读。主线各章含多节，也走章节列表。 */
-const CHAPTER_CATS = new Set(['main', 'event', 'nikke', 'gaiden', 'sub', 'side_story'])
+const CHAPTER_CATS = new Set(['main', 'event', 'nikke', 'favorite', 'gaiden', 'sub', 'side_story'])
 
 /** 解析一组 CG → 前景帧 + 配对背景层（游戏中动态 CG = bg 层 + Spine 前景层） */
 function resolveCg(list: StoryCgRef[]): Frame {

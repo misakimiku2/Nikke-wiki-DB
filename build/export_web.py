@@ -358,9 +358,15 @@ def main():
             slug = bucket[len("d_ex_"):]
             slot = loc.get("outpost_building_name_" + OUTPOST_ALIASES.get(slug, slug))
             return titles4(slot)
-        if cat == "nikke":
+        if cat in ("nikke", "favorite"):
             # 宝物剧情标题是站内组合名（「X · 宝物剧情」），没有官方四语名
             if bucket.startswith("treasurestory_"):
+                if cat == "favorite":
+                    char = title.split(" · ", 1)[0]
+                    names = name4_of.get(char)
+                    suffix = {"en": "Favorite Item Story", "ko": "컬렉션 스토리", "ja": "コレクションストーリー"}
+                    if names and all(names.get(l) for l in suffix):
+                        return {l: f"{names[l]} · {suffix[l]}" for l in suffix}
                 return None
             rest, collab = title, ""
             if " · " in rest:

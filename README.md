@@ -88,6 +88,9 @@ python build/export_char_voices.py        # → public/voice + public/data/char_
 #   → staging/equip_stats.json、staging/cube_stats.json，拷到 public/data/ 即可
 # 珍藏品：python scripts/export_favorites.py
 #   → staging/favorite_stats.json（12 款 × 16 级三围），拷到 public/data/ 即可
+# 珍藏品壁纸与剧情（上游执行）：
+#   python ../nikke_extract/scripts/export_favorite_wallpapers.py
+#   → CG/07_珍藏品CG/ + staging/favorite_wallpapers.json（21 壁纸 ↔ 124 剧情章节）
 
 # 3. CG
 python build/build_images.py              # → public/img         三档转码

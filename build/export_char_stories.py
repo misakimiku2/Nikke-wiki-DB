@@ -35,6 +35,7 @@ SRC = os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract")
 # rel_stories / rel_counsel 行一致，非机翻）
 REC_SUFFIX = {
     "story": {"en": "Story", "ko": "개인 스토리", "ja": "個人ストーリー"},
+    "treasure": {"en": "Favorite Item Story", "ko": "컬렉션 스토리", "ja": "コレクションストーリー"},
     "counsel": {"en": "Counseling", "ko": "상담", "ja": "カウンセリング"},
 }
 
@@ -208,9 +209,15 @@ def main():
             counsel_slug_by_norm.setdefault(m.group(1).replace("_", ""), m.group(1))
 
     con = sqlite3.connect(DB)
+    favorite_meta_path = os.path.join(SRC, "staging", "favorite_wallpapers.json")
+    favorite_models = {}
+    if os.path.exists(favorite_meta_path):
+        with open(favorite_meta_path, encoding="utf-8") as f:
+            favorite_models = {x.get("storyBucket"): x.get("name")
+                               for x in json.load(f).get("items", [])}
     units = con.execute(
         "select id, bucket, title, segment_count, line_count, sort_order "
-        "from story_units where category in ('nikke','counseling') order by sort_order"
+        "from story_units where category in ('nikke','favorite','counseling') order by sort_order"
     ).fetchall()
     # 咨询会话数按「有标题的段」计：sort>=9000 是误挂进来的皮肤杂段（无标题）
     titled = dict(con.execute(
@@ -297,21 +304,23 @@ def main():
 
         # ---- 条目标题 ----
         if kind == "treasure":
-            t = "宝物剧情"
+            t = "珍藏品剧情"
         elif skin_zh:
             t = f"{skin_zh}·个人剧情" if kind == "story" else f"{skin_zh}·咨询"
         else:
             t = "个人剧情" if kind == "story" else "咨询"
 
         entry = items.setdefault(cid, {"stories": [], "counsel": []})
+        if kind == "treasure" and favorite_models.get(bucket):
+            entry["favorite"] = {"name": favorite_models[bucket], "story": uid}
         arr = entry["counsel"] if kind == "counsel" else entry["stories"]
         rec = {"id": uid, "t": t, "lines": lines}
         if skin_zh:
             rec["skin"] = skin_zh
         # 标题 ts（en/ko/ja）：皮肤名四语 + 站内标签尾词；解析不齐的整条不给
         ts = None
-        if kind in ("story", "counsel"):
-            suffix = REC_SUFFIX["counsel" if kind == "counsel" else "story"]
+        if kind in ("story", "treasure", "counsel"):
+            suffix = REC_SUFFIX[kind]
             if skin_zh:
                 skin4 = skin_of_counsel(counsel_titles4, sfx, counsel_slug_by_norm)
                 if (skin4.get("zh") == skin_zh

@@ -148,8 +148,8 @@ def main():
     # 同时收集每段内全部 CG 触发行（含其它 CG）：用于推算真实显示区间
     links = defaultdict(dict)      # cg -> {sid: (off, speaker, text)}
     seg_events = defaultdict(dict)  # sid -> {off: set(cg 名)}（同行的多张图并成一个事件）
-    for cg, lid, sid in con.execute("""
-        SELECT c.cg_name, c.line_id, l.segment_id FROM cg_links c
+    for cg, lid, sid, match_type in con.execute("""
+        SELECT c.cg_name, c.line_id, l.segment_id, c.match_type FROM cg_links c
         JOIN story_lines l ON l.id = c.line_id
         ORDER BY c.rowid
     """):
@@ -160,7 +160,7 @@ def main():
         d = links[cg]
         if sid not in d or off < d[sid][0]:
             sp, txt = first_line.get(sid, ("", ""))[:2]
-            d[sid] = (off, sp, txt)
+            d[sid] = (off, sp, txt, match_type == "favorite_story")
         seg_events[sid].setdefault(off, set()).add(cg)
 
     out_links = {}
@@ -178,7 +178,7 @@ def main():
     for cg, segs in links.items():
         lst = []
         g_self = group_of(cg)
-        for sid, (off, sp, txt) in sorted(segs.items(), key=lambda x: seg_meta[x[0]][3]):
+        for sid, (off, sp, txt, is_favorite) in sorted(segs.items(), key=lambda x: seg_meta[x[0]][3]):
             uid, stitle, lcount, base, gkey = seg_meta[sid]
             # 真实显示区间：从触发行到下一个会顶掉它的 CG 切换事件为止（与阅读器的
             # CG 切换口径一致）；同组条目（连图集各帧 / X_bg）互相接替不算切换，
@@ -196,15 +196,18 @@ def main():
                 if any(group_of(n2) != g_self for n2 in seg_events[sid][o2]):
                     end = min(end, o2)
                     break
-            run = max(1, end - off)
+            run = 0 if is_favorite else max(1, end - off)
             entry = {
                 "u": uid,
                 "i": base + off,          # 定位行号（单元内绝对行）
                 "s": sp,
                 "t": (txt or "")[:120],
-                "n": run,                 # 显示区间句数（触发行 → 下一 CG 切换 / 段末）
                 "p": stitle,              # 段落标题
             }
+            if is_favorite:
+                entry["r"] = "favorite"  # 解锁奖励对应剧情，不是行内 CG 转场
+            else:
+                entry["n"] = run         # 触发行 → 下一 CG 切换 / 段末
             # 四语回填：段落标题（Locale 官方名）、首句台词、说话人名。
             # 只在 zh 数据与库内/官方简中一致时给，避免上游改动后错配。
             fl = first_line.get(sid)
@@ -243,6 +246,13 @@ def main():
             " WHERE code IS NOT NULL AND name_zh IS NOT NULL")}
     except Exception:
         pass
+    favorite_code = {}
+    favorite_meta_path = os.path.join(os.environ.get("NIKKE_SRC", r"E:/test/nikke_extract"),
+                                      "staging", "favorite_wallpapers.json")
+    if os.path.exists(favorite_meta_path):
+        with open(favorite_meta_path, encoding="utf-8") as f:
+            favorite_code = {x["name"]: x.get("characterCode", "")
+                             for x in json.load(f).get("items", [])}
     # 大招 cut-in：CG 名剥 EventScene_ 前缀后命中实时模型清单（char_spine_skillcut
     # items，与 spine_skillcut/ 模型目录一一对应）。比旧正则宽松——c840_skillcut_00
     # 这类反序名与 c017_00_slillcut 这类上游拼写错误名也能拿到角色中文名。
@@ -263,7 +273,8 @@ def main():
         is_cutin = it["name"].startswith("EventScene_") \
             and it["name"][len("EventScene_"):] in skillcut_models
         m = cutin_code_re.match(it["name"]) if is_cutin else None
-        sub = code2name.get(m.group(1), "") if m else it["sub"]
+        sub = code2name.get(favorite_code[it["name"]], "") if it["name"] in favorite_code \
+            else code2name.get(m.group(1), "") if m else it["sub"]
         item = {
             "h": it["hash"],
             "n": it["name"],

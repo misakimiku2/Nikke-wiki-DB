@@ -726,6 +726,15 @@ img { display: block; }
 }
 .char-live.on { color: var(--text); }
 .char-live.on i { background: var(--red); box-shadow: 0 0 0 3px rgba(255,45,85,.16); }
+.char-favorite-story {
+  position: absolute; right: 16px; top: 14px; z-index: 4;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 9px; border: 1px solid var(--line);
+  background: var(--tag-bg); color: var(--text);
+  font-family: ui-monospace, "Microsoft YaHei", "PingFang SC", monospace;
+  font-size: 10px; letter-spacing: .08em; text-decoration: none;
+}
+.char-favorite-story:hover { border-color: var(--red); color: var(--red); }
 
 /* 战斗姿态切换（立绘 / 射击 / 掩体）：与实时徽标同位，皮肤有战斗模型时取而代之。
    右端常驻收起钮：收起时标签组向左滑出（max-width 收缩、右缘裁切），
@@ -4447,6 +4456,7 @@ body.immersive-mode .detail-page .detail-info,
 body.immersive-mode .detail-page .variants,
 body.immersive-mode .detail-page .char-bar,
 body.immersive-mode .detail-page .char-modes,
+body.immersive-mode .detail-page .char-favorite-story,
 body.immersive-mode .detail-page .char-live { display: none !important; }
 body.immersive-mode .detail-page .detail-visual {
   position: fixed; inset: 0; z-index: 1000;
